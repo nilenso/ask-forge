@@ -1,14 +1,21 @@
 {
-  "name": "ask-forge",
-  "module": "index.ts",
-  "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "github:anthropic-experimental/sandbox-runtime"
-  }
+	"name": "ask-forge",
+	"module": "index.ts",
+	"type": "module",
+	"scripts": {
+		"format": "biome format --write .",
+		"lint": "biome lint .",
+		"check": "biome check --write ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.11",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@anthropic-ai/sandbox-runtime": "github:anthropic-experimental/sandbox-runtime",
+		"@mariozechner/pi-ai": "^0.49.2"
+	}
 }
