@@ -1,10 +1,10 @@
-import { connect, ask } from "./index";
+import { ask, connect } from "./index";
 
-const repoUrl = "https://github.com/nilenso/grpo-trainer";
-const question = process.argv[2];
+const repoUrl = process.argv[2];
+const question = process.argv[3];
 
-if (!question) {
-	console.error("Usage: bun run test-ask.ts <question>");
+if (!repoUrl || !question) {
+	console.error("Usage: bun run test-ask.ts <repo-url> <question>");
 	process.exit(1);
 }
 
@@ -14,7 +14,6 @@ console.log(`Connected to ${repo.localPath}\n`);
 console.log(`Question: ${question}\n`);
 console.log("Asking...\n");
 
-const answer = await ask(repo, question);
+const result = await ask(repo, question);
 
-console.log("Answer:");
-console.log(answer);
+console.log(JSON.stringify(result, null, 2));

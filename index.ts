@@ -1,81 +1,86 @@
 import { access, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Context, complete, getModel, type Tool } from "@mariozechner/pi-ai";
+import {
+  type Context,
+  complete,
+  getModel,
+  type Tool,
+} from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 
 async function exists(path: string): Promise<boolean> {
-	try {
-		await access(path);
-		return true;
-	} catch {
-		return false;
-	}
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type ForgeName = "github" | "gitlab";
 
 export interface Forge {
-	name: ForgeName;
-	buildCloneUrl(repoUrl: string, token?: string): string;
+  name: ForgeName;
+  buildCloneUrl(repoUrl: string, token?: string): string;
 }
 
 const GitHubForge: Forge = {
-	name: "github",
-	buildCloneUrl(repoUrl: string, token?: string): string {
-		if (!token) return repoUrl;
-		const url = new URL(repoUrl);
-		url.username = token;
-		return url.toString();
-	},
+  name: "github",
+  buildCloneUrl(repoUrl: string, token?: string): string {
+    if (!token) return repoUrl;
+    const url = new URL(repoUrl);
+    url.username = token;
+    return url.toString();
+  },
 };
 
 const GitLabForge: Forge = {
-	name: "gitlab",
-	buildCloneUrl(repoUrl: string, token?: string): string {
-		if (!token) return repoUrl;
-		const url = new URL(repoUrl);
-		url.username = "oauth2";
-		url.password = token;
-		return url.toString();
-	},
+  name: "gitlab",
+  buildCloneUrl(repoUrl: string, token?: string): string {
+    if (!token) return repoUrl;
+    const url = new URL(repoUrl);
+    url.username = "oauth2";
+    url.password = token;
+    return url.toString();
+  },
 };
 
 const forges: Record<ForgeName, Forge> = {
-	github: GitHubForge,
-	gitlab: GitLabForge,
+  github: GitHubForge,
+  gitlab: GitLabForge,
 };
 
 function inferForge(repoUrl: string): ForgeName | null {
-	const url = new URL(repoUrl);
-	if (url.hostname === "github.com") return "github";
-	if (url.hostname === "gitlab.com") return "gitlab";
-	return null;
+  const url = new URL(repoUrl);
+  if (url.hostname === "github.com") return "github";
+  if (url.hostname === "gitlab.com") return "gitlab";
+  return null;
 }
 
 function parseRepoPath(repoUrl: string): {
-	username: string;
-	reponame: string;
+  username: string;
+  reponame: string;
 } {
-	const url = new URL(repoUrl);
-	const parts = url.pathname
-		.replace(/^\//, "")
-		.replace(/\.git$/, "")
-		.split("/");
-	if (parts.length < 2) {
-		throw new Error(`Invalid repo URL: ${repoUrl}`);
-	}
-	return { username: parts[0], reponame: parts[1] };
+  const url = new URL(repoUrl);
+  const parts = url.pathname
+    .replace(/^\//, "")
+    .replace(/\.git$/, "")
+    .split("/");
+  if (parts.length < 2) {
+    throw new Error(`Invalid repo URL: ${repoUrl}`);
+  }
+  return { username: parts[0], reponame: parts[1] };
 }
 
 export interface ConnectOptions {
-	token?: string;
-	forge?: ForgeName;
+  token?: string;
+  forge?: ForgeName;
 }
 
 export interface Repo {
-	url: string;
-	localPath: string;
-	forge: Forge;
+  url: string;
+  localPath: string;
+  forge: Forge;
 }
 
 /**
@@ -84,199 +89,258 @@ export interface Repo {
  * @param options - Connection options (token, forge override)
  * @returns A Repo object representing the connected repository
  */
-export async function connect(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
-	const forgeName = options.forge ?? inferForge(repoUrl);
-	if (!forgeName) {
-		throw new Error(`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`);
-	}
+export async function connect(
+  repoUrl: string,
+  options: ConnectOptions = {},
+): Promise<Repo> {
+  const forgeName = options.forge ?? inferForge(repoUrl);
+  if (!forgeName) {
+    throw new Error(
+      `Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`,
+    );
+  }
 
-	const forge = forges[forgeName];
-	const { username, reponame } = parseRepoPath(repoUrl);
-	const localPath = join("workdir", username, reponame);
+  const forge = forges[forgeName];
+  const { username, reponame } = parseRepoPath(repoUrl);
+  const localPath = join("workdir", username, reponame);
 
-	// Check if repo already exists (has .git directory)
-	const gitDir = join(localPath, ".git");
-	if (await exists(gitDir)) {
-		// Repo already cloned, optionally pull latest
-		const proc = Bun.spawn(["git", "pull"], {
-			cwd: localPath,
-			stdout: "inherit",
-			stderr: "inherit",
-		});
-		await proc.exited;
-	} else {
-		// Clone the repo
-		await mkdir(localPath, { recursive: true });
+  // Check if repo already exists (has .git directory)
+  const gitDir = join(localPath, ".git");
+  if (await exists(gitDir)) {
+    // Repo already cloned, optionally pull latest
+    const proc = Bun.spawn(["git", "pull"], {
+      cwd: localPath,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    await proc.exited;
+  } else {
+    // Clone the repo
+    await mkdir(localPath, { recursive: true });
 
-		const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-		const proc = Bun.spawn(["git", "clone", cloneUrl, localPath], {
-			stdout: "inherit",
-			stderr: "inherit",
-		});
-		const exitCode = await proc.exited;
+    const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
+    const proc = Bun.spawn(["git", "clone", cloneUrl, localPath], {
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const exitCode = await proc.exited;
 
-		if (exitCode !== 0) {
-			throw new Error(`git clone failed with exit code ${exitCode}`);
-		}
-	}
+    if (exitCode !== 0) {
+      throw new Error(`git clone failed with exit code ${exitCode}`);
+    }
+  }
 
-	return {
-		url: repoUrl,
-		localPath,
-		forge,
-	};
+  return {
+    url: repoUrl,
+    localPath,
+    forge,
+  };
 }
 
 const tools: Tool[] = [
-	{
-		name: "rg",
-		description:
-			"Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers.",
-		parameters: Type.Object({
-			pattern: Type.String({ description: "The regex pattern to search for" }),
-			glob: Type.Optional(
-				Type.String({
-					description: "File glob pattern to filter files (e.g., '*.ts', '**/*.json')",
-				}),
-			),
-		}),
-	},
-	{
-		name: "fd",
-		description: "Find files by name pattern using fd. Returns matching file paths.",
-		parameters: Type.Object({
-			pattern: Type.String({
-				description: "The pattern to match file names against",
-			}),
-			type: Type.Optional(
-				Type.Union([Type.Literal("f"), Type.Literal("d")], {
-					description: "Filter by type: 'f' for files, 'd' for directories",
-				}),
-			),
-		}),
-	},
-	{
-		name: "ls",
-		description: "List files and directories in a given path.",
-		parameters: Type.Object({
-			path: Type.Optional(
-				Type.String({
-					description: "Path to list, relative to repository root. Defaults to root if not specified.",
-				}),
-			),
-		}),
-	},
-	{
-		name: "read",
-		description: "Read the contents of a file.",
-		parameters: Type.Object({
-			path: Type.String({
-				description: "Path to the file, relative to repository root",
-			}),
-		}),
-	},
+  {
+    name: "rg",
+    description:
+      "Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers.",
+    parameters: Type.Object({
+      pattern: Type.String({ description: "The regex pattern to search for" }),
+      glob: Type.Optional(
+        Type.String({
+          description:
+            "File glob pattern to filter files (e.g., '*.ts', '**/*.json')",
+        }),
+      ),
+    }),
+  },
+  {
+    name: "fd",
+    description:
+      "Find files by name pattern using fd. Returns matching file paths.",
+    parameters: Type.Object({
+      pattern: Type.String({
+        description: "The pattern to match file names against",
+      }),
+      type: Type.Optional(
+        Type.Union([Type.Literal("f"), Type.Literal("d")], {
+          description: "Filter by type: 'f' for files, 'd' for directories",
+        }),
+      ),
+    }),
+  },
+  {
+    name: "ls",
+    description: "List files and directories in a given path.",
+    parameters: Type.Object({
+      path: Type.Optional(
+        Type.String({
+          description:
+            "Path to list, relative to repository root. Defaults to root if not specified.",
+        }),
+      ),
+    }),
+  },
+  {
+    name: "read",
+    description: "Read the contents of a file.",
+    parameters: Type.Object({
+      path: Type.String({
+        description: "Path to the file, relative to repository root",
+      }),
+    }),
+  },
 ];
 
 async function runCommand(cmd: string[], cwd: string): Promise<string> {
-	const proc = Bun.spawn(cmd, {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-	const exitCode = await proc.exited;
-	if (exitCode !== 0) {
-		return `Error (exit ${exitCode}):\n${stderr}`;
-	}
-	return stdout || "(no output)";
+  const proc = Bun.spawn(cmd, {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    return `Error (exit ${exitCode}):\n${stderr}`;
+  }
+  return stdout || "(no output)";
 }
 
-async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
-	if (toolName === "rg") {
-		const pattern = args.pattern as string;
-		const glob = args.glob as string | undefined;
-		const cmd = ["rg", "--line-number", pattern];
-		if (glob) {
-			cmd.push("--glob", glob);
-		}
-		return runCommand(cmd, repoPath);
-	}
+async function executeTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  repoPath: string,
+): Promise<string> {
+  if (toolName === "rg") {
+    const pattern = args.pattern as string;
+    const glob = args.glob as string | undefined;
+    const cmd = ["rg", "--line-number", pattern];
+    if (glob) {
+      cmd.push("--glob", glob);
+    }
+    return runCommand(cmd, repoPath);
+  }
 
-	if (toolName === "fd") {
-		const pattern = args.pattern as string;
-		const type = args.type as "f" | "d" | undefined;
-		const cmd = ["fd", pattern];
-		if (type) {
-			cmd.push("--type", type);
-		}
-		return runCommand(cmd, repoPath);
-	}
+  if (toolName === "fd") {
+    const pattern = args.pattern as string;
+    const type = args.type as "f" | "d" | undefined;
+    const cmd = ["fd", pattern];
+    if (type) {
+      cmd.push("--type", type);
+    }
+    return runCommand(cmd, repoPath);
+  }
 
-	if (toolName === "ls") {
-		const path = (args.path as string | undefined) || ".";
-		const fullPath = join(repoPath, path);
-		return runCommand(["ls", "-la", fullPath], repoPath);
-	}
+  if (toolName === "ls") {
+    const path = (args.path as string | undefined) || ".";
+    return runCommand(["ls", "-la", path], repoPath);
+  }
 
-	if (toolName === "read") {
-		const filePath = args.path as string;
-		const fullPath = join(repoPath, filePath);
-		try {
-			return await readFile(fullPath, "utf-8");
-		} catch (e) {
-			return `Error reading file: ${(e as Error).message}`;
-		}
-	}
+  if (toolName === "read") {
+    const filePath = args.path as string;
+    const fullPath = join(repoPath, filePath);
+    try {
+      return await readFile(fullPath, "utf-8");
+    } catch (e) {
+      return `Error reading file: ${(e as Error).message}`;
+    }
+  }
 
-	return `Unknown tool: ${toolName}`;
+  return `Unknown tool: ${toolName}`;
+}
+
+export interface ToolCallRecord {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface AskResult {
+  prompt: string;
+  "tool-calls": ToolCallRecord[];
+  response: string;
 }
 
 /**
  * Ask a question about the repository
  * @param repo - The connected repository
  * @param queryString - The question to ask (e.g., "Do we have authentication enabled?")
- * @returns The answer to the query
+ * @returns Structured result with prompt, tool-calls, and response
  */
-export async function ask(repo: Repo, queryString: string): Promise<string> {
-	const model = getModel("openrouter", "anthropic/claude-sonnet-4.5");
+export async function ask(repo: Repo, queryString: string): Promise<AskResult> {
+  const model = getModel("openrouter", "anthropic/claude-sonnet-4.5");
+  const toolCallRecords: ToolCallRecord[] = [];
 
-	const context: Context = {
-		systemPrompt: `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
+  const context: Context = {
+    systemPrompt: `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
 Use the available tools to explore the codebase and answer the user's question.
-Be concise and specific in your answers. Cite file paths when relevant.`,
-		messages: [{ role: "user", content: queryString }],
-		tools,
-	};
 
-	const maxIterations = 10;
-	for (let i = 0; i < maxIterations; i++) {
-		const response = await complete(model, context);
-		context.messages.push(response);
+Response guidelines:
+- Be concise and to the point. No preamble or filler.
+- Use structured format: headings, bullet points, or numbered lists.
+- Cite file paths when relevant (e.g., "src/auth.ts:42").
+- Avoid lengthy prose. Prefer short statements.`,
+    messages: [{ role: "user", content: queryString }],
+    tools,
+  };
 
-		const toolCalls = response.content.filter((b) => b.type === "toolCall");
+  const log = (label: string, content: string) => {
+    console.log(`\n${"─".repeat(60)}`);
+    console.log(`│ ${label}`);
+    console.log(`${"─".repeat(60)}`);
+    console.log(content);
+  };
 
-		if (toolCalls.length === 0) {
-			// No tool calls, extract text response
-			const textBlocks = response.content.filter((b) => b.type === "text");
-			return textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
-		}
+  const maxIterations = 10;
+  for (let i = 0; i < maxIterations; i++) {
+    const response = await complete(model, context);
+    context.messages.push(response);
 
-		// Execute tool calls and add results
-		for (const call of toolCalls) {
-			if (call.type !== "toolCall") continue;
+    const toolCalls = response.content.filter((b) => b.type === "toolCall");
 
-			console.log(`Tool call: ${call.name}`, JSON.stringify(call.arguments, null, 2));
-			const result = await executeTool(call.name, call.arguments, repo.localPath);
-			context.messages.push({
-				role: "toolResult",
-				toolCallId: call.id,
-				toolName: call.name,
-				content: [{ type: "text", text: result }],
-				isError: false,
-				timestamp: Date.now(),
-			});
-		}
-	}
+    if (toolCalls.length === 0) {
+      // No tool calls, extract text response
+      const textBlocks = response.content.filter((b) => b.type === "text");
+      const responseText = textBlocks
+        .map((b) => (b as { type: "text"; text: string }).text)
+        .join("\n");
+      log("RESPONSE", "");
+      return {
+        prompt: queryString,
+        "tool-calls": toolCallRecords,
+        response: responseText,
+      };
+    }
 
-	return "Max iterations reached without a final answer.";
+    // Execute tool calls and add results
+    for (const call of toolCalls) {
+      if (call.type !== "toolCall") continue;
+
+      log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
+      const result = await executeTool(
+        call.name,
+        call.arguments,
+        repo.localPath,
+      );
+
+      toolCallRecords.push({
+        name: call.name,
+        arguments: call.arguments,
+      });
+      context.messages.push({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: [{ type: "text", text: result }],
+        isError: false,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  return {
+    prompt: queryString,
+    "tool-calls": toolCallRecords,
+    response: "Max iterations reached without a final answer.",
+  };
 }
