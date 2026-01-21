@@ -8,5 +8,11 @@ Ask forge clones that repository and runs an LLM agent with access to that repos
 
 ```bash
 bun install
-bun run test-ask.ts "What frameworks does this project use?"
+bun run test-ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
+
+## TODOS
+
+- [ ] Test with a specific forge revision (commit/branch/tags)
+- [ ] Test if model is able to access other repos in workdir
+  - [ ] Explore sandboxing to prevent access to other repos in workdir
