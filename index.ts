@@ -178,7 +178,7 @@ async function executeTool(toolName: string, args: Record<string, unknown>, repo
  * @returns The answer to the query
  */
 export async function ask(repo: Repo, queryString: string): Promise<string> {
-	const model = getModel("anthropic", "claude-sonnet-4-20250514");
+	const model = getModel("openrouter", "anthropic/claude-sonnet-4.5");
 
 	const context: Context = {
 		systemPrompt: `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
