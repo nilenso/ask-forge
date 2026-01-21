@@ -52,7 +52,10 @@ function inferForge(repoUrl: string): ForgeName | null {
 	return null;
 }
 
-function parseRepoPath(repoUrl: string): { username: string; reponame: string } {
+function parseRepoPath(repoUrl: string): {
+	username: string;
+	reponame: string;
+} {
 	const url = new URL(repoUrl);
 	const parts = url.pathname
 		.replace(/^\//, "")
@@ -126,36 +129,93 @@ export async function connect(repoUrl: string, options: ConnectOptions = {}): Pr
 
 const tools: Tool[] = [
 	{
-		name: "bash",
+		name: "rg",
 		description:
-			"Execute a bash command in the repository directory. Available tools: ripgrep (rg), fd, cat, ls, grep, etc.",
+			"Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers.",
 		parameters: Type.Object({
-			command: Type.String({ description: "The bash command to execute" }),
+			pattern: Type.String({ description: "The regex pattern to search for" }),
+			glob: Type.Optional(
+				Type.String({
+					description: "File glob pattern to filter files (e.g., '*.ts', '**/*.json')",
+				}),
+			),
+		}),
+	},
+	{
+		name: "fd",
+		description: "Find files by name pattern using fd. Returns matching file paths.",
+		parameters: Type.Object({
+			pattern: Type.String({
+				description: "The pattern to match file names against",
+			}),
+			type: Type.Optional(
+				Type.Union([Type.Literal("f"), Type.Literal("d")], {
+					description: "Filter by type: 'f' for files, 'd' for directories",
+				}),
+			),
+		}),
+	},
+	{
+		name: "ls",
+		description: "List files and directories in a given path.",
+		parameters: Type.Object({
+			path: Type.Optional(
+				Type.String({
+					description: "Path to list, relative to repository root. Defaults to root if not specified.",
+				}),
+			),
 		}),
 	},
 	{
 		name: "read",
-		description: "Read the contents of a file",
+		description: "Read the contents of a file.",
 		parameters: Type.Object({
-			path: Type.String({ description: "Path to the file, relative to repository root" }),
+			path: Type.String({
+				description: "Path to the file, relative to repository root",
+			}),
 		}),
 	},
 ];
 
+async function runCommand(cmd: string[], cwd: string): Promise<string> {
+	const proc = Bun.spawn(cmd, {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) {
+		return `Error (exit ${exitCode}):\n${stderr}`;
+	}
+	return stdout || "(no output)";
+}
+
 async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
-	if (toolName === "bash") {
-		const command = args.command as string;
-		const proc = Bun.spawn(["bash", "-c", command], {
-			cwd: repoPath,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-		const exitCode = await proc.exited;
-		if (exitCode !== 0) {
-			return `Error (exit ${exitCode}):\n${stderr}`;
+	if (toolName === "rg") {
+		const pattern = args.pattern as string;
+		const glob = args.glob as string | undefined;
+		const cmd = ["rg", "--line-number", pattern];
+		if (glob) {
+			cmd.push("--glob", glob);
 		}
-		return stdout || "(no output)";
+		return runCommand(cmd, repoPath);
+	}
+
+	if (toolName === "fd") {
+		const pattern = args.pattern as string;
+		const type = args.type as "f" | "d" | undefined;
+		const cmd = ["fd", pattern];
+		if (type) {
+			cmd.push("--type", type);
+		}
+		return runCommand(cmd, repoPath);
+	}
+
+	if (toolName === "ls") {
+		const path = (args.path as string | undefined) || ".";
+		const fullPath = join(repoPath, path);
+		return runCommand(["ls", "-la", fullPath], repoPath);
 	}
 
 	if (toolName === "read") {
@@ -204,6 +264,8 @@ Be concise and specific in your answers. Cite file paths when relevant.`,
 		// Execute tool calls and add results
 		for (const call of toolCalls) {
 			if (call.type !== "toolCall") continue;
+
+			console.log(`Tool call: ${call.name}`, JSON.stringify(call.arguments, null, 2));
 			const result = await executeTool(call.name, call.arguments, repo.localPath);
 			context.messages.push({
 				role: "toolResult",
