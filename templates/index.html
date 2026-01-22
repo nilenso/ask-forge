@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Test Runs - Review System{% endblock %}
+
+{% block content %}
+<h1>Test Runs</h1>
+
+{% if runs %}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Agent</th>
+                <th>Date</th>
+                <th>Examples</th>
+                <th>Facts</th>
+                <th>LLM Accuracy</th>
+                <th>Review Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td><code>{{ run.id[:20] }}...</code></td>
+                <td>{{ run.agent_name }}</td>
+                <td>{{ run.timestamp[:16] if run.timestamp else 'N/A' }}</td>
+                <td>{{ run.total_examples }}</td>
+                <td>{{ run.total_facts }}</td>
+                <td>
+                    <span class="{% if run.accuracy >= 70 %}text-success{% elif run.accuracy >= 40 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(run.accuracy) }}%
+                    </span>
+                    <span class="text-muted">({{ run.llm_verified_facts }}/{{ run.total_facts }})</span>
+                </td>
+                <td>
+                    {% if run.review_status.complete %}
+                        <span class="badge badge-success">Complete</span>
+                    {% elif run.review_status.reviewed > 0 %}
+                        <span class="badge badge-warning">{{ run.review_status.reviewed }}/{{ run.review_status.total }}</span>
+                    {% else %}
+                        <span class="badge badge-info">Pending</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/review/{{ run.id }}" class="btn btn-primary">Review</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <p>No test runs found.</p>
+    <p class="text-muted">Run <code>python test-dataset.py [num_examples] [agent]</code> to create test runs.</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Quick Start</h2>
+    <ol style="margin-left: 20px; margin-top: 10px;">
+        <li>Run tests: <code>python test-dataset.py 5 ask-forge</code></li>
+        <li>Click "Review" on a run above</li>
+        <li>Use keyboard shortcuts for fast reviewing:
+            <ul style="margin-left: 20px; margin-top: 5px;">
+                <li><span class="keyboard-hint">←</span> / <span class="keyboard-hint">→</span> Navigate examples</li>
+                <li><span class="keyboard-hint">y</span> / <span class="keyboard-hint">n</span> Mark response correct/incorrect</li>
+                <li><span class="keyboard-hint">1</span>-<span class="keyboard-hint">9</span> Toggle fact verdicts</li>
+            </ul>
+        </li>
+        <li>View <a href="/metrics">Metrics</a> to compare LLM vs Human accuracy</li>
+    </ol>
+</div>
+{% endblock %}

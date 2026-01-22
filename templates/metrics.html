@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}Metrics - Review System{% endblock %}
+
+{% block extra_styles %}
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+.metric-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.metric-value {
+    font-size: 2.5em;
+    font-weight: bold;
+    color: #2c3e50;
+}
+.metric-value.good { color: #27ae60; }
+.metric-value.medium { color: #f39c12; }
+.metric-value.poor { color: #e74c3c; }
+.metric-label {
+    color: #666;
+    font-size: 14px;
+    margin-top: 5px;
+}
+.confusion-matrix {
+    display: grid;
+    grid-template-columns: auto repeat(2, 1fr);
+    gap: 2px;
+    max-width: 400px;
+    margin: 20px auto;
+}
+.cm-cell {
+    padding: 15px;
+    text-align: center;
+    background: #f8f9fa;
+}
+.cm-header {
+    font-weight: bold;
+    background: #e9ecef;
+}
+.cm-corner {
+    background: transparent;
+}
+.cm-tp { background: #d4edda; color: #155724; }
+.cm-fp { background: #f8d7da; color: #721c24; }
+.cm-fn { background: #fff3cd; color: #856404; }
+.cm-tn { background: #d1ecf1; color: #0c5460; }
+.breakdown-table {
+    width: 100%;
+    margin-top: 15px;
+}
+.breakdown-table th {
+    background: #f8f9fa;
+    padding: 10px;
+}
+.breakdown-table td {
+    padding: 10px;
+}
+.progress-bar {
+    height: 8px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 5px;
+}
+.progress-fill {
+    height: 100%;
+    background: #3498db;
+    border-radius: 4px;
+}
+{% endblock %}
+
+{% block content %}
+<h1>Accuracy Metrics</h1>
+
+{% if metrics.reviewed_facts == 0 %}
+<div class="card">
+    <h2>No Reviews Yet</h2>
+    <p>Complete some reviews to see accuracy metrics.</p>
+    <p class="text-muted">Go to <a href="/">Test Runs</a> and review some examples.</p>
+</div>
+{% else %}
+
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.llm_accuracy >= 80 %}good{% elif metrics.llm_accuracy >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.llm_accuracy) }}%
+        </div>
+        <div class="metric-label">LLM Judge Accuracy</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.response_accuracy >= 80 %}good{% elif metrics.response_accuracy >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.response_accuracy) }}%
+        </div>
+        <div class="metric-label">Response Accuracy</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.precision >= 80 %}good{% elif metrics.precision >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.precision) }}%
+        </div>
+        <div class="metric-label">Precision</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.recall >= 80 %}good{% elif metrics.recall >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.recall) }}%
+        </div>
+        <div class="metric-label">Recall</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Review Progress</h2>
+    <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div>
+            <strong>{{ metrics.reviewed_runs }}</strong> / {{ metrics.total_runs }}
+            <div class="text-muted">Runs Reviewed</div>
+        </div>
+        <div>
+            <strong>{{ metrics.reviewed_examples }}</strong> / {{ metrics.total_examples }}
+            <div class="text-muted">Examples Reviewed</div>
+        </div>
+        <div>
+            <strong>{{ metrics.reviewed_facts }}</strong> / {{ metrics.total_facts }}
+            <div class="text-muted">Facts Reviewed</div>
+        </div>
+        <div>
+            <strong>{{ metrics.response_correct }}</strong> / {{ metrics.response_correct + metrics.response_incorrect }}
+            <div class="text-muted">Responses Correct</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Confusion Matrix</h2>
+    <p class="text-muted">Comparing LLM Judge verdicts with Human verdicts</p>
+    
+    <div class="confusion-matrix">
+        <div class="cm-cell cm-corner"></div>
+        <div class="cm-cell cm-header">Human: True</div>
+        <div class="cm-cell cm-header">Human: False</div>
+        
+        <div class="cm-cell cm-header">LLM: True</div>
+        <div class="cm-cell cm-tp">
+            <strong>{{ metrics.llm_true_human_true }}</strong>
+            <div class="text-muted">True Positive</div>
+        </div>
+        <div class="cm-cell cm-fp">
+            <strong>{{ metrics.llm_true_human_false }}</strong>
+            <div class="text-muted">False Positive</div>
+        </div>
+        
+        <div class="cm-cell cm-header">LLM: False</div>
+        <div class="cm-cell cm-fn">
+            <strong>{{ metrics.llm_false_human_true }}</strong>
+            <div class="text-muted">False Negative</div>
+        </div>
+        <div class="cm-cell cm-tn">
+            <strong>{{ metrics.llm_false_human_false }}</strong>
+            <div class="text-muted">True Negative</div>
+        </div>
+    </div>
+    
+    <div style="max-width: 600px; margin: 20px auto;">
+        <p><strong>Interpretation:</strong></p>
+        <ul style="margin-left: 20px;">
+            <li><span class="badge badge-success">TP ({{ metrics.llm_true_human_true }})</span> LLM correctly identified fact as present</li>
+            <li><span class="badge badge-danger">FP ({{ metrics.llm_true_human_false }})</span> LLM incorrectly said fact was present</li>
+            <li><span class="badge badge-warning">FN ({{ metrics.llm_false_human_true }})</span> LLM missed a fact that was present</li>
+            <li><span class="badge badge-info">TN ({{ metrics.llm_false_human_false }})</span> LLM correctly identified fact as absent</li>
+        </ul>
+    </div>
+</div>
+
+{% if metrics.by_agent %}
+<div class="card">
+    <h2>By Agent</h2>
+    <table class="breakdown-table">
+        <thead>
+            <tr>
+                <th>Agent</th>
+                <th>Responses Correct</th>
+                <th>TP</th>
+                <th>FP</th>
+                <th>FN</th>
+                <th>TN</th>
+                <th>Accuracy</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent, stats in metrics.by_agent.items() %}
+            {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
+            {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
+            <tr>
+                <td>{{ agent }}</td>
+                <td>{{ stats.correct }} / {{ stats.correct + stats.incorrect }}</td>
+                <td>{{ stats.tp }}</td>
+                <td>{{ stats.fp }}</td>
+                <td>{{ stats.fn }}</td>
+                <td>{{ stats.tn }}</td>
+                <td>
+                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(accuracy) }}%
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if metrics.by_difficulty %}
+<div class="card">
+    <h2>By Difficulty</h2>
+    <table class="breakdown-table">
+        <thead>
+            <tr>
+                <th>Difficulty</th>
+                <th>TP</th>
+                <th>FP</th>
+                <th>FN</th>
+                <th>TN</th>
+                <th>Accuracy</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for difficulty, stats in metrics.by_difficulty.items() %}
+            {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
+            {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
+            <tr>
+                <td>{{ difficulty }}</td>
+                <td>{{ stats.tp }}</td>
+                <td>{{ stats.fp }}</td>
+                <td>{{ stats.fn }}</td>
+                <td>{{ stats.tn }}</td>
+                <td>
+                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(accuracy) }}%
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if metrics.by_type %}
+<div class="card">
+    <h2>By Question Type</h2>
+    <table class="breakdown-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>TP</th>
+                <th>FP</th>
+                <th>FN</th>
+                <th>TN</th>
+                <th>Accuracy</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for type, stats in metrics.by_type.items() %}
+            {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
+            {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
+            <tr>
+                <td>{{ type }}</td>
+                <td>{{ stats.tp }}</td>
+                <td>{{ stats.fp }}</td>
+                <td>{{ stats.fn }}</td>
+                <td>{{ stats.tn }}</td>
+                <td>
+                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(accuracy) }}%
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

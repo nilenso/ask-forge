@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+
+{% block title %}Review: {{ run.id }} - Review System{% endblock %}
+
+{% block extra_styles %}
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.review-nav {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.progress-info {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+.question-box {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+    border-left: 4px solid #3498db;
+}
+.response-box {
+    background: #263238;
+    color: #aed581;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 13px;
+}
+.response-box.error {
+    background: #4a1a1a;
+    color: #ff8a80;
+    border: 1px solid #c62828;
+}
+.fact-item {
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 6px;
+    background: #f8f9fa;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 15px;
+}
+.fact-text {
+    flex: 1;
+}
+.fact-verdicts {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-shrink: 0;
+}
+.verdict-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.verdict-true { background: #d4edda; color: #155724; }
+.verdict-false { background: #f8d7da; color: #721c24; }
+.verdict-pending { background: #fff3cd; color: #856404; }
+.response-verdict {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+}
+.response-verdict .btn {
+    min-width: 120px;
+}
+.response-verdict .btn.active {
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.5);
+}
+.notes-box {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+}
+.keyboard-shortcuts {
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.shortcut {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.save-indicator {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    padding: 10px 20px;
+    background: #27ae60;
+    color: white;
+    border-radius: 6px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 1000;
+}
+.save-indicator.show {
+    opacity: 1;
+}
+.metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+}
+.metadata-item {
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+.metadata-item strong {
+    color: #666;
+}
+{% endblock %}
+
+{% block content %}
+<div class="review-header">
+    <div>
+        <h1>Review: {{ run.agent_name }}</h1>
+        <span class="text-muted">{{ run.id }}</span>
+    </div>
+    <div class="review-nav">
+        <a href="/" class="btn btn-secondary">Back to List</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="progress-info">
+        <div>
+            <strong>Example:</strong>
+            <span id="current-index">1</span> / {{ run.examples|length }}
+        </div>
+        <div>
+            <strong>Reviewed:</strong>
+            <span id="reviewed-count">0</span> / {{ run.examples|length }}
+        </div>
+        <div class="review-nav">
+            <button class="btn btn-outline" id="prev-btn" onclick="navigate(-1)">
+                <span class="keyboard-hint">←</span> Previous
+            </button>
+            <button class="btn btn-outline" id="next-btn" onclick="navigate(1)">
+                Next <span class="keyboard-hint">→</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="example-card">
+    <!-- Populated by JavaScript -->
+</div>
+
+<div class="card">
+    <h3>Keyboard Shortcuts</h3>
+    <div class="keyboard-shortcuts">
+        <div class="shortcut"><span class="keyboard-hint">←</span> / <span class="keyboard-hint">h</span> Previous</div>
+        <div class="shortcut"><span class="keyboard-hint">→</span> / <span class="keyboard-hint">l</span> Next</div>
+        <div class="shortcut"><span class="keyboard-hint">y</span> Response Correct</div>
+        <div class="shortcut"><span class="keyboard-hint">n</span> Response Incorrect</div>
+        <div class="shortcut"><span class="keyboard-hint">1</span>-<span class="keyboard-hint">9</span> Toggle Fact</div>
+        <div class="shortcut"><span class="keyboard-hint">a</span> Agree All</div>
+        <div class="shortcut"><span class="keyboard-hint">d</span> Disagree All</div>
+    </div>
+</div>
+
+<div class="save-indicator" id="save-indicator">Saved!</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const runId = "{{ run.id }}";
+const examples = {{ run.examples | tojson }};
+const totalExamples = examples.length;
+let currentIndex = 0;
+let reviews = {};
+
+// Load existing reviews
+fetch(`/api/review/${runId}`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.reviews) {
+            data.reviews.forEach(r => {
+                reviews[r.example_index] = r;
+            });
+        }
+        updateReviewedCount();
+        renderExample();
+    });
+
+function navigate(delta) {
+    const newIndex = currentIndex + delta;
+    if (newIndex >= 0 && newIndex < totalExamples) {
+        currentIndex = newIndex;
+        renderExample();
+    }
+}
+
+function isErrorResponse(response) {
+    return response && response.startsWith("[ERROR:");
+}
+
+function renderExample() {
+    const ex = examples[currentIndex];
+    const review = reviews[currentIndex] || {};
+    
+    document.getElementById("current-index").textContent = currentIndex + 1;
+    document.getElementById("prev-btn").disabled = currentIndex === 0;
+    document.getElementById("next-btn").disabled = currentIndex === totalExamples - 1;
+    
+    const factsHtml = ex.facts.map((fact, i) => {
+        const llmVerdict = ex.llm_fact_verdicts[i];
+        const humanVerdict = review.fact_verdicts ? review.fact_verdicts[i] : null;
+        
+        return `
+            <div class="fact-item">
+                <div class="fact-text">
+                    <strong>${i + 1}.</strong> ${escapeHtml(fact)}
+                </div>
+                <div class="fact-verdicts">
+                    <span class="verdict-badge ${llmVerdict ? 'verdict-true' : 'verdict-false'}">
+                        LLM: ${llmVerdict ? '✓' : '✗'}
+                    </span>
+                    <span>Human:</span>
+                    <button class="btn ${humanVerdict === true ? 'btn-success active' : 'btn-outline'}" 
+                            onclick="setFactVerdict(${i}, true)">
+                        Agree
+                    </button>
+                    <button class="btn ${humanVerdict === false ? 'btn-danger active' : 'btn-outline'}" 
+                            onclick="setFactVerdict(${i}, false)">
+                        Disagree
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    const metadata = ex.metadata || {};
+    const metadataHtml = `
+        <div class="metadata-grid">
+            <div class="metadata-item"><strong>Type:</strong> ${metadata.type || 'N/A'}</div>
+            <div class="metadata-item"><strong>Difficulty:</strong> ${metadata.difficulty || 'N/A'}</div>
+            <div class="metadata-item"><strong>Scope:</strong> ${metadata.scope || 'N/A'}</div>
+        </div>
+    `;
+    
+    document.getElementById("example-card").innerHTML = `
+        <h2>Example ${currentIndex + 1}</h2>
+        
+        <div style="margin: 10px 0;">
+            <strong>Repository:</strong> 
+            <a href="${escapeHtml(ex.repo_url)}" target="_blank">${escapeHtml(ex.repo_url)}</a>
+            <br>
+            <strong>Commit:</strong> <code>${escapeHtml(ex.commit.slice(0, 12))}</code>
+        </div>
+        
+        ${metadataHtml}
+        
+        <h3>Question</h3>
+        <div class="question-box">${escapeHtml(ex.question)}</div>
+        
+        <h3>Response</h3>
+        <div class="response-verdict">
+            <button class="btn ${review.response_correct === true ? 'btn-success active' : 'btn-outline'}" 
+                    onclick="setResponseVerdict(true)">
+                <span class="keyboard-hint">y</span> Correct
+            </button>
+            <button class="btn ${review.response_correct === false ? 'btn-danger active' : 'btn-outline'}" 
+                    onclick="setResponseVerdict(false)">
+                <span class="keyboard-hint">n</span> Incorrect
+            </button>
+        </div>
+        <div class="response-box ${isErrorResponse(ex.response) ? 'error' : ''}">${escapeHtml(ex.response || '(empty)')}</div>
+        
+        <h3>Expected Facts (from dataset)</h3>
+        <p class="text-muted">Review if the response covers these facts. LLM shows the automated judgment.</p>
+        ${factsHtml}
+        
+        <h3>Notes (optional)</h3>
+        <textarea class="notes-box" id="notes" placeholder="Add any notes about this example..."
+                  onblur="saveNotes()">${escapeHtml(review.notes || '')}</textarea>
+    `;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function setResponseVerdict(correct) {
+    if (!reviews[currentIndex]) {
+        reviews[currentIndex] = { example_index: currentIndex };
+    }
+    reviews[currentIndex].response_correct = correct;
+    saveReview();
+    renderExample();
+}
+
+function setFactVerdict(factIndex, agree) {
+    if (!reviews[currentIndex]) {
+        reviews[currentIndex] = { example_index: currentIndex };
+    }
+    if (!reviews[currentIndex].fact_verdicts) {
+        reviews[currentIndex].fact_verdicts = examples[currentIndex].facts.map(() => null);
+    }
+    reviews[currentIndex].fact_verdicts[factIndex] = agree;
+    saveReview();
+    renderExample();
+}
+
+function setAllFactVerdicts(agree) {
+    if (!reviews[currentIndex]) {
+        reviews[currentIndex] = { example_index: currentIndex };
+    }
+    reviews[currentIndex].fact_verdicts = examples[currentIndex].facts.map(() => agree);
+    saveReview();
+    renderExample();
+}
+
+function saveNotes() {
+    const notes = document.getElementById('notes')?.value || '';
+    if (!reviews[currentIndex]) {
+        reviews[currentIndex] = { example_index: currentIndex };
+    }
+    reviews[currentIndex].notes = notes;
+    saveReview();
+}
+
+function saveReview() {
+    const review = reviews[currentIndex];
+    if (!review) return;
+    
+    fetch(`/api/review/${runId}/example/${currentIndex}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(review)
+    }).then(() => {
+        showSaveIndicator();
+        updateReviewedCount();
+    });
+}
+
+function showSaveIndicator() {
+    const indicator = document.getElementById('save-indicator');
+    indicator.classList.add('show');
+    setTimeout(() => indicator.classList.remove('show'), 1500);
+}
+
+function updateReviewedCount() {
+    const count = Object.values(reviews).filter(r => r.response_correct !== undefined).length;
+    document.getElementById('reviewed-count').textContent = count;
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    // Ignore if typing in textarea
+    if (e.target.tagName === 'TEXTAREA') return;
+    
+    switch(e.key) {
+        case 'ArrowLeft':
+        case 'h':
+            navigate(-1);
+            break;
+        case 'ArrowRight':
+        case 'l':
+            navigate(1);
+            break;
+        case 'y':
+            setResponseVerdict(true);
+            break;
+        case 'n':
+            setResponseVerdict(false);
+            break;
+        case 'a':
+            setAllFactVerdicts(true);
+            break;
+        case 'd':
+            setAllFactVerdicts(false);
+            break;
+        case '1': case '2': case '3': case '4': case '5':
+        case '6': case '7': case '8': case '9':
+            const factIndex = parseInt(e.key) - 1;
+            if (factIndex < examples[currentIndex].facts.length) {
+                const currentVerdict = reviews[currentIndex]?.fact_verdicts?.[factIndex];
+                setFactVerdict(factIndex, currentVerdict !== true);
+            }
+            break;
+    }
+});
+</script>
+{% endblock %}
