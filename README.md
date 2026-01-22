@@ -30,3 +30,4 @@ Since ask-forge is exposed as a library, different service users may request the
 - [ ] Test if model is able to access other repos in workdir
   - [ ] Explore sandboxing to prevent access to other repos in workdir
 - [ ] Revisit tools that we use
+- [ ] Revisit and optimise parallel git clone (currently using a simple lock to prevent race conditions)
