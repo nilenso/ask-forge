@@ -1,5 +1,5 @@
 import { access, mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   type Context,
   complete,
@@ -15,6 +15,20 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function commitishExistsLocally(
+  repoPath: string,
+  commitish: string,
+): Promise<boolean> {
+  const proc = Bun.spawn(["git", "cat-file", "-t", commitish], {
+    cwd: repoPath,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = (await new Response(proc.stdout).text()).trim();
+  const exitCode = await proc.exited;
+  return exitCode === 0 && (output === "commit" || output === "tag");
 }
 
 export type ForgeName = "github" | "gitlab";
@@ -75,18 +89,21 @@ function parseRepoPath(repoUrl: string): {
 export interface ConnectOptions {
   token?: string;
   forge?: ForgeName;
+  commitish?: string;
 }
 
 export interface Repo {
   url: string;
   localPath: string;
   forge: Forge;
+  commitish: string;
+  cachePath: string;
 }
 
 /**
- * Connect to a repository by cloning it locally
+ * Connect to a repository by cloning it locally and creating a worktree
  * @param repoUrl - The URL of the repository to connect to
- * @param options - Connection options (token, forge override)
+ * @param options - Connection options (token, forge override, commitish)
  * @returns A Repo object representing the connected repository
  */
 export async function connect(
@@ -102,24 +119,30 @@ export async function connect(
 
   const forge = forges[forgeName];
   const { username, reponame } = parseRepoPath(repoUrl);
-  const localPath = join("workdir", username, reponame);
+  const basePath = join("workdir", username, reponame);
+  const cachePath = join(basePath, "repo");
+  const commitish = options.commitish ?? "HEAD";
 
-  // Check if repo already exists (has .git directory)
-  const gitDir = join(localPath, ".git");
+  // Check if cache repo already exists
+  const gitDir = join(cachePath, ".git");
   if (await exists(gitDir)) {
-    // Repo already cloned, optionally pull latest
-    const proc = Bun.spawn(["git", "pull"], {
-      cwd: localPath,
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    await proc.exited;
+    // Check if commitish exists locally
+    const hasCommitish = await commitishExistsLocally(cachePath, commitish);
+    if (!hasCommitish) {
+      // Fetch from origin to get the commitish
+      const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
+        cwd: cachePath,
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      await proc.exited;
+    }
   } else {
-    // Clone the repo
-    await mkdir(localPath, { recursive: true });
+    // Clone the repo to cache
+    await mkdir(cachePath, { recursive: true });
 
     const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-    const proc = Bun.spawn(["git", "clone", cloneUrl, localPath], {
+    const proc = Bun.spawn(["git", "clone", cloneUrl, cachePath], {
       stdout: "inherit",
       stderr: "inherit",
     });
@@ -130,10 +153,55 @@ export async function connect(
     }
   }
 
+  // Resolve commitish to a full SHA for worktree directory name
+  const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
+    cwd: cachePath,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const sha = (await new Response(revParseProc.stdout).text()).trim();
+  const revParseExit = await revParseProc.exited;
+  if (revParseExit !== 0) {
+    throw new Error(`Failed to resolve commitish: ${commitish}`);
+  }
+
+  // Create worktree path using short SHA (absolute path for git worktree)
+  const shortSha = sha.slice(0, 12);
+  const worktreePath = resolve(basePath, "trees", shortSha);
+
+  // Check if worktree already exists
+  if (await exists(worktreePath)) {
+    return {
+      url: repoUrl,
+      localPath: worktreePath,
+      forge,
+      commitish: sha,
+      cachePath: resolve(cachePath),
+    };
+  }
+
+  // Create the worktree
+  await mkdir(resolve(basePath, "trees"), { recursive: true });
+  const worktreeProc = Bun.spawn(
+    ["git", "worktree", "add", worktreePath, sha],
+    {
+      cwd: cachePath,
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
+  const worktreeExit = await worktreeProc.exited;
+
+  if (worktreeExit !== 0) {
+    throw new Error(`git worktree add failed with exit code ${worktreeExit}`);
+  }
+
   return {
     url: repoUrl,
-    localPath,
+    localPath: worktreePath,
     forge,
+    commitish: sha,
+    cachePath: resolve(cachePath),
   };
 }
 
