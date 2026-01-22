@@ -75,6 +75,11 @@
             color: #3498db;
         }
         .btn-outline:hover { background: #3498db; color: white; }
+        .btn:disabled, .btn[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
         .badge {
             display: inline-block;
             padding: 4px 8px;

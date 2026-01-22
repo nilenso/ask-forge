@@ -557,18 +557,33 @@ def generate_html_report(results: TestResults, output_path: str):
     print(f"\nHTML report saved to: {output_path}")
 
 
-def save_json_report(results: TestResults, output_dir: str = "reports/runs") -> str:
-    """Save test results as JSON for review system."""
+def save_json_report(results: TestResults, output_dir: str = "reports/runs", run_id: str = None, 
+                     status: str = "complete", target_examples: int = None) -> str:
+    """Save test results as JSON for review system.
+    
+    Args:
+        results: TestResults object with current results
+        output_dir: Directory to save reports
+        run_id: Existing run ID (for updates) or None to generate new one
+        status: "in_progress" or "complete"
+        target_examples: Total number of examples to test (for progress tracking)
+    """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Create run ID from timestamp and agent name
-    run_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{results.agent_name.replace(' ', '-').replace('(', '').replace(')', '')}"
+    # Create run ID from timestamp and agent name if not provided
+    if run_id is None:
+        run_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{results.agent_name.replace(' ', '-').replace('(', '').replace(')', '')}"
     
     # Build JSON structure
     report = {
         "id": run_id,
         "agent_name": results.agent_name,
         "timestamp": datetime.now().isoformat(),
+        "status": status,
+        "progress": {
+            "completed": results.total_examples,
+            "total": target_examples or results.total_examples
+        },
         "examples": [
             {
                 "index": ex.index,
@@ -606,7 +621,9 @@ def save_json_report(results: TestResults, output_dir: str = "reports/runs") -> 
     with open(output_path, 'w') as f:
         json.dump(report, f, indent=2)
     
-    print(f"\nJSON report saved to: {output_path}")
+    if status == "complete":
+        print(f"\nJSON report saved to: {output_path}")
+    
     return run_id
 
 
@@ -688,7 +705,11 @@ def main():
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
     
-    for i in range(min(num_examples, len(dataset))):
+    # Generate run ID upfront for progress tracking
+    run_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{agent.name.replace(' ', '-').replace('(', '').replace(')', '')}"
+    target_examples = min(num_examples, len(dataset))
+    
+    for i in range(target_examples):
         example = dataset[i]
         
         metadata = example['metadata']
@@ -769,6 +790,10 @@ def main():
         print()
         print(f"  Result: {str(passed).lower()}")
         print()
+        
+        # Save progress after each example
+        save_json_report(test_results, run_id=run_id, status="in_progress", target_examples=target_examples)
+        
         print("=" * 60)
         print()
     
@@ -796,8 +821,8 @@ def main():
     print_category_results("RESULTS BY DIFFICULTY", test_results.results_by_difficulty)
     print_category_results("RESULTS BY SCOPE", test_results.results_by_scope)
     
-    # Save JSON report (always)
-    run_id = save_json_report(test_results)
+    # Save JSON report (mark as complete)
+    save_json_report(test_results, run_id=run_id, status="complete", target_examples=target_examples)
     
     # Generate HTML report (optional)
     if generate_html:

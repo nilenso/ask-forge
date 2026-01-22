@@ -17,6 +17,7 @@ Default port: 5000
 import json
 import os
 from datetime import datetime
+import subprocess
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
@@ -38,10 +39,14 @@ def get_all_runs():
             try:
                 with open(filepath) as f:
                     data = json.load(f)
+                    progress = data.get("progress", {})
                     runs.append({
                         "id": data.get("id", filename.replace(".json", "")),
                         "agent_name": data.get("agent_name", "unknown"),
                         "timestamp": data.get("timestamp", ""),
+                        "status": data.get("status", "complete"),
+                        "progress_completed": progress.get("completed", data.get("summary", {}).get("total_examples", 0)),
+                        "progress_total": progress.get("total", data.get("summary", {}).get("total_examples", 0)),
                         "total_examples": data.get("summary", {}).get("total_examples", 0),
                         "total_facts": data.get("summary", {}).get("total_facts", 0),
                         "llm_verified_facts": data.get("summary", {}).get("llm_verified_facts", 0),
@@ -121,6 +126,7 @@ def compute_metrics():
         "by_agent": {},
         "by_difficulty": {},
         "by_type": {},
+        "runs": [],  # Per-run metrics
     }
     
     runs = get_all_runs()
@@ -140,6 +146,20 @@ def compute_metrics():
         if has_reviews:
             metrics["reviewed_runs"] += 1
         
+        # Per-run metrics
+        run_metrics = {
+            "id": run_id,
+            "agent_name": run.get("agent_name", "unknown"),
+            "status": run.get("status", "complete"),
+            "total_examples": len(run.get("examples", [])),
+            "reviewed_examples": 0,
+            "total_facts": sum(len(ex.get("facts", [])) for ex in run.get("examples", [])),
+            "reviewed_facts": 0,
+            "response_correct": 0,
+            "response_incorrect": 0,
+            "review_complete": False,
+        }
+        
         agent = run.get("agent_name", "unknown")
         if agent not in metrics["by_agent"]:
             metrics["by_agent"][agent] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "correct": 0, "incorrect": 0}
@@ -153,15 +173,19 @@ def compute_metrics():
             if not human_review:
                 continue
             
+            run_metrics["reviewed_examples"] += 1
+            
             metrics["reviewed_examples"] += 1
             
             # Response correctness
             if human_review.get("response_correct") is True:
                 metrics["response_correct"] += 1
                 metrics["by_agent"][agent]["correct"] += 1
+                run_metrics["response_correct"] += 1
             elif human_review.get("response_correct") is False:
                 metrics["response_incorrect"] += 1
                 metrics["by_agent"][agent]["incorrect"] += 1
+                run_metrics["response_incorrect"] += 1
             
             # Fact verdicts
             llm_verdicts = example.get("llm_fact_verdicts", [])
@@ -180,6 +204,7 @@ def compute_metrics():
                     continue
                 
                 metrics["reviewed_facts"] += 1
+                run_metrics["reviewed_facts"] += 1
                 
                 if llm_v and human_v:
                     metrics["llm_true_human_true"] += 1
@@ -201,6 +226,10 @@ def compute_metrics():
                     metrics["by_agent"][agent]["tn"] += 1
                     metrics["by_difficulty"][difficulty]["tn"] += 1
                     metrics["by_type"][example_type]["tn"] += 1
+        
+        # Mark run as complete if all examples reviewed
+        run_metrics["review_complete"] = run_metrics["reviewed_examples"] == run_metrics["total_examples"]
+        metrics["runs"].append(run_metrics)
     
     # Compute derived metrics
     total_reviewed = metrics["llm_true_human_true"] + metrics["llm_true_human_false"] + \
@@ -221,12 +250,15 @@ def compute_metrics():
         metrics["recall"] = 0
     
     total_responses = metrics["response_correct"] + metrics["response_incorrect"]
-    metrics["response_accuracy"] = metrics["response_correct"] / total_responses * 100 if total_responses > 0 else 0
+    metrics["agent_response_accuracy"] = metrics["response_correct"] / total_responses * 100 if total_responses > 0 else 0
     
     return metrics
 
 
 # Routes
+
+AVAILABLE_AGENTS = ["ask-forge", "claude"]
+
 
 @app.route("/")
 def index():
@@ -237,7 +269,7 @@ def index():
     for run in runs:
         run["review_status"] = get_review_status(run["id"], run["total_examples"])
     
-    return render_template("index.html", runs=runs)
+    return render_template("index.html", runs=runs, agents=AVAILABLE_AGENTS)
 
 
 @app.route("/review/<run_id>")
@@ -336,9 +368,45 @@ def api_metrics():
     return jsonify(compute_metrics())
 
 
+@app.route("/api/run-test", methods=["POST"])
+def api_run_test():
+    """API: Start a new test run."""
+    data = request.json
+    agent = data.get("agent", "ask-forge")
+    num_examples = data.get("num_examples", 5)
+    
+    # Validate agent
+    if agent not in AVAILABLE_AGENTS:
+        return jsonify({"success": False, "error": f"Unknown agent: {agent}"}), 400
+    
+    # Validate num_examples
+    try:
+        num_examples = int(num_examples)
+        if num_examples < 1 or num_examples > 100:
+            raise ValueError("num_examples must be between 1 and 100")
+    except (ValueError, TypeError) as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    
+    # Run test-dataset.py in background
+    try:
+        cmd = ["python", "test-dataset.py", str(num_examples), agent]
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        return jsonify({
+            "success": True,
+            "message": f"Test started: {num_examples} examples with {agent}"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 if __name__ == "__main__":
     import sys
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5001
     
     print(f"Starting review server on http://localhost:{port}")
     print(f"Reports directory: {os.path.abspath(REPORTS_DIR)}")

@@ -75,6 +75,9 @@
     background: #3498db;
     border-radius: 4px;
 }
+.clickable-table tbody tr:hover {
+    background: #e8f4fc;
+}
 {% endblock %}
 
 {% block content %}
@@ -96,10 +99,10 @@
         <div class="metric-label">LLM Judge Accuracy</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value {% if metrics.response_accuracy >= 80 %}good{% elif metrics.response_accuracy >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.response_accuracy) }}%
+        <div class="metric-value {% if metrics.agent_response_accuracy >= 80 %}good{% elif metrics.agent_response_accuracy >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.agent_response_accuracy) }}%
         </div>
-        <div class="metric-label">Response Accuracy</div>
+        <div class="metric-label">Agent Response Accuracy</div>
     </div>
     <div class="metric-card">
         <div class="metric-value {% if metrics.precision >= 80 %}good{% elif metrics.precision >= 60 %}medium{% else %}poor{% endif %}">
@@ -117,24 +120,42 @@
 
 <div class="card">
     <h2>Review Progress</h2>
-    <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr);">
-        <div>
-            <strong>{{ metrics.reviewed_runs }}</strong> / {{ metrics.total_runs }}
-            <div class="text-muted">Runs Reviewed</div>
-        </div>
-        <div>
-            <strong>{{ metrics.reviewed_examples }}</strong> / {{ metrics.total_examples }}
-            <div class="text-muted">Examples Reviewed</div>
-        </div>
-        <div>
-            <strong>{{ metrics.reviewed_facts }}</strong> / {{ metrics.total_facts }}
-            <div class="text-muted">Facts Reviewed</div>
-        </div>
-        <div>
-            <strong>{{ metrics.response_correct }}</strong> / {{ metrics.response_correct + metrics.response_incorrect }}
-            <div class="text-muted">Responses Correct</div>
-        </div>
-    </div>
+    <table class="breakdown-table clickable-table">
+        <thead>
+            <tr>
+                <th>Run</th>
+                <th>Agent</th>
+                <th>Examples</th>
+                <th>Facts</th>
+                <th>Correct</th>
+                <th>Incorrect</th>
+                <th>Review Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in metrics.runs %}
+            <tr onclick="window.location='/review/{{ run.id }}'" style="cursor: pointer;">
+                <td><code>{{ run.id[:15] }}...</code></td>
+                <td>{{ run.agent_name }}</td>
+                <td>{{ run.reviewed_examples }} / {{ run.total_examples }}</td>
+                <td>{{ run.reviewed_facts }} / {{ run.total_facts }}</td>
+                <td class="text-success">{{ run.response_correct }}</td>
+                <td class="text-danger">{{ run.response_incorrect }}</td>
+                <td>
+                    {% if run.status == 'in_progress' %}
+                        <span class="badge badge-warning">Test Running</span>
+                    {% elif run.review_complete %}
+                        <span class="badge badge-success">Complete</span>
+                    {% elif run.reviewed_examples > 0 %}
+                        <span class="badge badge-warning">In Progress</span>
+                    {% else %}
+                        <span class="badge badge-info">Pending</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <div class="card">

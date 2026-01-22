@@ -95,20 +95,7 @@
     font-size: 14px;
     resize: vertical;
 }
-.keyboard-shortcuts {
-    background: #f8f9fa;
-    padding: 10px 15px;
-    border-radius: 6px;
-    font-size: 13px;
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-.shortcut {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
+
 .save-indicator {
     position: fixed;
     top: 70px;
@@ -164,10 +151,10 @@
         </div>
         <div class="review-nav">
             <button class="btn btn-outline" id="prev-btn" onclick="navigate(-1)">
-                <span class="keyboard-hint">←</span> Previous
+                Previous
             </button>
             <button class="btn btn-outline" id="next-btn" onclick="navigate(1)">
-                Next <span class="keyboard-hint">→</span>
+                Next
             </button>
         </div>
     </div>
@@ -175,19 +162,6 @@
 
 <div class="card" id="example-card">
     <!-- Populated by JavaScript -->
-</div>
-
-<div class="card">
-    <h3>Keyboard Shortcuts</h3>
-    <div class="keyboard-shortcuts">
-        <div class="shortcut"><span class="keyboard-hint">←</span> / <span class="keyboard-hint">h</span> Previous</div>
-        <div class="shortcut"><span class="keyboard-hint">→</span> / <span class="keyboard-hint">l</span> Next</div>
-        <div class="shortcut"><span class="keyboard-hint">y</span> Response Correct</div>
-        <div class="shortcut"><span class="keyboard-hint">n</span> Response Incorrect</div>
-        <div class="shortcut"><span class="keyboard-hint">1</span>-<span class="keyboard-hint">9</span> Toggle Fact</div>
-        <div class="shortcut"><span class="keyboard-hint">a</span> Agree All</div>
-        <div class="shortcut"><span class="keyboard-hint">d</span> Disagree All</div>
-    </div>
 </div>
 
 <div class="save-indicator" id="save-indicator">Saved!</div>
@@ -289,11 +263,11 @@ function renderExample() {
         <div class="response-verdict">
             <button class="btn ${review.response_correct === true ? 'btn-success active' : 'btn-outline'}" 
                     onclick="setResponseVerdict(true)">
-                <span class="keyboard-hint">y</span> Correct
+                Correct
             </button>
             <button class="btn ${review.response_correct === false ? 'btn-danger active' : 'btn-outline'}" 
                     onclick="setResponseVerdict(false)">
-                <span class="keyboard-hint">n</span> Incorrect
+                Incorrect
             </button>
         </div>
         <div class="response-box ${isErrorResponse(ex.response) ? 'error' : ''}">${escapeHtml(ex.response || '(empty)')}</div>
@@ -336,15 +310,6 @@ function setFactVerdict(factIndex, agree) {
     renderExample();
 }
 
-function setAllFactVerdicts(agree) {
-    if (!reviews[currentIndex]) {
-        reviews[currentIndex] = { example_index: currentIndex };
-    }
-    reviews[currentIndex].fact_verdicts = examples[currentIndex].facts.map(() => agree);
-    saveReview();
-    renderExample();
-}
-
 function saveNotes() {
     const notes = document.getElementById('notes')?.value || '';
     if (!reviews[currentIndex]) {
@@ -379,41 +344,6 @@ function updateReviewedCount() {
     document.getElementById('reviewed-count').textContent = count;
 }
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-    // Ignore if typing in textarea
-    if (e.target.tagName === 'TEXTAREA') return;
-    
-    switch(e.key) {
-        case 'ArrowLeft':
-        case 'h':
-            navigate(-1);
-            break;
-        case 'ArrowRight':
-        case 'l':
-            navigate(1);
-            break;
-        case 'y':
-            setResponseVerdict(true);
-            break;
-        case 'n':
-            setResponseVerdict(false);
-            break;
-        case 'a':
-            setAllFactVerdicts(true);
-            break;
-        case 'd':
-            setAllFactVerdicts(false);
-            break;
-        case '1': case '2': case '3': case '4': case '5':
-        case '6': case '7': case '8': case '9':
-            const factIndex = parseInt(e.key) - 1;
-            if (factIndex < examples[currentIndex].facts.length) {
-                const currentVerdict = reviews[currentIndex]?.fact_verdicts?.[factIndex];
-                setFactVerdict(factIndex, currentVerdict !== true);
-            }
-            break;
-    }
-});
+
 </script>
 {% endblock %}
