@@ -557,17 +557,74 @@ def generate_html_report(results: TestResults, output_path: str):
     print(f"\nHTML report saved to: {output_path}")
 
 
+def save_json_report(results: TestResults, output_dir: str = "reports/runs") -> str:
+    """Save test results as JSON for review system."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create run ID from timestamp and agent name
+    run_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{results.agent_name.replace(' ', '-').replace('(', '').replace(')', '')}"
+    
+    # Build JSON structure
+    report = {
+        "id": run_id,
+        "agent_name": results.agent_name,
+        "timestamp": datetime.now().isoformat(),
+        "examples": [
+            {
+                "index": ex.index,
+                "repo_url": ex.repo_url,
+                "commit": ex.commit,
+                "question": ex.question,
+                "response": ex.response,
+                "facts": ex.facts,
+                "llm_fact_verdicts": [v for _, v in ex.verified_facts],
+                "metadata": {
+                    "type": ex.metadata.get("type", "unknown"),
+                    "difficulty": ex.metadata.get("difficulty", "unknown"),
+                    "scope": ex.metadata.get("scope", "unknown"),
+                    "is_core_question": ex.metadata.get("is_core_question", False),
+                    "includes_code": ex.metadata.get("includes_code", False),
+                    "includes_location_hints": ex.metadata.get("includes_location_hints", False),
+                }
+            }
+            for ex in results.examples
+        ],
+        "summary": {
+            "total_examples": results.total_examples,
+            "passed_examples": results.passed_examples,
+            "total_facts": results.total_facts,
+            "llm_verified_facts": results.verified_facts,
+            "accuracy": results.accuracy
+        },
+        "results_by_type": results.results_by_type,
+        "results_by_difficulty": results.results_by_difficulty,
+        "results_by_scope": results.results_by_scope
+    }
+    
+    # Save to file
+    output_path = os.path.join(output_dir, f"{run_id}.json")
+    with open(output_path, 'w') as f:
+        json.dump(report, f, indent=2)
+    
+    print(f"\nJSON report saved to: {output_path}")
+    return run_id
+
+
 def print_usage():
     available = ", ".join(get_available_agents())
-    print(f"Usage: python {sys.argv[0]} [num_examples] [agent]")
+    print(f"Usage: python {sys.argv[0]} [num_examples] [agent] [--html]")
     print(f"  num_examples: Number of examples to test (default: 1)")
     print(f"  agent: Agent to use (default: ask-forge)")
+    print(f"  --html: Also generate HTML report (optional)")
     print(f"  Available agents: {available}")
     print()
     print("Examples:")
     print(f"  python {sys.argv[0]} 5 ask-forge")
     print(f"  python {sys.argv[0]} 10 claude")
-    print(f"  python {sys.argv[0]} 3 claude-haiku")
+    print(f"  python {sys.argv[0]} 3 claude-haiku --html")
+    print()
+    print("Reports are saved to reports/runs/ as JSON")
+    print("Use review-server.py to review results in browser")
     print()
     print("Environment variables can be set in .env file")
 
@@ -576,20 +633,27 @@ def main():
     # Parse arguments
     num_examples = 1
     agent_name = "ask-forge"
+    generate_html = False
     
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ("-h", "--help"):
-            print_usage()
-            sys.exit(0)
+    args = sys.argv[1:]
+    if "-h" in args or "--help" in args:
+        print_usage()
+        sys.exit(0)
+    
+    if "--html" in args:
+        generate_html = True
+        args.remove("--html")
+    
+    if len(args) > 0:
         try:
-            num_examples = int(sys.argv[1])
+            num_examples = int(args[0])
         except ValueError:
-            print(f"Error: Invalid number of examples: {sys.argv[1]}")
+            print(f"Error: Invalid number of examples: {args[0]}")
             print_usage()
             sys.exit(1)
     
-    if len(sys.argv) > 2:
-        agent_name = sys.argv[2]
+    if len(args) > 1:
+        agent_name = args[1]
     
     # Create agent
     try:
@@ -732,9 +796,16 @@ def main():
     print_category_results("RESULTS BY DIFFICULTY", test_results.results_by_difficulty)
     print_category_results("RESULTS BY SCOPE", test_results.results_by_scope)
     
-    # Generate HTML report
-    report_filename = f"test-results-{agent_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.html"
-    generate_html_report(test_results, report_filename)
+    # Save JSON report (always)
+    run_id = save_json_report(test_results)
+    
+    # Generate HTML report (optional)
+    if generate_html:
+        report_filename = f"test-results-{agent_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.html"
+        generate_html_report(test_results, report_filename)
+    
+    print(f"\nTo review results, run: python review-server.py")
+    print(f"Then open http://localhost:5000 in your browser")
 
 
 if __name__ == "__main__":
