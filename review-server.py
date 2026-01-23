@@ -109,7 +109,12 @@ def get_review_status(run_id, total_examples):
 
 
 def compute_metrics():
-    """Compute accuracy metrics across all reviewed runs."""
+    """Compute accuracy metrics across all reviewed runs.
+    
+    Returns two separate metric categories:
+    1. llm_judge: Metrics about how well the LLM judge identifies facts (vs human ground truth)
+    2. agent: Metrics about how well agents answer questions (facts present in responses)
+    """
     metrics = {
         "total_runs": 0,
         "reviewed_runs": 0,
@@ -117,15 +122,29 @@ def compute_metrics():
         "reviewed_examples": 0,
         "total_facts": 0,
         "reviewed_facts": 0,
-        "response_correct": 0,
-        "response_incorrect": 0,
-        "llm_true_human_true": 0,   # True Positive
-        "llm_true_human_false": 0,  # False Positive
-        "llm_false_human_true": 0,  # False Negative
-        "llm_false_human_false": 0, # True Negative
-        "by_agent": {},
-        "by_difficulty": {},
-        "by_type": {},
+        
+        # LLM-as-a-Judge metrics (how well does LLM judge match human judgment)
+        "llm_judge": {
+            "tp": 0,  # LLM said present, human agrees
+            "fp": 0,  # LLM said present, human disagrees
+            "fn": 0,  # LLM said absent, human says present
+            "tn": 0,  # LLM said absent, human agrees
+            "by_difficulty": {},
+            "by_type": {},
+        },
+        
+        # Agent response metrics (how well do agents answer questions)
+        "agent": {
+            "total_responses": 0,
+            "correct_responses": 0,
+            "incorrect_responses": 0,
+            "facts_present": 0,      # Facts human confirmed as present
+            "facts_absent": 0,       # Facts human confirmed as absent
+            "by_agent": {},
+            "by_difficulty": {},
+            "by_type": {},
+        },
+        
         "runs": [],  # Per-run metrics
     }
     
@@ -146,10 +165,20 @@ def compute_metrics():
         if has_reviews:
             metrics["reviewed_runs"] += 1
         
+        agent = run.get("agent_name", "unknown")
+        if agent not in metrics["agent"]["by_agent"]:
+            metrics["agent"]["by_agent"][agent] = {
+                "total_responses": 0,
+                "correct_responses": 0,
+                "incorrect_responses": 0,
+                "facts_present": 0,
+                "facts_absent": 0,
+            }
+        
         # Per-run metrics
         run_metrics = {
             "id": run_id,
-            "agent_name": run.get("agent_name", "unknown"),
+            "agent_name": agent,
             "status": run.get("status", "complete"),
             "total_examples": len(run.get("examples", [])),
             "reviewed_examples": 0,
@@ -157,12 +186,10 @@ def compute_metrics():
             "reviewed_facts": 0,
             "response_correct": 0,
             "response_incorrect": 0,
+            "facts_present": 0,
+            "facts_absent": 0,
             "review_complete": False,
         }
-        
-        agent = run.get("agent_name", "unknown")
-        if agent not in metrics["by_agent"]:
-            metrics["by_agent"][agent] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0, "correct": 0, "incorrect": 0}
         
         for example in run.get("examples", []):
             idx = example["index"]
@@ -174,17 +201,20 @@ def compute_metrics():
                 continue
             
             run_metrics["reviewed_examples"] += 1
-            
             metrics["reviewed_examples"] += 1
             
-            # Response correctness
+            # Agent response correctness (human judgment)
             if human_review.get("response_correct") is True:
-                metrics["response_correct"] += 1
-                metrics["by_agent"][agent]["correct"] += 1
+                metrics["agent"]["correct_responses"] += 1
+                metrics["agent"]["total_responses"] += 1
+                metrics["agent"]["by_agent"][agent]["correct_responses"] += 1
+                metrics["agent"]["by_agent"][agent]["total_responses"] += 1
                 run_metrics["response_correct"] += 1
             elif human_review.get("response_correct") is False:
-                metrics["response_incorrect"] += 1
-                metrics["by_agent"][agent]["incorrect"] += 1
+                metrics["agent"]["incorrect_responses"] += 1
+                metrics["agent"]["total_responses"] += 1
+                metrics["agent"]["by_agent"][agent]["incorrect_responses"] += 1
+                metrics["agent"]["by_agent"][agent]["total_responses"] += 1
                 run_metrics["response_incorrect"] += 1
             
             # Fact verdicts
@@ -194,10 +224,15 @@ def compute_metrics():
             difficulty = example.get("metadata", {}).get("difficulty", "unknown")
             example_type = example.get("metadata", {}).get("type", "unknown")
             
-            if difficulty not in metrics["by_difficulty"]:
-                metrics["by_difficulty"][difficulty] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
-            if example_type not in metrics["by_type"]:
-                metrics["by_type"][example_type] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+            # Initialize breakdown buckets
+            if difficulty not in metrics["llm_judge"]["by_difficulty"]:
+                metrics["llm_judge"]["by_difficulty"][difficulty] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+            if example_type not in metrics["llm_judge"]["by_type"]:
+                metrics["llm_judge"]["by_type"][example_type] = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+            if difficulty not in metrics["agent"]["by_difficulty"]:
+                metrics["agent"]["by_difficulty"][difficulty] = {"facts_present": 0, "facts_absent": 0}
+            if example_type not in metrics["agent"]["by_type"]:
+                metrics["agent"]["by_type"][example_type] = {"facts_present": 0, "facts_absent": 0}
             
             for i, (llm_v, human_v) in enumerate(zip(llm_verdicts, human_verdicts)):
                 if human_v is None:
@@ -206,51 +241,69 @@ def compute_metrics():
                 metrics["reviewed_facts"] += 1
                 run_metrics["reviewed_facts"] += 1
                 
-                if llm_v and human_v:
-                    metrics["llm_true_human_true"] += 1
-                    metrics["by_agent"][agent]["tp"] += 1
-                    metrics["by_difficulty"][difficulty]["tp"] += 1
-                    metrics["by_type"][example_type]["tp"] += 1
-                elif llm_v and not human_v:
-                    metrics["llm_true_human_false"] += 1
-                    metrics["by_agent"][agent]["fp"] += 1
-                    metrics["by_difficulty"][difficulty]["fp"] += 1
-                    metrics["by_type"][example_type]["fp"] += 1
-                elif not llm_v and human_v:
-                    metrics["llm_false_human_true"] += 1
-                    metrics["by_agent"][agent]["fn"] += 1
-                    metrics["by_difficulty"][difficulty]["fn"] += 1
-                    metrics["by_type"][example_type]["fn"] += 1
+                # Agent metrics: track what human says about fact presence
+                if human_v:
+                    metrics["agent"]["facts_present"] += 1
+                    metrics["agent"]["by_agent"][agent]["facts_present"] += 1
+                    metrics["agent"]["by_difficulty"][difficulty]["facts_present"] += 1
+                    metrics["agent"]["by_type"][example_type]["facts_present"] += 1
+                    run_metrics["facts_present"] += 1
                 else:
-                    metrics["llm_false_human_false"] += 1
-                    metrics["by_agent"][agent]["tn"] += 1
-                    metrics["by_difficulty"][difficulty]["tn"] += 1
-                    metrics["by_type"][example_type]["tn"] += 1
+                    metrics["agent"]["facts_absent"] += 1
+                    metrics["agent"]["by_agent"][agent]["facts_absent"] += 1
+                    metrics["agent"]["by_difficulty"][difficulty]["facts_absent"] += 1
+                    metrics["agent"]["by_type"][example_type]["facts_absent"] += 1
+                    run_metrics["facts_absent"] += 1
+                
+                # LLM Judge metrics: compare LLM verdict to human verdict
+                if llm_v and human_v:
+                    metrics["llm_judge"]["tp"] += 1
+                    metrics["llm_judge"]["by_difficulty"][difficulty]["tp"] += 1
+                    metrics["llm_judge"]["by_type"][example_type]["tp"] += 1
+                elif llm_v and not human_v:
+                    metrics["llm_judge"]["fp"] += 1
+                    metrics["llm_judge"]["by_difficulty"][difficulty]["fp"] += 1
+                    metrics["llm_judge"]["by_type"][example_type]["fp"] += 1
+                elif not llm_v and human_v:
+                    metrics["llm_judge"]["fn"] += 1
+                    metrics["llm_judge"]["by_difficulty"][difficulty]["fn"] += 1
+                    metrics["llm_judge"]["by_type"][example_type]["fn"] += 1
+                else:
+                    metrics["llm_judge"]["tn"] += 1
+                    metrics["llm_judge"]["by_difficulty"][difficulty]["tn"] += 1
+                    metrics["llm_judge"]["by_type"][example_type]["tn"] += 1
         
         # Mark run as complete if all examples reviewed
         run_metrics["review_complete"] = run_metrics["reviewed_examples"] == run_metrics["total_examples"]
         metrics["runs"].append(run_metrics)
     
-    # Compute derived metrics
-    total_reviewed = metrics["llm_true_human_true"] + metrics["llm_true_human_false"] + \
-                     metrics["llm_false_human_true"] + metrics["llm_false_human_false"]
+    # Compute derived LLM Judge metrics
+    lj = metrics["llm_judge"]
+    total_judged = lj["tp"] + lj["fp"] + lj["fn"] + lj["tn"]
     
-    if total_reviewed > 0:
-        metrics["llm_accuracy"] = (metrics["llm_true_human_true"] + metrics["llm_false_human_false"]) / total_reviewed * 100
-        
-        tp = metrics["llm_true_human_true"]
-        fp = metrics["llm_true_human_false"]
-        fn = metrics["llm_false_human_true"]
-        
-        metrics["precision"] = tp / (tp + fp) * 100 if (tp + fp) > 0 else 0
-        metrics["recall"] = tp / (tp + fn) * 100 if (tp + fn) > 0 else 0
+    if total_judged > 0:
+        lj["accuracy"] = (lj["tp"] + lj["tn"]) / total_judged * 100
+        lj["precision"] = lj["tp"] / (lj["tp"] + lj["fp"]) * 100 if (lj["tp"] + lj["fp"]) > 0 else 0
+        lj["recall"] = lj["tp"] / (lj["tp"] + lj["fn"]) * 100 if (lj["tp"] + lj["fn"]) > 0 else 0
+        lj["f1"] = 2 * lj["precision"] * lj["recall"] / (lj["precision"] + lj["recall"]) if (lj["precision"] + lj["recall"]) > 0 else 0
     else:
-        metrics["llm_accuracy"] = 0
-        metrics["precision"] = 0
-        metrics["recall"] = 0
+        lj["accuracy"] = 0
+        lj["precision"] = 0
+        lj["recall"] = 0
+        lj["f1"] = 0
     
-    total_responses = metrics["response_correct"] + metrics["response_incorrect"]
-    metrics["agent_response_accuracy"] = metrics["response_correct"] / total_responses * 100 if total_responses > 0 else 0
+    # Compute derived Agent metrics
+    ag = metrics["agent"]
+    if ag["total_responses"] > 0:
+        ag["response_accuracy"] = ag["correct_responses"] / ag["total_responses"] * 100
+    else:
+        ag["response_accuracy"] = 0
+    
+    total_facts_judged = ag["facts_present"] + ag["facts_absent"]
+    if total_facts_judged > 0:
+        ag["fact_coverage"] = ag["facts_present"] / total_facts_judged * 100
+    else:
+        ag["fact_coverage"] = 0
     
     return metrics
 

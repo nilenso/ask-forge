@@ -5,19 +5,19 @@
 {% block extra_styles %}
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
 }
 .metric-card {
     background: white;
     border-radius: 8px;
-    padding: 20px;
+    padding: 15px;
     text-align: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 .metric-value {
-    font-size: 2.5em;
+    font-size: 2em;
     font-weight: bold;
     color: #2c3e50;
 }
@@ -26,24 +26,44 @@
 .metric-value.poor { color: #e74c3c; }
 .metric-label {
     color: #666;
-    font-size: 14px;
+    font-size: 13px;
     margin-top: 5px;
+}
+.section-header {
+    background: #f8f9fa;
+    padding: 15px 20px;
+    margin: 30px -20px 20px -20px;
+    border-top: 3px solid #3498db;
+}
+.section-header.agent {
+    border-top-color: #27ae60;
+}
+.section-header h2 {
+    margin: 0;
+    color: #2c3e50;
+}
+.section-header p {
+    margin: 5px 0 0 0;
+    color: #666;
+    font-size: 14px;
 }
 .confusion-matrix {
     display: grid;
     grid-template-columns: auto repeat(2, 1fr);
     gap: 2px;
-    max-width: 400px;
-    margin: 20px auto;
+    max-width: 350px;
+    margin: 15px auto;
 }
 .cm-cell {
-    padding: 15px;
+    padding: 12px;
     text-align: center;
     background: #f8f9fa;
+    font-size: 14px;
 }
 .cm-header {
     font-weight: bold;
     background: #e9ecef;
+    font-size: 12px;
 }
 .cm-corner {
     background: transparent;
@@ -59,29 +79,37 @@
 .breakdown-table th {
     background: #f8f9fa;
     padding: 10px;
+    font-size: 13px;
 }
 .breakdown-table td {
     padding: 10px;
+    font-size: 13px;
 }
-.progress-bar {
-    height: 8px;
-    background: #eee;
-    border-radius: 4px;
-    overflow: hidden;
-    margin-top: 5px;
+.two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
 }
-.progress-fill {
-    height: 100%;
-    background: #3498db;
-    border-radius: 4px;
+@media (max-width: 900px) {
+    .two-column {
+        grid-template-columns: 1fr;
+    }
 }
-.clickable-table tbody tr:hover {
-    background: #e8f4fc;
+.card-inner {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.card-inner h3 {
+    margin-top: 0;
+    font-size: 16px;
+    color: #2c3e50;
 }
 {% endblock %}
 
 {% block content %}
-<h1>Accuracy Metrics</h1>
+<h1>Metrics Dashboard</h1>
 
 {% if metrics.reviewed_facts == 0 %}
 <div class="card">
@@ -91,191 +119,263 @@
 </div>
 {% else %}
 
+<!-- ==================== AGENT RESPONSE SECTION ==================== -->
+<div class="section-header agent">
+    <h2>Agent Response Metrics</h2>
+    <p>How well do agents answer questions? (Based on human review of responses and fact presence)</p>
+</div>
+
 <div class="metrics-grid">
     <div class="metric-card">
-        <div class="metric-value {% if metrics.llm_accuracy >= 80 %}good{% elif metrics.llm_accuracy >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.llm_accuracy) }}%
+        <div class="metric-value {% if metrics.agent.response_accuracy >= 80 %}good{% elif metrics.agent.response_accuracy >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.agent.response_accuracy) }}%
         </div>
-        <div class="metric-label">LLM Judge Accuracy</div>
+        <div class="metric-label">Response Accuracy</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value {% if metrics.agent_response_accuracy >= 80 %}good{% elif metrics.agent_response_accuracy >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.agent_response_accuracy) }}%
+        <div class="metric-value {% if metrics.agent.fact_coverage >= 80 %}good{% elif metrics.agent.fact_coverage >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.agent.fact_coverage) }}%
         </div>
-        <div class="metric-label">Agent Response Accuracy</div>
+        <div class="metric-label">Fact Coverage</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value {% if metrics.precision >= 80 %}good{% elif metrics.precision >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.precision) }}%
+        <div class="metric-value">
+            {{ metrics.agent.correct_responses }}
+        </div>
+        <div class="metric-label">Correct Responses</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">
+            {{ metrics.agent.incorrect_responses }}
+        </div>
+        <div class="metric-label">Incorrect Responses</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">
+            {{ metrics.agent.facts_present }}
+        </div>
+        <div class="metric-label">Facts Present</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">
+            {{ metrics.agent.facts_absent }}
+        </div>
+        <div class="metric-label">Facts Absent</div>
+    </div>
+</div>
+
+{% if metrics.agent.by_agent %}
+<div class="card">
+    <h3>Performance by Agent</h3>
+    <table class="breakdown-table">
+        <thead>
+            <tr>
+                <th>Agent</th>
+                <th>Responses</th>
+                <th>Correct</th>
+                <th>Incorrect</th>
+                <th>Response Accuracy</th>
+                <th>Facts Present</th>
+                <th>Facts Absent</th>
+                <th>Fact Coverage</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent, stats in metrics.agent.by_agent.items() %}
+            {% set response_acc = (stats.correct_responses / stats.total_responses * 100) if stats.total_responses > 0 else 0 %}
+            {% set total_facts = stats.facts_present + stats.facts_absent %}
+            {% set fact_cov = (stats.facts_present / total_facts * 100) if total_facts > 0 else 0 %}
+            <tr>
+                <td><strong>{{ agent }}</strong></td>
+                <td>{{ stats.total_responses }}</td>
+                <td class="text-success">{{ stats.correct_responses }}</td>
+                <td class="text-danger">{{ stats.incorrect_responses }}</td>
+                <td class="{% if response_acc >= 80 %}text-success{% elif response_acc >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                    {{ "%.1f"|format(response_acc) }}%
+                </td>
+                <td>{{ stats.facts_present }}</td>
+                <td>{{ stats.facts_absent }}</td>
+                <td class="{% if fact_cov >= 80 %}text-success{% elif fact_cov >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                    {{ "%.1f"|format(fact_cov) }}%
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="two-column">
+    {% if metrics.agent.by_difficulty %}
+    <div class="card-inner">
+        <h3>Agent Fact Coverage by Difficulty</h3>
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th>Difficulty</th>
+                    <th>Present</th>
+                    <th>Absent</th>
+                    <th>Coverage</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for difficulty, stats in metrics.agent.by_difficulty.items() %}
+                {% set total = stats.facts_present + stats.facts_absent %}
+                {% set coverage = (stats.facts_present / total * 100) if total > 0 else 0 %}
+                <tr>
+                    <td>{{ difficulty }}</td>
+                    <td>{{ stats.facts_present }}</td>
+                    <td>{{ stats.facts_absent }}</td>
+                    <td class="{% if coverage >= 80 %}text-success{% elif coverage >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(coverage) }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    
+    {% if metrics.agent.by_type %}
+    <div class="card-inner">
+        <h3>Agent Fact Coverage by Type</h3>
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Present</th>
+                    <th>Absent</th>
+                    <th>Coverage</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for type, stats in metrics.agent.by_type.items() %}
+                {% set total = stats.facts_present + stats.facts_absent %}
+                {% set coverage = (stats.facts_present / total * 100) if total > 0 else 0 %}
+                <tr>
+                    <td>{{ type }}</td>
+                    <td>{{ stats.facts_present }}</td>
+                    <td>{{ stats.facts_absent }}</td>
+                    <td class="{% if coverage >= 80 %}text-success{% elif coverage >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.1f"|format(coverage) }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ==================== LLM-AS-A-JUDGE SECTION ==================== -->
+<div class="section-header">
+    <h2>LLM-as-a-Judge Metrics</h2>
+    <p>How well does the LLM judge identify whether facts are present in agent responses? (Compared to human ground truth)</p>
+</div>
+
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.llm_judge.accuracy >= 80 %}good{% elif metrics.llm_judge.accuracy >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.llm_judge.accuracy) }}%
+        </div>
+        <div class="metric-label">Accuracy</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.llm_judge.precision >= 80 %}good{% elif metrics.llm_judge.precision >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.llm_judge.precision) }}%
         </div>
         <div class="metric-label">Precision</div>
     </div>
     <div class="metric-card">
-        <div class="metric-value {% if metrics.recall >= 80 %}good{% elif metrics.recall >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.recall) }}%
+        <div class="metric-value {% if metrics.llm_judge.recall >= 80 %}good{% elif metrics.llm_judge.recall >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.llm_judge.recall) }}%
         </div>
         <div class="metric-label">Recall</div>
     </div>
-</div>
-
-<div class="card">
-    <h2>Review Progress</h2>
-    <table class="breakdown-table clickable-table">
-        <thead>
-            <tr>
-                <th>Run</th>
-                <th>Agent</th>
-                <th>Examples</th>
-                <th>Facts</th>
-                <th>Correct</th>
-                <th>Incorrect</th>
-                <th>Review Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for run in metrics.runs %}
-            <tr onclick="window.location='/review/{{ run.id }}'" style="cursor: pointer;">
-                <td><code>{{ run.id[:15] }}...</code></td>
-                <td>{{ run.agent_name }}</td>
-                <td>{{ run.reviewed_examples }} / {{ run.total_examples }}</td>
-                <td>{{ run.reviewed_facts }} / {{ run.total_facts }}</td>
-                <td class="text-success">{{ run.response_correct }}</td>
-                <td class="text-danger">{{ run.response_incorrect }}</td>
-                <td>
-                    {% if run.status == 'in_progress' %}
-                        <span class="badge badge-warning">Test Running</span>
-                    {% elif run.review_complete %}
-                        <span class="badge badge-success">Complete</span>
-                    {% elif run.reviewed_examples > 0 %}
-                        <span class="badge badge-warning">In Progress</span>
-                    {% else %}
-                        <span class="badge badge-info">Pending</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<div class="card">
-    <h2>Confusion Matrix</h2>
-    <p class="text-muted">Comparing LLM Judge verdicts with Human verdicts</p>
-    
-    <div class="confusion-matrix">
-        <div class="cm-cell cm-corner"></div>
-        <div class="cm-cell cm-header">Human: True</div>
-        <div class="cm-cell cm-header">Human: False</div>
-        
-        <div class="cm-cell cm-header">LLM: True</div>
-        <div class="cm-cell cm-tp">
-            <strong>{{ metrics.llm_true_human_true }}</strong>
-            <div class="text-muted">True Positive</div>
+    <div class="metric-card">
+        <div class="metric-value {% if metrics.llm_judge.f1 >= 80 %}good{% elif metrics.llm_judge.f1 >= 60 %}medium{% else %}poor{% endif %}">
+            {{ "%.1f"|format(metrics.llm_judge.f1) }}%
         </div>
-        <div class="cm-cell cm-fp">
-            <strong>{{ metrics.llm_true_human_false }}</strong>
-            <div class="text-muted">False Positive</div>
-        </div>
-        
-        <div class="cm-cell cm-header">LLM: False</div>
-        <div class="cm-cell cm-fn">
-            <strong>{{ metrics.llm_false_human_true }}</strong>
-            <div class="text-muted">False Negative</div>
-        </div>
-        <div class="cm-cell cm-tn">
-            <strong>{{ metrics.llm_false_human_false }}</strong>
-            <div class="text-muted">True Negative</div>
-        </div>
-    </div>
-    
-    <div style="max-width: 600px; margin: 20px auto;">
-        <p><strong>Interpretation:</strong></p>
-        <ul style="margin-left: 20px;">
-            <li><span class="badge badge-success">TP ({{ metrics.llm_true_human_true }})</span> LLM correctly identified fact as present</li>
-            <li><span class="badge badge-danger">FP ({{ metrics.llm_true_human_false }})</span> LLM incorrectly said fact was present</li>
-            <li><span class="badge badge-warning">FN ({{ metrics.llm_false_human_true }})</span> LLM missed a fact that was present</li>
-            <li><span class="badge badge-info">TN ({{ metrics.llm_false_human_false }})</span> LLM correctly identified fact as absent</li>
-        </ul>
+        <div class="metric-label">F1 Score</div>
     </div>
 </div>
 
-{% if metrics.by_agent %}
-<div class="card">
-    <h2>By Agent</h2>
-    <table class="breakdown-table">
-        <thead>
-            <tr>
-                <th>Agent</th>
-                <th>Responses Correct</th>
-                <th>TP</th>
-                <th>FP</th>
-                <th>FN</th>
-                <th>TN</th>
-                <th>Accuracy</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for agent, stats in metrics.by_agent.items() %}
-            {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
-            {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
-            <tr>
-                <td>{{ agent }}</td>
-                <td>{{ stats.correct }} / {{ stats.correct + stats.incorrect }}</td>
-                <td>{{ stats.tp }}</td>
-                <td>{{ stats.fp }}</td>
-                <td>{{ stats.fn }}</td>
-                <td>{{ stats.tn }}</td>
-                <td>
-                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
-                        {{ "%.1f"|format(accuracy) }}%
-                    </span>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div class="two-column">
+    <div class="card-inner">
+        <h3>Confusion Matrix</h3>
+        <div class="confusion-matrix">
+            <div class="cm-cell cm-corner"></div>
+            <div class="cm-cell cm-header">Human: Present</div>
+            <div class="cm-cell cm-header">Human: Absent</div>
+            
+            <div class="cm-cell cm-header">LLM: Present</div>
+            <div class="cm-cell cm-tp">
+                <strong>{{ metrics.llm_judge.tp }}</strong><br>
+                <small>TP</small>
+            </div>
+            <div class="cm-cell cm-fp">
+                <strong>{{ metrics.llm_judge.fp }}</strong><br>
+                <small>FP</small>
+            </div>
+            
+            <div class="cm-cell cm-header">LLM: Absent</div>
+            <div class="cm-cell cm-fn">
+                <strong>{{ metrics.llm_judge.fn }}</strong><br>
+                <small>FN</small>
+            </div>
+            <div class="cm-cell cm-tn">
+                <strong>{{ metrics.llm_judge.tn }}</strong><br>
+                <small>TN</small>
+            </div>
+        </div>
+        <p style="font-size: 12px; color: #666; margin: 10px 0 0 0;">
+            <strong>TP:</strong> LLM correct (fact present) |
+            <strong>FP:</strong> LLM wrong (said present) |
+            <strong>FN:</strong> LLM missed (fact was present) |
+            <strong>TN:</strong> LLM correct (fact absent)
+        </p>
+    </div>
+    
+    <div class="card-inner">
+        <h3>By Difficulty</h3>
+        {% if metrics.llm_judge.by_difficulty %}
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    <th>Difficulty</th>
+                    <th>TP</th>
+                    <th>FP</th>
+                    <th>FN</th>
+                    <th>TN</th>
+                    <th>Acc</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for difficulty, stats in metrics.llm_judge.by_difficulty.items() %}
+                {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
+                {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
+                <tr>
+                    <td>{{ difficulty }}</td>
+                    <td>{{ stats.tp }}</td>
+                    <td>{{ stats.fp }}</td>
+                    <td>{{ stats.fn }}</td>
+                    <td>{{ stats.tn }}</td>
+                    <td class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                        {{ "%.0f"|format(accuracy) }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted">No data yet</p>
+        {% endif %}
+    </div>
 </div>
-{% endif %}
 
-{% if metrics.by_difficulty %}
-<div class="card">
-    <h2>By Difficulty</h2>
-    <table class="breakdown-table">
-        <thead>
-            <tr>
-                <th>Difficulty</th>
-                <th>TP</th>
-                <th>FP</th>
-                <th>FN</th>
-                <th>TN</th>
-                <th>Accuracy</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for difficulty, stats in metrics.by_difficulty.items() %}
-            {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
-            {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
-            <tr>
-                <td>{{ difficulty }}</td>
-                <td>{{ stats.tp }}</td>
-                <td>{{ stats.fp }}</td>
-                <td>{{ stats.fn }}</td>
-                <td>{{ stats.tn }}</td>
-                <td>
-                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
-                        {{ "%.1f"|format(accuracy) }}%
-                    </span>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
-
-{% if metrics.by_type %}
-<div class="card">
-    <h2>By Question Type</h2>
+{% if metrics.llm_judge.by_type %}
+<div class="card" style="margin-top: 20px;">
+    <h3>LLM Judge Accuracy by Question Type</h3>
     <table class="breakdown-table">
         <thead>
             <tr>
@@ -285,23 +385,27 @@
                 <th>FN</th>
                 <th>TN</th>
                 <th>Accuracy</th>
+                <th>Precision</th>
+                <th>Recall</th>
             </tr>
         </thead>
         <tbody>
-            {% for type, stats in metrics.by_type.items() %}
+            {% for type, stats in metrics.llm_judge.by_type.items() %}
             {% set total = stats.tp + stats.fp + stats.fn + stats.tn %}
             {% set accuracy = ((stats.tp + stats.tn) / total * 100) if total > 0 else 0 %}
+            {% set precision = (stats.tp / (stats.tp + stats.fp) * 100) if (stats.tp + stats.fp) > 0 else 0 %}
+            {% set recall = (stats.tp / (stats.tp + stats.fn) * 100) if (stats.tp + stats.fn) > 0 else 0 %}
             <tr>
                 <td>{{ type }}</td>
                 <td>{{ stats.tp }}</td>
                 <td>{{ stats.fp }}</td>
                 <td>{{ stats.fn }}</td>
                 <td>{{ stats.tn }}</td>
-                <td>
-                    <span class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
-                        {{ "%.1f"|format(accuracy) }}%
-                    </span>
+                <td class="{% if accuracy >= 80 %}text-success{% elif accuracy >= 60 %}text-muted{% else %}text-danger{% endif %}">
+                    {{ "%.1f"|format(accuracy) }}%
                 </td>
+                <td>{{ "%.1f"|format(precision) }}%</td>
+                <td>{{ "%.1f"|format(recall) }}%</td>
             </tr>
             {% endfor %}
         </tbody>

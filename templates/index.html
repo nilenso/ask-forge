@@ -1,13 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Test Runs - Review System{% endblock %}
+{% block title %}Review System{% endblock %}
+
+{% block extra_styles %}
+.clickable-table tbody tr:hover {
+    background: #e8f4fc;
+}
+{% endblock %}
 
 {% block content %}
-<h1>Test Runs</h1>
+<h1>Review System</h1>
 
-{% if runs %}
+<!-- Review Progress Section -->
 <div class="card">
-    <table>
+    <h2>Review Progress</h2>
+    <p class="text-muted" style="margin-bottom: 15px;">Click a row to review that run</p>
+    {% if runs %}
+    <table class="clickable-table">
         <thead>
             <tr>
                 <th>Run ID</th>
@@ -15,21 +24,18 @@
                 <th>Date</th>
                 <th>Examples</th>
                 <th>Facts</th>
-                <th>LLM Accuracy</th>
                 <th>Review Status</th>
-                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for run in runs %}
-            <tr>
-                <td><code>{{ run.id[:20] }}...</code></td>
+            <tr onclick="window.location='/review/{{ run.id }}'" style="cursor: pointer;">
+                <td><code>{{ run.id[:15] }}...</code></td>
                 <td>{{ run.agent_name }}</td>
                 <td>{{ run.timestamp[:16] if run.timestamp else 'N/A' }}</td>
                 <td>
                     {% if run.status == 'in_progress' %}
                         <span class="text-muted">{{ run.progress_completed }}/{{ run.progress_total }}</span>
-                        <span class="badge badge-warning">Testing...</span>
                     {% else %}
                         {{ run.total_examples }}
                     {% endif %}
@@ -37,17 +43,7 @@
                 <td>{{ run.total_facts }}</td>
                 <td>
                     {% if run.status == 'in_progress' %}
-                        <span class="text-muted">-</span>
-                    {% else %}
-                        <span class="{% if run.accuracy >= 70 %}text-success{% elif run.accuracy >= 40 %}text-muted{% else %}text-danger{% endif %}">
-                            {{ "%.1f"|format(run.accuracy) }}%
-                        </span>
-                        <span class="text-muted">({{ run.llm_verified_facts }}/{{ run.total_facts }})</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if run.status == 'in_progress' %}
-                        <span class="badge badge-warning">Test In Progress</span>
+                        <span class="badge badge-warning">Test Running</span>
                     {% elif run.review_status.complete %}
                         <span class="badge badge-success">Complete</span>
                     {% elif run.review_status.reviewed > 0 %}
@@ -56,20 +52,15 @@
                         <span class="badge badge-info">Pending</span>
                     {% endif %}
                 </td>
-                <td>
-                    <a href="/review/{{ run.id }}" class="btn btn-primary">Review</a>
-                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-</div>
-{% else %}
-<div class="card">
+    {% else %}
     <p>No test runs found.</p>
-    <p class="text-muted">Run <code>python test-dataset.py [num_examples] [agent]</code> to create test runs.</p>
+    <p class="text-muted">Run a test below or use <code>python test-dataset.py [num_examples] [agent]</code></p>
+    {% endif %}
 </div>
-{% endif %}
 
 <div class="card">
     <h2>Run New Test</h2>
