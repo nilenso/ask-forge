@@ -1,110 +1,55 @@
 {
-  "run_id": "20260122-161033-ask-forge",
-  "reviewed_at": "2026-01-22T16:36:38.456705",
-  "reviews": [
-    {
-      "example_index": 0,
-      "response_correct": false
-    },
-    {
-      "example_index": 1,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true,
-        true
-      ],
-      "response_correct": true
-    },
-    {
-      "example_index": 2,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 4,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 5,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 6,
-      "fact_verdicts": [
-        true,
-        true
-      ],
-      "response_correct": true
-    },
-    {
-      "example_index": 3,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 7,
-      "response_correct": true,
-      "fact_verdicts": [
-        null,
-        null,
-        null,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 8,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true,
-        true
-      ]
-    },
-    {
-      "example_index": 9,
-      "response_correct": true,
-      "fact_verdicts": [
-        true,
-        true,
-        true,
-        true,
-        true
-      ]
-    }
-  ]
+	"run_id": "20260122-161033-ask-forge",
+	"reviewed_at": "2026-01-22T16:36:38.456705",
+	"reviews": [
+		{
+			"example_index": 0,
+			"response_correct": false
+		},
+		{
+			"example_index": 1,
+			"fact_verdicts": [true, true, true, true, true],
+			"response_correct": true
+		},
+		{
+			"example_index": 2,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true]
+		},
+		{
+			"example_index": 4,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true, true]
+		},
+		{
+			"example_index": 5,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true, true, true, true]
+		},
+		{
+			"example_index": 6,
+			"fact_verdicts": [true, true],
+			"response_correct": true
+		},
+		{
+			"example_index": 3,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true, true, true]
+		},
+		{
+			"example_index": 7,
+			"response_correct": true,
+			"fact_verdicts": [null, null, null, true, true, true, true, true, true, true, true]
+		},
+		{
+			"example_index": 8,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true, true, true]
+		},
+		{
+			"example_index": 9,
+			"response_correct": true,
+			"fact_verdicts": [true, true, true, true, true]
+		}
+	]
 }

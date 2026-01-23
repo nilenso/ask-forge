@@ -1,180 +1,154 @@
 {
-  "id": "20260122-165158-ask-forge",
-  "agent_name": "ask-forge",
-  "timestamp": "2026-01-22T16:54:30.540990",
-  "status": "complete",
-  "progress": {
-    "completed": 5,
-    "total": 5
-  },
-  "examples": [
-    {
-      "index": 0,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
-      "response": "[ERROR: Max iterations reached without a final answer.]",
-      "facts": [
-        "The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
-        "pad_collate_fn.inner handles the `\"input_ids\"` key.",
-        "If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
-        "Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    },
-    {
-      "index": 1,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
-      "response": "Now I found the relevant code. Let me check line 250 more carefully:\n\nBased on the code in `src/transformers/models/superpoint/modeling_superpoint.py`, I can see the answer:\n\n## Scaling Factor: **8**\n\n**Location:** `src/transformers/models/superpoint/modeling_superpoint.py:250`\n\n**Code:**\n```python\nkeypoints, scores = remove_keypoints_from_borders(\n    keypoints, scores, self.border_removal_distance, height * 8, width * 8\n)\n```\n\n**Context:**\n- The feature map dimensions (`height` and `width`) are multiplied by **8** when checking if keypoints are near image borders\n- This is because the encoder uses 3 pooling layers (each with stride 2), reducing dimensions by 2\u00b3 = 8\n- The keypoint coordinates are in the full image space, while `height` and `width` are the feature map dimensions\n- Therefore, to properly check border proximity in the original image space, the feature map dimensions are scaled by 8",
-      "facts": [
-        "The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
-        "The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
-        "The call to remove_keypoints_from_borders includes height * 8 as an argument.",
-        "The call to remove_keypoints_from_borders includes width * 8 as an argument.",
-        "The scaling factor used in the call to remove_keypoints_from_borders is 8."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        true,
-        true,
-        true,
-        true
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": true,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    },
-    {
-      "index": 2,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
-      "response": "Perfect! I found it. The attribute is `_supports_param_buffer_assignment` and it's set to `False` in the GPT2Model class at line 687.\n\n## Answer\n\n**`_supports_param_buffer_assignment`**\n\nThis internal attribute is set to `False` in the `GPT2Model` class (line 687 in `src/transformers/models/gpt2/modeling_gpt2.py`), which disables fast parameter buffer assignment by default for the GPT2 model.",
-      "facts": [
-        "The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
-        "The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
-        "Fast parameter buffer assignment is disabled by default."
-      ],
-      "llm_fact_verdicts": [
-        true,
-        true,
-        true
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": true
-      }
-    },
-    {
-      "index": 3,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "In the model's forward pass, how is the dtype of the input padding mask determined?",
-      "response": "Perfect! Now I can see the exact location. Let me extract the specific lines:\n\n## Answer\n\nIn the model's forward pass, the dtype of the input padding mask is determined by **the dtype of the input tensor** (specifically `input_tensor.dtype`).\n\n**Location:** `src/transformers/models/bart/modeling_bart.py:670-676`\n\n```python\npadding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(\n    causal_mask.device\n)\npadding_mask = padding_mask == 0\ncausal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(\n    padding_mask, min_dtype\n)\n```\n\n**How it's determined:**\n\n1. **The `dtype` variable is set from `input_tensor.dtype`** (line 655):\n   ```python\n   dtype = input_tensor.dtype\n   ```\n\n2. **The causal mask is created with this dtype** (line 657-659):\n   ```python\n   causal_mask = torch.full(\n       (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=cache_position.device\n   )\n   ```\n\n3. **The padding_mask inherits the dtype from causal_mask** when it's computed:\n   - First, elements from `causal_mask` (which has `dtype`) and `attention_mask` are added\n   - The `.to(causal_mask.device)` call only changes the device, not the dtype\n   - The comparison `padding_mask == 0` converts it to a boolean mask\n   - This boolean mask is then used in `masked_fill` to fill positions in the original causal_mask\n\n**Key point:** The dtype flows from `input_tensor.dtype` \u2192 `causal_mask.dtype` \u2192 operations involving `padding_mask`, where `input_tensor` is typically the input embeddings (`inputs_embeds`).",
-      "facts": [
-        "VitsModel.forward is defined in src/transformers/models/vits/modeling_vits.py.",
-        "VitsModel.forward sets mask_dtype equal to self.text_encoder.embed_tokens.weight.dtype.",
-        "VitsModel.forward casts the attention_mask tensor using .to(mask_dtype).",
-        "VitsModel.forward casts a tensor of ones using .to(mask_dtype).",
-        "The padding\u2010mask dtype is taken from text_encoder.embed_tokens.weight.dtype."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": true,
-        "includes_code": false,
-        "includes_location_hints": true
-      }
-    },
-    {
-      "index": 4,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "At what point in the extractive QA postprocessing are low-precision start and end logits cast back to full precision?",
-      "response": "Perfect! I found it. Let me look at the exact lines:\n\nIn **src/transformers/pipelines/document_question_answering.py**, lines **514-517**:\n\n```python\nif self.framework == \"pt\" and output[\"start_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"start_logits\"] = output[\"start_logits\"].float()\nif self.framework == \"pt\" and output[\"end_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"end_logits\"] = output[\"end_logits\"].float()\n```\n\nThis happens in the `postprocess_extractive_qa` method, **before** calling `select_starts_ends` (line 520).\n\n## Summary\n\nIn the extractive QA postprocessing pipeline for document question answering, **low-precision (bfloat16/float16) start and end logits are cast back to full precision (float32) at the very beginning of the `postprocess_extractive_qa` method** (lines 514-517 in `src/transformers/pipelines/document_question_answering.py`), immediately before they are passed to the `select_starts_ends` function for further processing.",
-      "facts": [
-        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa is defined in src/transformers/pipelines/document_question_answering.py.",
-        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa contains a loop over model_outputs.",
-        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any start_logits in bfloat16 or float16 are cast to full precision via .float().",
-        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any end_logits in bfloat16 or float16 are cast to full precision via .float()."
-      ],
-      "llm_fact_verdicts": [
-        true,
-        false,
-        true,
-        true
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    }
-  ],
-  "summary": {
-    "total_examples": 5,
-    "passed_examples": 3,
-    "total_facts": 21,
-    "llm_verified_facts": 10,
-    "accuracy": 47.61904761904761
-  },
-  "results_by_type": {
-    "open_question": {
-      "total": 21,
-      "verified": 10,
-      "examples": 5,
-      "passed": 3
-    }
-  },
-  "results_by_difficulty": {
-    "moderate": {
-      "total": 21,
-      "verified": 10,
-      "examples": 5,
-      "passed": 3
-    }
-  },
-  "results_by_scope": {
-    "deep": {
-      "total": 21,
-      "verified": 10,
-      "examples": 5,
-      "passed": 3
-    }
-  }
+	"id": "20260122-165158-ask-forge",
+	"agent_name": "ask-forge",
+	"timestamp": "2026-01-22T16:54:30.540990",
+	"status": "complete",
+	"progress": {
+		"completed": 5,
+		"total": 5
+	},
+	"examples": [
+		{
+			"index": 0,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
+			"response": "[ERROR: Max iterations reached without a final answer.]",
+			"facts": [
+				"The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
+				"pad_collate_fn.inner handles the `\"input_ids\"` key.",
+				"If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
+				"Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
+			],
+			"llm_fact_verdicts": [false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		},
+		{
+			"index": 1,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
+			"response": "Now I found the relevant code. Let me check line 250 more carefully:\n\nBased on the code in `src/transformers/models/superpoint/modeling_superpoint.py`, I can see the answer:\n\n## Scaling Factor: **8**\n\n**Location:** `src/transformers/models/superpoint/modeling_superpoint.py:250`\n\n**Code:**\n```python\nkeypoints, scores = remove_keypoints_from_borders(\n    keypoints, scores, self.border_removal_distance, height * 8, width * 8\n)\n```\n\n**Context:**\n- The feature map dimensions (`height` and `width`) are multiplied by **8** when checking if keypoints are near image borders\n- This is because the encoder uses 3 pooling layers (each with stride 2), reducing dimensions by 2\u00b3 = 8\n- The keypoint coordinates are in the full image space, while `height` and `width` are the feature map dimensions\n- Therefore, to properly check border proximity in the original image space, the feature map dimensions are scaled by 8",
+			"facts": [
+				"The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
+				"The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
+				"The call to remove_keypoints_from_borders includes height * 8 as an argument.",
+				"The call to remove_keypoints_from_borders includes width * 8 as an argument.",
+				"The scaling factor used in the call to remove_keypoints_from_borders is 8."
+			],
+			"llm_fact_verdicts": [false, true, true, true, true],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": true,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		},
+		{
+			"index": 2,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
+			"response": "Perfect! I found it. The attribute is `_supports_param_buffer_assignment` and it's set to `False` in the GPT2Model class at line 687.\n\n## Answer\n\n**`_supports_param_buffer_assignment`**\n\nThis internal attribute is set to `False` in the `GPT2Model` class (line 687 in `src/transformers/models/gpt2/modeling_gpt2.py`), which disables fast parameter buffer assignment by default for the GPT2 model.",
+			"facts": [
+				"The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
+				"The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
+				"Fast parameter buffer assignment is disabled by default."
+			],
+			"llm_fact_verdicts": [true, true, true],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": true
+			}
+		},
+		{
+			"index": 3,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "In the model's forward pass, how is the dtype of the input padding mask determined?",
+			"response": "Perfect! Now I can see the exact location. Let me extract the specific lines:\n\n## Answer\n\nIn the model's forward pass, the dtype of the input padding mask is determined by **the dtype of the input tensor** (specifically `input_tensor.dtype`).\n\n**Location:** `src/transformers/models/bart/modeling_bart.py:670-676`\n\n```python\npadding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(\n    causal_mask.device\n)\npadding_mask = padding_mask == 0\ncausal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(\n    padding_mask, min_dtype\n)\n```\n\n**How it's determined:**\n\n1. **The `dtype` variable is set from `input_tensor.dtype`** (line 655):\n   ```python\n   dtype = input_tensor.dtype\n   ```\n\n2. **The causal mask is created with this dtype** (line 657-659):\n   ```python\n   causal_mask = torch.full(\n       (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=cache_position.device\n   )\n   ```\n\n3. **The padding_mask inherits the dtype from causal_mask** when it's computed:\n   - First, elements from `causal_mask` (which has `dtype`) and `attention_mask` are added\n   - The `.to(causal_mask.device)` call only changes the device, not the dtype\n   - The comparison `padding_mask == 0` converts it to a boolean mask\n   - This boolean mask is then used in `masked_fill` to fill positions in the original causal_mask\n\n**Key point:** The dtype flows from `input_tensor.dtype` \u2192 `causal_mask.dtype` \u2192 operations involving `padding_mask`, where `input_tensor` is typically the input embeddings (`inputs_embeds`).",
+			"facts": [
+				"VitsModel.forward is defined in src/transformers/models/vits/modeling_vits.py.",
+				"VitsModel.forward sets mask_dtype equal to self.text_encoder.embed_tokens.weight.dtype.",
+				"VitsModel.forward casts the attention_mask tensor using .to(mask_dtype).",
+				"VitsModel.forward casts a tensor of ones using .to(mask_dtype).",
+				"The padding\u2010mask dtype is taken from text_encoder.embed_tokens.weight.dtype."
+			],
+			"llm_fact_verdicts": [false, false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": true,
+				"includes_code": false,
+				"includes_location_hints": true
+			}
+		},
+		{
+			"index": 4,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "At what point in the extractive QA postprocessing are low-precision start and end logits cast back to full precision?",
+			"response": "Perfect! I found it. Let me look at the exact lines:\n\nIn **src/transformers/pipelines/document_question_answering.py**, lines **514-517**:\n\n```python\nif self.framework == \"pt\" and output[\"start_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"start_logits\"] = output[\"start_logits\"].float()\nif self.framework == \"pt\" and output[\"end_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"end_logits\"] = output[\"end_logits\"].float()\n```\n\nThis happens in the `postprocess_extractive_qa` method, **before** calling `select_starts_ends` (line 520).\n\n## Summary\n\nIn the extractive QA postprocessing pipeline for document question answering, **low-precision (bfloat16/float16) start and end logits are cast back to full precision (float32) at the very beginning of the `postprocess_extractive_qa` method** (lines 514-517 in `src/transformers/pipelines/document_question_answering.py`), immediately before they are passed to the `select_starts_ends` function for further processing.",
+			"facts": [
+				"DocumentQuestionAnsweringPipeline.postprocess_extractive_qa is defined in src/transformers/pipelines/document_question_answering.py.",
+				"DocumentQuestionAnsweringPipeline.postprocess_extractive_qa contains a loop over model_outputs.",
+				"Immediately inside the loop over model_outputs and before calling select_starts_ends, any start_logits in bfloat16 or float16 are cast to full precision via .float().",
+				"Immediately inside the loop over model_outputs and before calling select_starts_ends, any end_logits in bfloat16 or float16 are cast to full precision via .float()."
+			],
+			"llm_fact_verdicts": [true, false, true, true],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		}
+	],
+	"summary": {
+		"total_examples": 5,
+		"passed_examples": 3,
+		"total_facts": 21,
+		"llm_verified_facts": 10,
+		"accuracy": 47.61904761904761
+	},
+	"results_by_type": {
+		"open_question": {
+			"total": 21,
+			"verified": 10,
+			"examples": 5,
+			"passed": 3
+		}
+	},
+	"results_by_difficulty": {
+		"moderate": {
+			"total": 21,
+			"verified": 10,
+			"examples": 5,
+			"passed": 3
+		}
+	},
+	"results_by_scope": {
+		"deep": {
+			"total": 21,
+			"verified": 10,
+			"examples": 5,
+			"passed": 3
+		}
+	}
 }

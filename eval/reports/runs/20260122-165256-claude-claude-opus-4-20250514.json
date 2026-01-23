@@ -1,180 +1,154 @@
 {
-  "id": "20260122-165256-claude-claude-opus-4-20250514",
-  "agent_name": "claude (claude-opus-4-20250514)",
-  "timestamp": "2026-01-22T16:52:56.311437",
-  "status": "complete",
-  "progress": {
-    "completed": 5,
-    "total": 5
-  },
-  "examples": [
-    {
-      "index": 0,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
-      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
-      "facts": [
-        "The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
-        "pad_collate_fn.inner handles the `\"input_ids\"` key.",
-        "If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
-        "Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    },
-    {
-      "index": 1,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
-      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
-      "facts": [
-        "The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
-        "The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
-        "The call to remove_keypoints_from_borders includes height * 8 as an argument.",
-        "The call to remove_keypoints_from_borders includes width * 8 as an argument.",
-        "The scaling factor used in the call to remove_keypoints_from_borders is 8."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": true,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    },
-    {
-      "index": 2,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
-      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
-      "facts": [
-        "The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
-        "The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
-        "Fast parameter buffer assignment is disabled by default."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": true
-      }
-    },
-    {
-      "index": 3,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "In the model's forward pass, how is the dtype of the input padding mask determined?",
-      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
-      "facts": [
-        "VitsModel.forward is defined in src/transformers/models/vits/modeling_vits.py.",
-        "VitsModel.forward sets mask_dtype equal to self.text_encoder.embed_tokens.weight.dtype.",
-        "VitsModel.forward casts the attention_mask tensor using .to(mask_dtype).",
-        "VitsModel.forward casts a tensor of ones using .to(mask_dtype).",
-        "The padding\u2010mask dtype is taken from text_encoder.embed_tokens.weight.dtype."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": true,
-        "includes_code": false,
-        "includes_location_hints": true
-      }
-    },
-    {
-      "index": 4,
-      "repo_url": "https://github.com/huggingface/transformers",
-      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
-      "question": "At what point in the extractive QA postprocessing are low-precision start and end logits cast back to full precision?",
-      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
-      "facts": [
-        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa is defined in src/transformers/pipelines/document_question_answering.py.",
-        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa contains a loop over model_outputs.",
-        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any start_logits in bfloat16 or float16 are cast to full precision via .float().",
-        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any end_logits in bfloat16 or float16 are cast to full precision via .float()."
-      ],
-      "llm_fact_verdicts": [
-        false,
-        false,
-        false,
-        false
-      ],
-      "metadata": {
-        "type": "open_question",
-        "difficulty": "moderate",
-        "scope": "deep",
-        "is_core_question": false,
-        "includes_code": false,
-        "includes_location_hints": false
-      }
-    }
-  ],
-  "summary": {
-    "total_examples": 5,
-    "passed_examples": 0,
-    "total_facts": 21,
-    "llm_verified_facts": 0,
-    "accuracy": 0.0
-  },
-  "results_by_type": {
-    "open_question": {
-      "total": 21,
-      "verified": 0,
-      "examples": 5,
-      "passed": 0
-    }
-  },
-  "results_by_difficulty": {
-    "moderate": {
-      "total": 21,
-      "verified": 0,
-      "examples": 5,
-      "passed": 0
-    }
-  },
-  "results_by_scope": {
-    "deep": {
-      "total": 21,
-      "verified": 0,
-      "examples": 5,
-      "passed": 0
-    }
-  }
+	"id": "20260122-165256-claude-claude-opus-4-20250514",
+	"agent_name": "claude (claude-opus-4-20250514)",
+	"timestamp": "2026-01-22T16:52:56.311437",
+	"status": "complete",
+	"progress": {
+		"completed": 5,
+		"total": 5
+	},
+	"examples": [
+		{
+			"index": 0,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
+			"response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+			"facts": [
+				"The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
+				"pad_collate_fn.inner handles the `\"input_ids\"` key.",
+				"If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
+				"Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
+			],
+			"llm_fact_verdicts": [false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		},
+		{
+			"index": 1,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
+			"response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+			"facts": [
+				"The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
+				"The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
+				"The call to remove_keypoints_from_borders includes height * 8 as an argument.",
+				"The call to remove_keypoints_from_borders includes width * 8 as an argument.",
+				"The scaling factor used in the call to remove_keypoints_from_borders is 8."
+			],
+			"llm_fact_verdicts": [false, false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": true,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		},
+		{
+			"index": 2,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
+			"response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+			"facts": [
+				"The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
+				"The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
+				"Fast parameter buffer assignment is disabled by default."
+			],
+			"llm_fact_verdicts": [false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": true
+			}
+		},
+		{
+			"index": 3,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "In the model's forward pass, how is the dtype of the input padding mask determined?",
+			"response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+			"facts": [
+				"VitsModel.forward is defined in src/transformers/models/vits/modeling_vits.py.",
+				"VitsModel.forward sets mask_dtype equal to self.text_encoder.embed_tokens.weight.dtype.",
+				"VitsModel.forward casts the attention_mask tensor using .to(mask_dtype).",
+				"VitsModel.forward casts a tensor of ones using .to(mask_dtype).",
+				"The padding\u2010mask dtype is taken from text_encoder.embed_tokens.weight.dtype."
+			],
+			"llm_fact_verdicts": [false, false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": true,
+				"includes_code": false,
+				"includes_location_hints": true
+			}
+		},
+		{
+			"index": 4,
+			"repo_url": "https://github.com/huggingface/transformers",
+			"commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+			"question": "At what point in the extractive QA postprocessing are low-precision start and end logits cast back to full precision?",
+			"response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+			"facts": [
+				"DocumentQuestionAnsweringPipeline.postprocess_extractive_qa is defined in src/transformers/pipelines/document_question_answering.py.",
+				"DocumentQuestionAnsweringPipeline.postprocess_extractive_qa contains a loop over model_outputs.",
+				"Immediately inside the loop over model_outputs and before calling select_starts_ends, any start_logits in bfloat16 or float16 are cast to full precision via .float().",
+				"Immediately inside the loop over model_outputs and before calling select_starts_ends, any end_logits in bfloat16 or float16 are cast to full precision via .float()."
+			],
+			"llm_fact_verdicts": [false, false, false, false],
+			"metadata": {
+				"type": "open_question",
+				"difficulty": "moderate",
+				"scope": "deep",
+				"is_core_question": false,
+				"includes_code": false,
+				"includes_location_hints": false
+			}
+		}
+	],
+	"summary": {
+		"total_examples": 5,
+		"passed_examples": 0,
+		"total_facts": 21,
+		"llm_verified_facts": 0,
+		"accuracy": 0.0
+	},
+	"results_by_type": {
+		"open_question": {
+			"total": 21,
+			"verified": 0,
+			"examples": 5,
+			"passed": 0
+		}
+	},
+	"results_by_difficulty": {
+		"moderate": {
+			"total": 21,
+			"verified": 0,
+			"examples": 5,
+			"passed": 0
+		}
+	},
+	"results_by_scope": {
+		"deep": {
+			"total": 21,
+			"verified": 0,
+			"examples": 5,
+			"passed": 0
+		}
+	}
 }
