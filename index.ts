@@ -1,22 +1,36 @@
+import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type Context, complete, getModel, type Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import * as config from "./config";
 
+// Git environment to prevent interactive prompts and SSH key loading
+const GIT_ENV: Record<string, string> = {
+	// Disable SSH agent and key loading
+	SSH_AUTH_SOCK: "",
+	// Use a non-existent SSH key to prevent loading default keys
+	GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityFile=/dev/null",
+	// Disable terminal prompts for credentials
+	GIT_TERMINAL_PROMPT: "0",
+	// Disable askpass programs
+	GIT_ASKPASS: "",
+	SSH_ASKPASS: "",
+	// Preserve PATH for git to work
+	PATH: process.env.PATH || "",
+};
+
 // Lock map to prevent race conditions when cloning the same repo in parallel
 const cloneLocks = new Map<string, Promise<void>>();
 
 async function withCloneLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-	// Wait for any existing operation on this key
 	while (cloneLocks.has(key)) {
 		await cloneLocks.get(key);
 	}
 
-	// Create a new lock
-	let resolve: (() => void) | undefined;
+	let resolveLock: (() => void) | undefined;
 	const lockPromise = new Promise<void>((r) => {
-		resolve = r;
+		resolveLock = r;
 	});
 	cloneLocks.set(key, lockPromise);
 
@@ -24,7 +38,7 @@ async function withCloneLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 		return await fn();
 	} finally {
 		cloneLocks.delete(key);
-		resolve?.();
+		resolveLock?.();
 	}
 }
 
@@ -42,6 +56,7 @@ async function commitishExistsLocally(repoPath: string, commitish: string): Prom
 		cwd: repoPath,
 		stdout: "pipe",
 		stderr: "pipe",
+		env: GIT_ENV,
 	});
 	const output = (await new Response(proc.stdout).text()).trim();
 	const exitCode = await proc.exited;
@@ -88,16 +103,13 @@ function inferForge(repoUrl: string): ForgeName | null {
 	return null;
 }
 
-function parseRepoPath(repoUrl: string): {
-	username: string;
-	reponame: string;
-} {
+function parseRepoPath(repoUrl: string): { username: string; reponame: string } {
 	const url = new URL(repoUrl);
 	const parts = url.pathname
 		.replace(/^\//, "")
 		.replace(/\.git$/, "")
 		.split("/");
-	if (parts.length < 2) {
+	if (parts.length < 2 || !parts[0] || !parts[1]) {
 		throw new Error(`Invalid repo URL: ${repoUrl}`);
 	}
 	return { username: parts[0], reponame: parts[1] };
@@ -117,13 +129,7 @@ export interface Repo {
 	cachePath: string;
 }
 
-/**
- * Connect to a repository by cloning it locally and creating a worktree
- * @param repoUrl - The URL of the repository to connect to
- * @param options - Connection options (token, forge override, commitish)
- * @returns A Repo object representing the connected repository
- */
-export async function connect(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
+async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
 	const forgeName = options.forge ?? inferForge(repoUrl);
 	if (!forgeName) {
 		throw new Error(`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`);
@@ -135,44 +141,39 @@ export async function connect(repoUrl: string, options: ConnectOptions = {}): Pr
 	const cachePath = join(basePath, "repo");
 	const commitish = options.commitish ?? "HEAD";
 
-	// Use lock to prevent race conditions when multiple connects target the same repo
 	await withCloneLock(cachePath, async () => {
-		// Check if cache repo already exists
 		const gitDir = join(cachePath, ".git");
 		if (await exists(gitDir)) {
-			// Check if commitish exists locally
 			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
 			if (!hasCommitish) {
-				// Fetch from origin to get the commitish
 				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
 					cwd: cachePath,
 					stdout: "inherit",
 					stderr: "inherit",
+					env: GIT_ENV,
 				});
 				await proc.exited;
 			}
 		} else {
-			// Clone the repo to cache
 			await mkdir(cachePath, { recursive: true });
-
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
 			const proc = Bun.spawn(["git", "clone", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
+				env: GIT_ENV,
 			});
 			const exitCode = await proc.exited;
-
 			if (exitCode !== 0) {
 				throw new Error(`git clone failed with exit code ${exitCode}`);
 			}
 		}
 	});
 
-	// Resolve commitish to a full SHA for worktree directory name
 	const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
 		cwd: cachePath,
 		stdout: "pipe",
 		stderr: "pipe",
+		env: GIT_ENV,
 	});
 	const sha = (await new Response(revParseProc.stdout).text()).trim();
 	const revParseExit = await revParseProc.exited;
@@ -180,11 +181,9 @@ export async function connect(repoUrl: string, options: ConnectOptions = {}): Pr
 		throw new Error(`Failed to resolve commitish: ${commitish}`);
 	}
 
-	// Create worktree path using short SHA (absolute path for git worktree)
 	const shortSha = sha.slice(0, 12);
 	const worktreePath = resolve(basePath, "trees", shortSha);
 
-	// Check if worktree already exists
 	if (await exists(worktreePath)) {
 		return {
 			url: repoUrl,
@@ -195,15 +194,14 @@ export async function connect(repoUrl: string, options: ConnectOptions = {}): Pr
 		};
 	}
 
-	// Create the worktree
 	await mkdir(resolve(basePath, "trees"), { recursive: true });
 	const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
 		cwd: cachePath,
 		stdout: "inherit",
 		stderr: "inherit",
+		env: GIT_ENV,
 	});
 	const worktreeExit = await worktreeProc.exited;
-
 	if (worktreeExit !== 0) {
 		throw new Error(`git worktree add failed with exit code ${worktreeExit}`);
 	}
@@ -235,9 +233,7 @@ const tools: Tool[] = [
 		name: "fd",
 		description: "Find files by name pattern using fd. Returns matching file paths.",
 		parameters: Type.Object({
-			pattern: Type.String({
-				description: "The pattern to match file names against",
-			}),
+			pattern: Type.String({ description: "The pattern to match file names against" }),
 			type: Type.Optional(
 				Type.Union([Type.Literal("f"), Type.Literal("d")], {
 					description: "Filter by type: 'f' for files, 'd' for directories",
@@ -260,19 +256,13 @@ const tools: Tool[] = [
 		name: "read",
 		description: "Read the contents of a file.",
 		parameters: Type.Object({
-			path: Type.String({
-				description: "Path to the file, relative to repository root",
-			}),
+			path: Type.String({ description: "Path to the file, relative to repository root" }),
 		}),
 	},
 ];
 
 async function runCommand(cmd: string[], cwd: string): Promise<string> {
-	const proc = Bun.spawn(cmd, {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
 	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	const exitCode = await proc.exited;
 	if (exitCode !== 0) {
@@ -286,22 +276,16 @@ async function executeTool(toolName: string, args: Record<string, unknown>, repo
 		const pattern = args.pattern as string;
 		const glob = args.glob as string | undefined;
 		const cmd = ["rg", "--line-number", pattern];
-		if (glob) {
-			cmd.push("--glob", glob);
-		}
+		if (glob) cmd.push("--glob", glob);
 		return runCommand(cmd, repoPath);
 	}
 
 	if (toolName === "fd") {
 		const pattern = args.pattern as string;
 		const type = args.type as "f" | "d" | undefined;
-		// Use find instead of fd for compatibility
 		const cmd = ["find", ".", "-name", `*${pattern}*`];
-		if (type === "f") {
-			cmd.push("-type", "f");
-		} else if (type === "d") {
-			cmd.push("-type", "d");
-		}
+		if (type === "f") cmd.push("-type", "f");
+		else if (type === "d") cmd.push("-type", "d");
 		return runCommand(cmd, repoPath);
 	}
 
@@ -330,25 +314,28 @@ export interface ToolCallRecord {
 
 export interface AskResult {
 	prompt: string;
-	"tool-calls": ToolCallRecord[];
+	toolCalls: ToolCallRecord[];
 	response: string;
 }
 
-/**
- * Ask a question about the repository
- * @param repo - The connected repository
- * @param queryString - The question to ask (e.g., "Do we have authentication enabled?")
- * @returns Structured result with prompt, tool-calls, and response
- */
-export async function ask(repo: Repo, queryString: string): Promise<AskResult> {
-	const model = getModel(config.MODEL_PROVIDER, config.MODEL_NAME);
-	const toolCallRecords: ToolCallRecord[] = [];
+export interface Session {
+	id: string;
+	repo: Repo;
+	ask(question: string): Promise<AskResult>;
+	close(): void;
+}
 
+function createSession(repo: Repo): Session {
+	const id = randomUUID();
+	const model = getModel(config.MODEL_PROVIDER, config.MODEL_NAME);
 	const context: Context = {
 		systemPrompt: config.SYSTEM_PROMPT,
-		messages: [{ role: "user", content: queryString }],
+		messages: [],
 		tools,
 	};
+
+	let pending: Promise<AskResult> | null = null;
+	let closed = false;
 
 	const log = (label: string, content: string) => {
 		console.log(`\n${"─".repeat(60)}`);
@@ -363,104 +350,136 @@ export async function ask(repo: Repo, queryString: string): Promise<AskResult> {
 		console.error(`${"═".repeat(60)}`);
 		if (error instanceof Error) {
 			console.error(`Message: ${error.message}`);
-			if (error.cause) {
-				console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
-			}
-			if (error.stack) {
-				console.error(`Stack: ${error.stack}`);
-			}
+			if (error.cause) console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
+			if (error.stack) console.error(`Stack: ${error.stack}`);
 		} else {
 			console.error(JSON.stringify(error, null, 2));
 		}
 		console.error(`${"═".repeat(60)}\n`);
 	};
 
-	for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
-		let response: Awaited<ReturnType<typeof complete>>;
-		try {
-			response = await complete(model, context);
-		} catch (error) {
-			logError(`API call failed (iteration ${i + 1})`, error);
-			const errorMessage = error instanceof Error ? error.message : String(error);
-			return {
-				prompt: queryString,
-				"tool-calls": toolCallRecords,
-				response: `[ERROR: API call failed: ${errorMessage}]`,
-			};
-		}
-		// Check for API error in response
-		const apiResponse = response as { stopReason?: string; errorMessage?: string };
-		if (apiResponse.stopReason === "error" || apiResponse.errorMessage) {
-			const errorMsg = apiResponse.errorMessage || "Unknown API error";
-			console.error(`\n${"═".repeat(60)}`);
-			console.error("│ API ERROR");
-			console.error(`${"═".repeat(60)}`);
-			console.error(`Stop Reason: ${apiResponse.stopReason}`);
-			console.error(`Error Message: ${errorMsg}`);
-			console.error(`${"═".repeat(60)}\n`);
-			return {
-				prompt: queryString,
-				"tool-calls": toolCallRecords,
-				response: `[ERROR: ${errorMsg}]`,
-			};
-		}
+	async function doAsk(question: string): Promise<AskResult> {
+		const toolCallRecords: ToolCallRecord[] = [];
+		context.messages.push({ role: "user", content: question, timestamp: Date.now() });
 
-		context.messages.push(response);
-
-		const toolCalls = response.content.filter((b) => b.type === "toolCall");
-
-		if (toolCalls.length === 0) {
-			// No tool calls, extract text response
-			const textBlocks = response.content.filter((b) => b.type === "text");
-			const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
-
-			// Check for empty response which may indicate an API error
-			if (!responseText.trim()) {
-				console.error(`\n${"═".repeat(60)}`);
-				console.error("│ WARNING: Empty response from API");
-				console.error(`${"═".repeat(60)}`);
-				console.error("Full response:", JSON.stringify(response, null, 2));
-				console.error(`${"═".repeat(60)}\n`);
+		for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
+			let response: Awaited<ReturnType<typeof complete>>;
+			try {
+				response = await complete(model, context);
+			} catch (error) {
+				logError(`API call failed (iteration ${i + 1})`, error);
+				const errorMessage = error instanceof Error ? error.message : String(error);
 				return {
-					prompt: queryString,
-					"tool-calls": toolCallRecords,
-					response: "[ERROR: Empty response from API - check API key and credits]",
+					prompt: question,
+					toolCalls: toolCallRecords,
+					response: `[ERROR: API call failed: ${errorMessage}]`,
 				};
 			}
 
-			log("RESPONSE", "");
-			return {
-				prompt: queryString,
-				"tool-calls": toolCallRecords,
-				response: responseText,
-			};
+			const apiResponse = response as { stopReason?: string; errorMessage?: string };
+			if (apiResponse.stopReason === "error" || apiResponse.errorMessage) {
+				const errorMsg = apiResponse.errorMessage || "Unknown API error";
+				console.error(`\n${"═".repeat(60)}`);
+				console.error("│ API ERROR");
+				console.error(`${"═".repeat(60)}`);
+				console.error(`Stop Reason: ${apiResponse.stopReason}`);
+				console.error(`Error Message: ${errorMsg}`);
+				console.error(`${"═".repeat(60)}\n`);
+				return {
+					prompt: question,
+					toolCalls: toolCallRecords,
+					response: `[ERROR: ${errorMsg}]`,
+				};
+			}
+
+			context.messages.push(response);
+			const toolCalls = response.content.filter((b) => b.type === "toolCall");
+
+			if (toolCalls.length === 0) {
+				const textBlocks = response.content.filter((b) => b.type === "text");
+				const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
+
+				if (!responseText.trim()) {
+					console.error(`\n${"═".repeat(60)}`);
+					console.error("│ WARNING: Empty response from API");
+					console.error(`${"═".repeat(60)}`);
+					console.error("Full response:", JSON.stringify(response, null, 2));
+					console.error(`${"═".repeat(60)}\n`);
+					return {
+						prompt: question,
+						toolCalls: toolCallRecords,
+						response: "[ERROR: Empty response from API - check API key and credits]",
+					};
+				}
+
+				log("RESPONSE", "");
+				return {
+					prompt: question,
+					toolCalls: toolCallRecords,
+					response: responseText,
+				};
+			}
+
+			for (const call of toolCalls) {
+				if (call.type !== "toolCall") continue;
+
+				log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
+				const result = await executeTool(call.name, call.arguments, repo.localPath);
+
+				toolCallRecords.push({
+					name: call.name,
+					arguments: call.arguments,
+				});
+				context.messages.push({
+					role: "toolResult",
+					toolCallId: call.id,
+					toolName: call.name,
+					content: [{ type: "text", text: result }],
+					isError: false,
+					timestamp: Date.now(),
+				});
+			}
 		}
 
-		// Execute tool calls and add results
-		for (const call of toolCalls) {
-			if (call.type !== "toolCall") continue;
-
-			log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
-			const result = await executeTool(call.name, call.arguments, repo.localPath);
-
-			toolCallRecords.push({
-				name: call.name,
-				arguments: call.arguments,
-			});
-			context.messages.push({
-				role: "toolResult",
-				toolCallId: call.id,
-				toolName: call.name,
-				content: [{ type: "text", text: result }],
-				isError: false,
-				timestamp: Date.now(),
-			});
-		}
+		return {
+			prompt: question,
+			toolCalls: toolCallRecords,
+			response: "[ERROR: Max iterations reached without a final answer.]",
+		};
 	}
 
 	return {
-		prompt: queryString,
-		"tool-calls": toolCallRecords,
-		response: "[ERROR: Max iterations reached without a final answer.]",
+		id,
+		repo,
+
+		async ask(question: string): Promise<AskResult> {
+			if (closed) {
+				throw new Error(`Session ${id} is closed`);
+			}
+
+			if (pending) {
+				await pending;
+			}
+
+			pending = doAsk(question);
+			const result = await pending;
+			pending = null;
+			return result;
+		},
+
+		close() {
+			closed = true;
+		},
 	};
+}
+
+/**
+ * Connect to a repository and create a session
+ * @param repoUrl - The URL of the repository to connect to
+ * @param options - Connection options (token, forge override, commitish)
+ * @returns A Session for asking questions about the repository
+ */
+export async function connect(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
+	const repo = await connectRepo(repoUrl, options);
+	return createSession(repo);
 }

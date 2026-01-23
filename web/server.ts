@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ask, connect } from "../index";
+import { connect } from "../index";
 
 const PORT = 3000;
 const DATA_DIR = join(import.meta.dir, "data");
@@ -346,11 +346,12 @@ const server = Bun.serve({
 					return Response.json({ error: "Missing repoUrl or question" }, { status: 400 });
 				}
 
-				// Connect to repo
-				const repo = await connect(repoUrl, { committish });
+				// Connect to repo and create session
+				const session = await connect(repoUrl, { commitish: committish });
 
 				// Ask the question
-				const result = await ask(repo, question);
+				const result = await session.ask(question);
+				session.close();
 
 				// Create sample
 				const sample: Sample = {
@@ -360,7 +361,7 @@ const server = Bun.serve({
 					committish: committish || "HEAD",
 					question,
 					response: result.response,
-					toolCalls: result["tool-calls"],
+					toolCalls: result.toolCalls,
 				};
 
 				// Save sample
@@ -371,7 +372,7 @@ const server = Bun.serve({
 				return Response.json({
 					sampleId: sample.id,
 					response: result.response,
-					toolCalls: result["tool-calls"],
+					toolCalls: result.toolCalls,
 				});
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

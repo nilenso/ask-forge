@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { ask, connect } from "./index";
+import { connect } from "./index";
 
 const repoUrl = process.argv[2];
 const question = process.argv[3];
@@ -17,52 +17,38 @@ function logError(stage: string, error: unknown) {
 	console.error(`${"═".repeat(60)}`);
 	if (error instanceof Error) {
 		console.error(`Message: ${error.message}`);
-		if (error.cause) {
-			console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
-		}
-		if (error.stack) {
-			console.error(`Stack: ${error.stack}`);
-		}
+		if (error.cause) console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
+		if (error.stack) console.error(`Stack: ${error.stack}`);
 	} else {
 		console.error(JSON.stringify(error, null, 2));
 	}
 	console.error(`${"═".repeat(60)}\n`);
 }
 
-let repo: Awaited<ReturnType<typeof connect>>;
 try {
 	console.log(`Connecting to ${repoUrl}...`);
-	repo = await connect(repoUrl, { commitish });
-	console.log(`Connected to ${repo.localPath}`);
-	if (repo.commitish) {
-		console.log(`Checked out: ${repo.commitish}`);
+	const session = await connect(repoUrl, { commitish });
+	console.log(`Connected to ${session.repo.localPath}`);
+	console.log(`Session ID: ${session.id}`);
+	if (session.repo.commitish) {
+		console.log(`Checked out: ${session.repo.commitish}`);
 	}
-} catch (error) {
-	logError("connect", error);
-	console.log(
-		JSON.stringify({
-			prompt: question,
-			"tool-calls": [],
-			response: `[ERROR: Failed to connect to repository: ${error instanceof Error ? error.message : String(error)}]`,
-		}),
-	);
-	process.exit(1);
-}
 
-console.log();
-console.log(`Question: ${question}\n`);
-console.log("Asking...\n");
+	console.log();
+	console.log(`Question: ${question}\n`);
+	console.log("Asking...\n");
 
-try {
-	const result = await ask(repo, question);
+	const result = await session.ask(question);
 	console.log(JSON.stringify(result, null, 2));
+
+	session.close();
 } catch (error) {
 	logError("ask", error);
 	console.log(
 		JSON.stringify({
 			prompt: question,
-			"tool-calls": [],
-			response: `[ERROR: Failed to get answer: ${error instanceof Error ? error.message : String(error)}]`,
+			toolCalls: [],
+			response: `[ERROR: ${error instanceof Error ? error.message : String(error)}]`,
 		}),
 	);
 	process.exit(1);

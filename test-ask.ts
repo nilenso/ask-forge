@@ -13,33 +13,35 @@ console.log(`Revision 2: ${revision2}`);
 console.log();
 
 console.log("Connecting in parallel...");
-const [repo1, repo2] = await Promise.all([
+const [session1, session2] = await Promise.all([
 	connect(repoUrl, { commitish: revision1 }),
 	connect(repoUrl, { commitish: revision2 }),
 ]);
 
-console.log(`\nRepo 1 (${revision1}):`);
-console.log(`  Path: ${repo1.localPath}`);
-console.log(`  SHA: ${repo1.commitish}`);
+console.log(`\nSession 1 (${revision1}):`);
+console.log(`  ID: ${session1.id}`);
+console.log(`  Path: ${session1.repo.localPath}`);
+console.log(`  SHA: ${session1.repo.commitish}`);
 
-console.log(`\nRepo 2 (${revision2}):`);
-console.log(`  Path: ${repo2.localPath}`);
-console.log(`  SHA: ${repo2.commitish}`);
+console.log(`\nSession 2 (${revision2}):`);
+console.log(`  ID: ${session2.id}`);
+console.log(`  Path: ${session2.repo.localPath}`);
+console.log(`  SHA: ${session2.repo.commitish}`);
 
 // Verify they have different paths (worktrees)
-if (repo1.localPath === repo2.localPath) {
+if (session1.repo.localPath === session2.repo.localPath) {
 	console.error("\nERROR: Both repos have the same local path!");
 	process.exit(1);
 }
 
 // Verify they share the same cache path
-if (repo1.cachePath !== repo2.cachePath) {
+if (session1.repo.cachePath !== session2.repo.cachePath) {
 	console.error("\nERROR: Repos should share the same cache path!");
 	process.exit(1);
 }
 
-console.log("\n✓ Both repos connected successfully with separate worktrees");
-console.log(`✓ Shared cache path: ${repo1.cachePath}`);
+console.log("\n✓ Both sessions connected successfully with separate worktrees");
+console.log(`✓ Shared cache path: ${session1.repo.cachePath}`);
 
 // Verify pom.xml has the correct version for each revision
 async function extractVersion(repoPath: string): Promise<string | null> {
@@ -50,20 +52,28 @@ async function extractVersion(repoPath: string): Promise<string | null> {
 }
 
 console.log("\nVerifying pom.xml versions...");
-const [version1, version2] = await Promise.all([extractVersion(repo1.localPath), extractVersion(repo2.localPath)]);
+const [version1, version2] = await Promise.all([
+	extractVersion(session1.repo.localPath),
+	extractVersion(session2.repo.localPath),
+]);
 
-console.log(`  Repo 1 pom.xml version: ${version1}`);
-console.log(`  Repo 2 pom.xml version: ${version2}`);
+console.log(`  Session 1 pom.xml version: ${version1}`);
+console.log(`  Session 2 pom.xml version: ${version2}`);
 
 if (version1 !== revision1) {
-	console.error(`\nERROR: Repo 1 pom.xml version (${version1}) does not match expected (${revision1})!`);
+	console.error(`\nERROR: Session 1 pom.xml version (${version1}) does not match expected (${revision1})!`);
 	process.exit(1);
 }
 
 if (version2 !== revision2) {
-	console.error(`\nERROR: Repo 2 pom.xml version (${version2}) does not match expected (${revision2})!`);
+	console.error(`\nERROR: Session 2 pom.xml version (${version2}) does not match expected (${revision2})!`);
 	process.exit(1);
 }
 
 console.log(`\n✓ pom.xml version ${revision1} verified in revision ${revision1}`);
 console.log(`✓ pom.xml version ${revision2} verified in revision ${revision2}`);
+
+// Clean up sessions
+session1.close();
+session2.close();
+console.log("\n✓ Sessions closed");
