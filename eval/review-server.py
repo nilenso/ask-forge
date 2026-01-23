@@ -329,12 +329,10 @@ def compute_metrics():
         lj["accuracy"] = (lj["tp"] + lj["tn"]) / total_judged * 100
         lj["precision"] = lj["tp"] / (lj["tp"] + lj["fp"]) * 100 if (lj["tp"] + lj["fp"]) > 0 else 0
         lj["recall"] = lj["tp"] / (lj["tp"] + lj["fn"]) * 100 if (lj["tp"] + lj["fn"]) > 0 else 0
-        lj["f1"] = 2 * lj["precision"] * lj["recall"] / (lj["precision"] + lj["recall"]) if (lj["precision"] + lj["recall"]) > 0 else 0
     else:
         lj["accuracy"] = 0
         lj["precision"] = 0
         lj["recall"] = 0
-        lj["f1"] = 0
     
     # Compute derived Agent metrics
     ag = metrics["agent"]

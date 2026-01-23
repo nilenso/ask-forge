@@ -292,12 +292,6 @@
         </div>
         <div class="metric-label">Recall</div>
     </div>
-    <div class="metric-card">
-        <div class="metric-value {% if metrics.llm_judge.f1 >= 80 %}good{% elif metrics.llm_judge.f1 >= 60 %}medium{% else %}poor{% endif %}">
-            {{ "%.1f"|format(metrics.llm_judge.f1) }}%
-        </div>
-        <div class="metric-label">F1 Score</div>
-    </div>
 </div>
 
 <div class="two-column">
