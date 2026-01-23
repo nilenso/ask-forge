@@ -1,0 +1,124 @@
+{
+  "id": "20260122-164438-ask-forge",
+  "agent_name": "ask-forge",
+  "timestamp": "2026-01-22T16:46:00.938269",
+  "status": "complete",
+  "progress": {
+    "completed": 3,
+    "total": 3
+  },
+  "examples": [
+    {
+      "index": 0,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
+      "response": "[ERROR: Max iterations reached without a final answer.]",
+      "facts": [
+        "The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
+        "pad_collate_fn.inner handles the `\"input_ids\"` key.",
+        "If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
+        "Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 1,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
+      "response": "Based on the code in `src/transformers/models/superpoint/modeling_superpoint.py`, the scaling factor applied to the feature map dimensions when removing keypoints near image borders is:\n\n## **Scaling Factor: 8**\n\n### Details:\n\n**Location:** Line 249-251 in `modeling_superpoint.py`\n\n```python\nkeypoints, scores = remove_keypoints_from_borders(\n    keypoints, scores, self.border_removal_distance, height * 8, width * 8\n)\n```\n\n### Context:\n\n- The feature map from the encoder has dimensions `(height, width)`\n- When removing keypoints near borders, these dimensions are **multiplied by 8** (`height * 8`, `width * 8`)\n- This 8x scaling factor accounts for the upsampling that happens during keypoint extraction (the scores are reshaped from an 8\u00d78 grid per pixel in lines 225-227)\n\nThe scaling is necessary because keypoints are extracted at the full resolution (8\u00d7 the feature map resolution) but the border removal needs to work in that higher-resolution space.",
+      "facts": [
+        "The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
+        "The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
+        "The call to remove_keypoints_from_borders includes height * 8 as an argument.",
+        "The call to remove_keypoints_from_borders includes width * 8 as an argument.",
+        "The scaling factor used in the call to remove_keypoints_from_borders is 8."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 2,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
+      "response": "Perfect! The answer is found at line 687 of `src/transformers/models/gpt2/modeling_gpt2.py`.\n\n## Answer\n\n**`_supports_param_buffer_assignment`**\n\nThis internal attribute is set to `False` in the GPT2Model class (line 687 in `src/transformers/models/gpt2/modeling_gpt2.py`), which disables fast parameter buffer assignment by default for the GPT2 model.",
+      "facts": [
+        "The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
+        "The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
+        "Fast parameter buffer assignment is disabled by default."
+      ],
+      "llm_fact_verdicts": [
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    }
+  ],
+  "summary": {
+    "total_examples": 3,
+    "passed_examples": 2,
+    "total_facts": 12,
+    "llm_verified_facts": 7,
+    "accuracy": 58.333333333333336
+  },
+  "results_by_type": {
+    "open_question": {
+      "total": 12,
+      "verified": 7,
+      "examples": 3,
+      "passed": 2
+    }
+  },
+  "results_by_difficulty": {
+    "moderate": {
+      "total": 12,
+      "verified": 7,
+      "examples": 3,
+      "passed": 2
+    }
+  },
+  "results_by_scope": {
+    "deep": {
+      "total": 12,
+      "verified": 7,
+      "examples": 3,
+      "passed": 2
+    }
+  }
+}

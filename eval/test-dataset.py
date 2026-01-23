@@ -3,17 +3,12 @@
 Test code agents using the deep_code_bench dataset from Hugging Face.
 Verifies if facts from the dataset are represented in agent responses.
 
-Supports multiple agents:
-- ask-forge: Local ask-forge agent
-- claude: Claude API directly (requires ANTHROPIC_API_KEY)
-
 Usage:
-    python test-dataset.py [num_examples] [agent]
+    python test-dataset.py [num_examples]
     
 Examples:
-    python test-dataset.py 5 ask-forge
-    python test-dataset.py 10 claude
-    python test-dataset.py 3 claude-haiku
+    python test-dataset.py 5
+    python test-dataset.py 10
 """
 
 import subprocess
@@ -28,14 +23,11 @@ from dataclasses import dataclass, field
 from datasets import load_dataset
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (in parent directory)
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-try:
-    import anthropic
-    HAS_ANTHROPIC = True
-except ImportError:
-    HAS_ANTHROPIC = False
+# Import configuration
+import config
 
 
 @dataclass
@@ -101,6 +93,10 @@ class Agent(ABC):
 class AskForgeAgent(Agent):
     """Ask-forge agent that uses local bun runtime."""
     
+    def __init__(self):
+        # Path to the parent directory where ask.ts lives
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
     @property
     def name(self) -> str:
         return "ask-forge"
@@ -113,7 +109,8 @@ class AskForgeAgent(Agent):
                 capture_output=True,
                 text=True,
                 timeout=300,
-                env=env
+                env=env,
+                cwd=self.project_root
             )
             
             stdout = result.stdout
@@ -154,72 +151,13 @@ class AskForgeAgent(Agent):
             return error_msg
 
 
-class ClaudeAgent(Agent):
-    """Claude agent that uses Anthropic API directly."""
-    
-    def __init__(self, model: str = "claude-sonnet-4-20250514"):
-        if not HAS_ANTHROPIC:
-            raise ImportError("anthropic package not installed. Run: pip install anthropic")
-        self.model = model
-        self.client = anthropic.Anthropic()
-    
-    @property
-    def name(self) -> str:
-        return f"claude ({self.model})"
-    
-    def ask(self, repo_url: str, question: str, commit: str) -> str:
-        try:
-            prompt = f"""You are a code analysis assistant. Answer the following question about the repository.
-
-Repository: {repo_url}
-Commit: {commit}
-
-Question: {question}
-
-Please provide a concise, factual answer based on your knowledge of common code patterns and the repository if you're familiar with it. Focus on specific file paths, function names, and implementation details when relevant."""
-
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            if not message.content:
-                error_msg = "[ERROR: Empty response from Claude API]"
-                print(f"  {error_msg}")
-                return error_msg
-            
-            # Handle different content block types
-            first_block = message.content[0]
-            if hasattr(first_block, 'text'):
-                return first_block.text
-            else:
-                error_msg = f"[ERROR: Unexpected response type: {type(first_block).__name__}]"
-                print(f"  {error_msg}")
-                return error_msg
-        except Exception as e:
-            error_msg = f"[ERROR: {e}]"
-            print(f"  {error_msg}")
-            return error_msg
-
-
 def get_agent(agent_name: str) -> Agent:
     """Factory function to create an agent by name."""
-    agents = {
-        "ask-forge": lambda: AskForgeAgent(),
-        "claude": lambda: ClaudeAgent(),
-        "claude-sonnet": lambda: ClaudeAgent("claude-sonnet-4-20250514"),
-        "claude-haiku": lambda: ClaudeAgent("claude-3-5-haiku-20241022"),
-        "claude-opus": lambda: ClaudeAgent("claude-opus-4-20250514"),
-    }
-    
-    if agent_name not in agents:
-        available = ", ".join(agents.keys())
+    if agent_name == "ask-forge":
+        return AskForgeAgent()
+    else:
+        available = ", ".join(config.AVAILABLE_AGENTS)
         raise ValueError(f"Unknown agent: {agent_name}. Available: {available}")
-    
-    return agents[agent_name]()
 
 
 def is_error_response(response: str) -> bool:
@@ -230,26 +168,12 @@ def is_error_response(response: str) -> bool:
 def verify_fact_with_llm(fact: str, response: str, openrouter_api_key: str) -> bool:
     """
     Use LLM as a judge to verify if a fact is represented in the response.
-    Uses OpenRouter API with a fast model.
+    Uses OpenRouter API with a configurable model.
     """
     if not response or is_error_response(response):
         return False
     
-    prompt = f"""You are a fact verification judge. Your task is to determine if a given fact is represented or supported by the response text.
-
-FACT TO VERIFY:
-{fact}
-
-RESPONSE TEXT:
-{response}
-
-Instructions:
-- Determine if the response contains information that supports or represents the fact
-- The fact doesn't need to be stated verbatim, but the core information should be present
-- Be strict: partial matches or vague similarities are not sufficient
-- Consider semantic equivalence, not just keyword matching
-
-Answer with ONLY "true" or "false" (lowercase, no explanation)."""
+    prompt = config.LLM_JUDGE_PROMPT.format(fact=fact, response=response)
 
     try:
         import requests
@@ -260,8 +184,8 @@ Answer with ONLY "true" or "false" (lowercase, no explanation)."""
                 "Content-Type": "application/json"
             },
             json={
-                "model": "openai/gpt-4o-mini",
-                "max_tokens": 10,
+                "model": config.LLM_JUDGE_MODEL,
+                "max_tokens": config.LLM_JUDGE_MAX_TOKENS,
                 "messages": [{"role": "user", "content": prompt}]
             },
             timeout=30
@@ -318,7 +242,7 @@ def verify_facts(facts: list, response: str, openrouter_api_key: str = None) -> 
 
 def get_available_agents() -> list[str]:
     """Return list of available agent names."""
-    return ["ask-forge", "claude", "claude-sonnet", "claude-haiku", "claude-opus"]
+    return config.AVAILABLE_AGENTS
 
 
 def generate_html_report(results: TestResults, output_path: str):

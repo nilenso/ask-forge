@@ -1,0 +1,340 @@
+{
+  "id": "20260122-161033-ask-forge",
+  "agent_name": "ask-forge",
+  "timestamp": "2026-01-22T16:10:33.146587",
+  "examples": [
+    {
+      "index": 0,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
+      "response": "[ERROR: Max iterations reached without a final answer.]",
+      "facts": [
+        "The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
+        "pad_collate_fn.inner handles the `\"input_ids\"` key.",
+        "If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
+        "Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 1,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
+      "response": "Based on the code, the scaling factor applied to the feature map dimensions when removing keypoints near image borders is **8**.\n\n## Key Evidence:\n\n1. **In `_extract_keypoints` method (line 249-251)**:\n   ```python\n   keypoints, scores = remove_keypoints_from_borders(\n       keypoints, scores, self.border_removal_distance, height * 8, width * 8\n   )\n   ```\n   The height and width of the feature map are multiplied by **8** before being passed to the border removal function.\n\n2. **Context from `_get_pixel_scores` method (line 225-227)**:\n   The feature map is reshaped to 8x8 blocks and then flattened:\n   ```python\n   scores = scores.permute(0, 2, 3, 1).reshape(batch_size, height, width, 8, 8)\n   scores = scores.permute(0, 1, 3, 2, 4).reshape(batch_size, height * 8, width * 8)\n   ```\n\n3. **Used in descriptor sampling (line 294)**:\n   The same scale factor of 8 is used in `_sample_descriptors` method.\n\nThe scaling factor **8** converts from the feature map space to the original image space for proper border removal.",
+      "facts": [
+        "The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
+        "The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
+        "The call to remove_keypoints_from_borders includes height * 8 as an argument.",
+        "The call to remove_keypoints_from_borders includes width * 8 as an argument.",
+        "The scaling factor used in the call to remove_keypoints_from_borders is 8."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 2,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
+      "response": "Looking at the GPT2Model class, I found the answer:\n\n## Answer\n\n**`_supports_param_buffer_assignment`**\n\nThis attribute is set to `False` in the `GPT2Model` class at **line 816**:\n\n```python\nclass GPT2Model(GPT2PreTrainedModel):\n    _supports_param_buffer_assignment = False\n```\n\nThis internal attribute disables fast parameter buffer assignment by default in the GPT2 model.",
+      "facts": [
+        "The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
+        "The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
+        "Fast parameter buffer assignment is disabled by default."
+      ],
+      "llm_fact_verdicts": [
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    },
+    {
+      "index": 3,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "In the model's forward pass, how is the dtype of the input padding mask determined?",
+      "response": "Now let me examine the specific line where the padding_mask dtype is set in the `_prepare_4d_causal_attention_mask_with_cache_position` method:\n\n## Answer\n\nIn the model's forward pass, the dtype of the input padding mask is determined **by the causal mask's dtype**, which in turn is derived from the **input tensor's dtype**. Here's how it works:\n\n### Location: `src/transformers/models/bart/modeling_bart.py:671`\n\n```python\npadding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(\n    causal_mask.device\n)\n```\n\n### Determination Flow:\n\n1. **Input tensor dtype \u2192 causal mask dtype**\n   - Line 654-660: `dtype = input_tensor.dtype`\n   - Line 664-666: The `causal_mask` is created with this dtype:\n     ```python\n     min_dtype = torch.finfo(dtype).min\n     causal_mask = torch.full(\n         (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=cache_position.device\n     )\n     ```\n\n2. **Causal mask dtype \u2192 padding mask dtype**\n   - Line 670-672: When the `attention_mask` (2D input mask) is added to sliced `causal_mask`, the `attention_mask` is converted `.to(causal_mask.device)` for device compatibility\n   - The `padding_mask` inherits the dtype from the `causal_mask` through the addition operation (broadcasting automatically promotes to causal_mask's dtype)\n\n### Summary:\n**The padding mask dtype = input embeddings dtype (typically `torch.float32`, `torch.float16`, or `torch.bfloat16`)**\n\nThis happens in `_prepare_4d_causal_attention_mask_with_cache_position()` method, where:\n- `dtype` parameter comes from `input_tensor.dtype` (the input embeddings)\n- This dtype is used to create the causal mask\n- The padding mask inherits this dtype when computed from the causal mask",
+      "facts": [
+        "VitsModel.forward is defined in src/transformers/models/vits/modeling_vits.py.",
+        "VitsModel.forward sets mask_dtype equal to self.text_encoder.embed_tokens.weight.dtype.",
+        "VitsModel.forward casts the attention_mask tensor using .to(mask_dtype).",
+        "VitsModel.forward casts a tensor of ones using .to(mask_dtype).",
+        "The padding\u2010mask dtype is taken from text_encoder.embed_tokens.weight.dtype."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    },
+    {
+      "index": 4,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "At what point in the extractive QA postprocessing are low-precision start and end logits cast back to full precision?",
+      "response": "Perfect! I found it. Let me examine the exact lines:\n\n## Answer\n\nIn the extractive QA postprocessing for document question answering, **low-precision start and end logits are cast back to full precision at lines 514-517** in `src/transformers/pipelines/document_question_answering.py`:\n\n```python\nif self.framework == \"pt\" and output[\"start_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"start_logits\"] = output[\"start_logits\"].float()\nif self.framework == \"pt\" and output[\"end_logits\"].dtype in (torch.bfloat16, torch.float16):\n    output[\"end_logits\"] = output[\"end_logits\"].float()\n```\n\nThis happens in the `postprocess_extractive_qa` method, **immediately before** the logits are passed to the `select_starts_ends` function (line 519). The casting ensures that bfloat16 or float16 logits are converted to float32 before being processed to select answer spans.",
+      "facts": [
+        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa is defined in src/transformers/pipelines/document_question_answering.py.",
+        "DocumentQuestionAnsweringPipeline.postprocess_extractive_qa contains a loop over model_outputs.",
+        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any start_logits in bfloat16 or float16 are cast to full precision via .float().",
+        "Immediately inside the loop over model_outputs and before calling select_starts_ends, any end_logits in bfloat16 or float16 are cast to full precision via .float()."
+      ],
+      "llm_fact_verdicts": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 5,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which class name substring prevents a model from using the default dynamic cache?",
+      "response": "Now let me look at the specific implementation of `_supports_default_dynamic_cache`:\n\nBased on the code in `src/transformers/generation/utils.py` at line 1978, I found the answer:\n\n## Answer\n\nThe class name substrings that prevent a model from using the default dynamic cache are:\n\n- **`\"jamba\"`**\n- **`\"zamba\"`**\n- **`\"bamba\"`**\n- **`\"minimax\"`**\n- **`\"lfm2\"`**\n\nThese are checked in the `_supports_default_dynamic_cache()` method (lines 1978-1995):\n\n```python\ndef _supports_default_dynamic_cache(self) -> bool:\n    \"\"\"\n    Return `True` if current model can use a `DynamicCache` instance when initializing the `past_key_values`.\n    This is mostly the same as `_supports_cache_class` attribute, but add exception for `Jamba` model which\n    uses its own `HybridMambaAttentionDynamicCache` and do not need to initialize the Cache in advance in\n    order to save memory (because no back and forth `to_legacy_cache` and `from_legacy_cache` will be performed\n    for `HybridMambaAttentionDynamicCache`).\n    \"\"\"\n    return (\n        self._supports_cache_class\n        and \"jamba\" not in self.__class__.__name__.lower()\n        and \"zamba\" not in self.__class__.__name__.lower()\n        and \"bamba\" not in self.__class__.__name__.lower()\n        and \"minimax\" not in self.__class__.__name__.lower()\n        and \"lfm2\" not in self.__class__.__name__.lower()\n    )\n```\n\nIf any of these substrings appear in the model's class name (case-insensitive), the model will **not** use the default `DynamicCache`.",
+      "facts": [
+        "GenerationMixin._supports_default_dynamic_cache is defined in src/transformers/generation/utils.py.",
+        "Models whose class name lower-cased contains \u201cjamba\u201d skip the default dynamic cache.",
+        "Models whose class name lower-cased contains \u201czamba\u201d skip the default dynamic cache.",
+        "Models whose class name lower-cased contains \u201cbamba\u201d skip the default dynamic cache.",
+        "Models whose class name lower-cased contains \u201cminimax\u201d skip the default dynamic cache.",
+        "Models whose class name lower-cased contains \u201clfm2\u201d skip the default dynamic cache."
+      ],
+      "llm_fact_verdicts": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    },
+    {
+      "index": 6,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "What default value is used for the beta attribute if the config does not define it?",
+      "response": "Perfect! Now I have all the information I need. Let me provide a concise answer:\n\n## Default Value for `beta` Attribute\n\nThe default value for the `beta` attribute varies by model and context:\n\n### VQ-VAE Vector Quantizer Models\n\n**Chameleon** (`src/transformers/models/chameleon/modeling_chameleon.py:550`):\n- **Default: `0.25`**\n- Code: `self.beta = getattr(config, \"beta\", 0.25)`\n\n**Janus** (`src/transformers/models/janus/modeling_janus.py:611`):\n- **Default: `0.25`**\n- Code: `self.beta = getattr(config, \"beta\", 0.25)`\n\n### SegGPT Loss Regularization\n\n**SegGPT** (`src/transformers/models/seggpt/configuration_seggpt.py:113`):\n- **Default: `0.01`**\n- Used for smooth-l1 loss regularization\n\n### Summary\n\n- **VQ-VAE models (Chameleon, Janus)**: `0.25`\n- **SegGPT**: `0.01`\n\nThe `beta` parameter is used as a weighting factor in the VQ-VAE commitment loss, controlling the trade-off between reconstruction and commitment to the codebook embeddings.",
+      "facts": [
+        "The __init__ method of ChameleonVQVAEVectorQuantizer is defined in src/transformers/models/chameleon/modeling_chameleon.py.",
+        "In the __init__ method of ChameleonVQVAEVectorQuantizer, beta falls back to 0.25 if it is not defined on the config."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "easy",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 7,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "How does the forward method convert encoder output into the decoder\u2019s initial query embeddings and reference points?",
+      "response": "Perfect! Now let me extract the relevant forward method section from Grounding DINO to show the conversion process:\n\nBased on the code analysis, here's how the forward method converts encoder output into decoder's initial query embeddings and reference points:\n\n## Conversion Process\n\nThe conversion happens in `GroundingDinoModel.forward()` around lines 2227-2270 and depends on whether **two-stage** mode is enabled:\n\n### **Two-Stage Mode (config.two_stage=True)**\n\n1. **Generate proposals from encoder output**:\n   ```python\n   object_query_embedding, output_proposals = self.generate_encoder_output_proposals(\n       encoder_outputs[0], ~mask_flatten, spatial_shapes\n   )\n   ```\n   - `generate_encoder_output_proposals()` (line 2005) creates object queries from each pixel\n   - Returns: object query features and normalized bbox proposals (inverse sigmoid)\n\n2. **Predict classes and refine boxes**:\n   ```python\n   enc_outputs_class = self.encoder_output_class_embed(\n       object_query_embedding, encoder_outputs[1], text_token_mask\n   )\n   delta_bbox = self.encoder_output_bbox_embed(object_query_embedding)\n   enc_outputs_coord_logits = delta_bbox + output_proposals\n   ```\n\n3. **Select top-k proposals**:\n   ```python\n   topk_logits = enc_outputs_class.max(-1)[0]\n   topk_proposals = torch.topk(topk_logits, topk, dim=1)[1]\n   topk_coords_logits = torch.gather(enc_outputs_coord_logits, 1, topk_proposals.unsqueeze(-1).repeat(1, 1, 4))\n   ```\n\n4. **Create decoder inputs**:\n   ```python\n   reference_points = topk_coords_logits.sigmoid()  # Reference points\n   target = torch.gather(object_query_embedding, 1, topk_proposals.unsqueeze(-1).repeat(1, 1, d_model))  # Query embeddings\n   ```\n\n### **Single-Stage Mode (config.two_stage=False)**\n\n```python\ntarget = query_embeds.unsqueeze(0).repeat(batch_size, 1, 1)  # Learned query embeddings\nreference_points = self.reference_points.weight.unsqueeze(0).repeat(batch_size, 1, 1).sigmoid()  # Learned reference points\n```\n\n## Key Points\n\n- **Two-stage**: Query embeddings and reference points come from **top-k encoder outputs** (learned from data)\n- **Single-stage**: Both come from **learned parameters** (`query_position_embeddings` and `reference_points`)\n- Reference points are **normalized coordinates** [0, 1] via sigmoid activation\n- Query embeddings shape: `(batch_size, num_queries, hidden_dim)`\n- Reference points shape: `(batch_size, num_queries, 4)` representing (center_x, center_y, width, height)",
+      "facts": [
+        "RTDetrModel.forward is defined in src/transformers/models/rt_detr/modeling_rt_detr.py.",
+        "In RTDetrModel.forward, the encoder\u2019s flattened output is passed through enc_score_head.",
+        "In RTDetrModel.forward, the encoder\u2019s flattened output is passed through enc_bbox_head and anchors.",
+        "enc_score_head and enc_bbox_head with anchors produce per-query class scores and un-activated box logits.",
+        "torch.topk is called on the maximum class scores to pick the top num_queries indices.",
+        "The selected indices are used to gather region features from the encoded memory to form the decoder\u2019s initial inputs_embeds (target).",
+        "If config.learn_initial_query=True, a learned weight_embedding is tiled instead of gathering region features to form the decoder\u2019s initial inputs_embeds.",
+        "The corresponding un-activated box logits are gathered as reference_points_unact.",
+        "reference_points_unact are passed through a sigmoid function to obtain normalized boxes.",
+        "The normalized boxes are detached to form init_reference_points.",
+        "self.decoder is called with inputs_embeds set to target and reference_points set to init_reference_points."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "broad",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    },
+    {
+      "index": 8,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which utility does the test use to normalize and compare model outputs to four decimal places before assertion?",
+      "response": "Perfect! I found the answer. Let me look at the specific function:\n\nThe utility function used in tests to normalize and compare model outputs to four decimal places before assertion is **`nested_simplify`**.\n\n**Location:** `src/transformers/testing_utils.py:2550`\n\n**Key details:**\n- **Function signature:** `def nested_simplify(obj, decimals=3):`\n- **Default decimals:** 3 (but can be overridden to 4 when called as `nested_simplify(output, decimals=4)`)\n- **Purpose:** Simplifies objects by rounding float numbers and downcasting tensors/numpy arrays to enable simple equality tests\n- **Handles:** \n  - Lists, tuples, dicts (recursively)\n  - NumPy arrays\n  - PyTorch tensors\n  - TensorFlow tensors\n  - Floats (rounds to specified decimal places)\n  - Various NumPy numeric types\n\n**Usage example from tests:**\n```python\nnested_simplify(outputs, decimals=4)\n```\n\nThis utility is extensively used in pipeline tests (audio classification, image classification, object detection, etc.) to normalize model outputs before assertions, making the tests more robust to minor numerical differences.",
+      "facts": [
+        "The test uses the nested_simplify utility.",
+        "The nested_simplify utility is called with decimals = 4.",
+        "The nested_simplify utility rounds the pipeline\u2019s nested output.",
+        "The nested_simplify utility normalizes the pipeline\u2019s nested output.",
+        "The test performs its assertion after rounding and normalizing the pipeline\u2019s nested output."
+      ],
+      "llm_fact_verdicts": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "easy",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 9,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which device availability and compute capability conditions must hold for the LLMAWQ backend to be enabled?",
+      "response": "Based on the code analysis, here are the device availability and compute capability conditions that must hold for the LLMAWQ backend to be enabled:\n\n## LLMAWQ Backend Requirements\n\n**File:** `src/transformers/utils/quantization_config.py:964-972`\n\n### Conditions:\n\n1. **Device Availability:**\n   - **CUDA available** OR **XPU available**\n   - At least one of these devices must be present: `torch.cuda.is_available()` OR `torch.xpu.is_available()`\n\n2. **Compute Capability (for CUDA devices):**\n   - Major version **>= 8**\n   - Specifically: `compute_capability[0] >= 8`\n\n### Code Implementation:\n\n```python\nif self.backend == AwqBackendPackingMethod.LLMAWQ:\n    # Only cuda device can run this function\n    if not (torch.cuda.is_available() or torch.xpu.is_available()):\n        raise ValueError(\"LLM-AWQ backend is only supported on CUDA and XPU\")\n    if torch.cuda.is_available():\n        compute_capability = torch.cuda.get_device_capability()\n        major, minor = compute_capability\n        if major < 8:\n            raise ValueError(\"LLM-AWQ backend is only supported on CUDA GPUs with compute capability >= 8.0\")\n```\n\n### Summary:\n\n- **CUDA devices:** Requires compute capability >= 8.0 (e.g., A100, A10, RTX 3090, etc.)\n- **XPU devices:** No compute capability check (only availability check)\n- **Not supported:** CUDA GPUs with compute capability < 8.0 (e.g., T4, V100)",
+      "facts": [
+        "AwqConfig.post_init is defined in src/transformers/utils/quantization_config.py.",
+        "In AwqConfig.post_init, the LLMAWQ backend is gated so that torch.cuda.is_available() or torch.xpu.is_available() must return true.",
+        "If CUDA is used, torch.cuda.get_device_capability()[0] must be greater than or equal to 8.",
+        "torch.cuda.get_device_capability()[0] represents the major version of the CUDA device\u2019s compute capability.",
+        "A major compute capability version of 8 corresponds to compute capability \u2265 8.0."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "broad",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    }
+  ],
+  "summary": {
+    "total_examples": 10,
+    "passed_examples": 8,
+    "total_facts": 50,
+    "llm_verified_facts": 34,
+    "accuracy": 68.0
+  },
+  "results_by_type": {
+    "open_question": {
+      "total": 50,
+      "verified": 34,
+      "examples": 10,
+      "passed": 8
+    }
+  },
+  "results_by_difficulty": {
+    "moderate": {
+      "total": 43,
+      "verified": 28,
+      "examples": 8,
+      "passed": 6
+    },
+    "easy": {
+      "total": 7,
+      "verified": 6,
+      "examples": 2,
+      "passed": 2
+    }
+  },
+  "results_by_scope": {
+    "deep": {
+      "total": 34,
+      "verified": 23,
+      "examples": 8,
+      "passed": 6
+    },
+    "broad": {
+      "total": 16,
+      "verified": 11,
+      "examples": 2,
+      "passed": 2
+    }
+  }
+}

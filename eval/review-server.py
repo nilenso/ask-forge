@@ -16,13 +16,57 @@ Default port: 5000
 
 import json
 import os
+import re
 from datetime import datetime
-import subprocess
 from flask import Flask, render_template, jsonify, request
+
+import config
 
 app = Flask(__name__)
 
-REPORTS_DIR = "reports"
+# Get the directory where this script lives
+EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(EVAL_DIR)
+REPORTS_DIR = os.path.join(EVAL_DIR, "reports")
+
+
+def get_agent_config():
+    """Read agent configuration from config.ts."""
+    config_path = os.path.join(PROJECT_ROOT, "config.ts")
+    agent_config = {
+        "model_provider": "unknown",
+        "model_name": "unknown",
+        "max_iterations": "unknown",
+        "system_prompt": "unknown",
+    }
+    
+    try:
+        with open(config_path, "r") as f:
+            content = f.read()
+        
+        # Parse MODEL_PROVIDER
+        match = re.search(r'export const MODEL_PROVIDER\s*=\s*["\']([^"\']+)["\']', content)
+        if match:
+            agent_config["model_provider"] = match.group(1)
+        
+        # Parse MODEL_NAME
+        match = re.search(r'export const MODEL_NAME\s*=\s*["\']([^"\']+)["\']', content)
+        if match:
+            agent_config["model_name"] = match.group(1)
+        
+        # Parse MAX_TOOL_ITERATIONS
+        match = re.search(r'export const MAX_TOOL_ITERATIONS\s*=\s*(\d+)', content)
+        if match:
+            agent_config["max_iterations"] = match.group(1)
+        
+        # Parse SYSTEM_PROMPT (backtick string)
+        match = re.search(r'export const SYSTEM_PROMPT\s*=\s*`([^`]+)`', content, re.DOTALL)
+        if match:
+            agent_config["system_prompt"] = match.group(1).strip()
+    except Exception:
+        pass
+    
+    return agent_config
 RUNS_DIR = os.path.join(REPORTS_DIR, "runs")
 REVIEWS_DIR = os.path.join(REPORTS_DIR, "reviews")
 
@@ -310,8 +354,6 @@ def compute_metrics():
 
 # Routes
 
-AVAILABLE_AGENTS = ["ask-forge", "claude"]
-
 
 @app.route("/")
 def index():
@@ -322,7 +364,7 @@ def index():
     for run in runs:
         run["review_status"] = get_review_status(run["id"], run["total_examples"])
     
-    return render_template("index.html", runs=runs, agents=AVAILABLE_AGENTS)
+    return render_template("index.html", runs=runs, agents=config.AVAILABLE_AGENTS)
 
 
 @app.route("/review/<run_id>")
@@ -334,7 +376,16 @@ def review(run_id):
     
     review_data = get_review(run_id)
     
-    return render_template("review.html", run=run, review=review_data)
+    # Pass LLM judge config to template
+    llm_config = {
+        "model": config.LLM_JUDGE_MODEL,
+        "prompt": config.LLM_JUDGE_PROMPT,
+    }
+    
+    # Pass agent config to template
+    agent_config = get_agent_config()
+    
+    return render_template("review.html", run=run, review=review_data, llm_config=llm_config, agent_config=agent_config)
 
 
 @app.route("/metrics")
@@ -419,42 +470,6 @@ def api_save_example_review(run_id, example_index):
 def api_metrics():
     """API: Get accuracy metrics."""
     return jsonify(compute_metrics())
-
-
-@app.route("/api/run-test", methods=["POST"])
-def api_run_test():
-    """API: Start a new test run."""
-    data = request.json
-    agent = data.get("agent", "ask-forge")
-    num_examples = data.get("num_examples", 5)
-    
-    # Validate agent
-    if agent not in AVAILABLE_AGENTS:
-        return jsonify({"success": False, "error": f"Unknown agent: {agent}"}), 400
-    
-    # Validate num_examples
-    try:
-        num_examples = int(num_examples)
-        if num_examples < 1 or num_examples > 100:
-            raise ValueError("num_examples must be between 1 and 100")
-    except (ValueError, TypeError) as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-    
-    # Run test-dataset.py in background
-    try:
-        cmd = ["python", "test-dataset.py", str(num_examples), agent]
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-        return jsonify({
-            "success": True,
-            "message": f"Test started: {num_examples} examples with {agent}"
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":

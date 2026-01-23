@@ -139,6 +139,23 @@
     </div>
 </div>
 
+<!-- Configuration (collapsible) -->
+<details class="card" style="cursor: pointer;">
+    <summary style="font-weight: 600;">Configuration</summary>
+    <div style="margin-top: 15px;">
+        <h3 style="font-size: 14px; margin-bottom: 10px;">Agent (ask-forge)</h3>
+        <p><strong>Model:</strong> <code>{{ agent_config.model_provider }}/{{ agent_config.model_name }}</code></p>
+        <p><strong>Max Tool Iterations:</strong> {{ agent_config.max_iterations }}</p>
+        <p style="margin-top: 10px;"><strong>System Prompt:</strong></p>
+        <pre style="background: #e8f5e9; padding: 15px; border-radius: 6px; white-space: pre-wrap; font-size: 12px; margin-top: 5px;">{{ agent_config.system_prompt }}</pre>
+        
+        <h3 style="font-size: 14px; margin: 20px 0 10px;">LLM Judge</h3>
+        <p><strong>Model:</strong> <code>{{ llm_config.model }}</code></p>
+        <p style="margin-top: 10px;"><strong>Prompt Template:</strong></p>
+        <pre style="background: #fff3e0; padding: 15px; border-radius: 6px; white-space: pre-wrap; font-size: 12px; margin-top: 5px;">{{ llm_config.prompt }}</pre>
+    </div>
+</details>
+
 <div class="card">
     <div class="progress-info">
         <div>

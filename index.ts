@@ -2,6 +2,7 @@ import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type Context, complete, getModel, type Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import * as config from "./config";
 
 // Lock map to prevent race conditions when cloning the same repo in parallel
 const cloneLocks = new Map<string, Promise<void>>();
@@ -340,18 +341,11 @@ export interface AskResult {
  * @returns Structured result with prompt, tool-calls, and response
  */
 export async function ask(repo: Repo, queryString: string): Promise<AskResult> {
-	const model = getModel("openrouter", "anthropic/claude-sonnet-4.5");
+	const model = getModel(config.MODEL_PROVIDER, config.MODEL_NAME);
 	const toolCallRecords: ToolCallRecord[] = [];
 
 	const context: Context = {
-		systemPrompt: `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
-Use the available tools to explore the codebase and answer the user's question.
-
-Response guidelines:
-- Be concise and to the point. No preamble or filler.
-- Use structured format: headings, bullet points, or numbered lists.
-- Cite file paths when relevant (e.g., "src/auth.ts:42").
-- Avoid lengthy prose. Prefer short statements.`,
+		systemPrompt: config.SYSTEM_PROMPT,
 		messages: [{ role: "user", content: queryString }],
 		tools,
 	};
@@ -381,8 +375,7 @@ Response guidelines:
 		console.error(`${"═".repeat(60)}\n`);
 	};
 
-	const maxIterations = 10;
-	for (let i = 0; i < maxIterations; i++) {
+	for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
 		let response: Awaited<ReturnType<typeof complete>>;
 		try {
 			response = await complete(model, context);

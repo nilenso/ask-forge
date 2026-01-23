@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Evaluation System{% endblock %}
+
+{% block extra_styles %}
+.clickable-table tbody tr:hover {
+    background: #e8f4fc;
+}
+.closable {
+    position: relative;
+}
+.closable .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #999;
+    line-height: 1;
+}
+.closable .close-btn:hover {
+    color: #333;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Quick Start (closable) -->
+<div class="card closable" id="quick-start" style="background: #f0f7ff;">
+    <button class="close-btn" onclick="document.getElementById('quick-start').style.display='none'">&times;</button>
+    <h2>Quick Start</h2>
+    <ol style="margin-left: 20px; margin-top: 10px;">
+        <li>Run <code>python test-dataset.py 5</code> to test 5 examples</li>
+        <li>Click a row below to review responses</li>
+        <li>Mark responses as correct/incorrect and review fact verdicts</li>
+        <li>View <a href="/metrics">Metrics</a> to compare LLM vs Human accuracy</li>
+    </ol>
+</div>
+
+<!-- Review Progress Section -->
+<div class="card">
+    <h2>Review Progress</h2>
+    <p class="text-muted" style="margin-bottom: 15px;">Click a row to review that run</p>
+    {% if runs %}
+    <table class="clickable-table">
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Agent</th>
+                <th>Date</th>
+                <th>Examples</th>
+                <th>Facts</th>
+                <th>Review Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr onclick="window.location='/review/{{ run.id }}'" style="cursor: pointer;">
+                <td><code>{{ run.id[:15] }}...</code></td>
+                <td>{{ run.agent_name }}</td>
+                <td>{{ run.timestamp[:16] if run.timestamp else 'N/A' }}</td>
+                <td>
+                    {% if run.status == 'in_progress' %}
+                        <span class="text-muted">{{ run.progress_completed }}/{{ run.progress_total }}</span>
+                    {% else %}
+                        {{ run.total_examples }}
+                    {% endif %}
+                </td>
+                <td>{{ run.total_facts }}</td>
+                <td>
+                    {% if run.status == 'in_progress' %}
+                        <span class="badge badge-warning">Test Running</span>
+                    {% elif run.review_status.complete %}
+                        <span class="badge badge-success">Complete</span>
+                    {% elif run.review_status.reviewed > 0 %}
+                        <span class="badge badge-warning">{{ run.review_status.reviewed }}/{{ run.review_status.total }}</span>
+                    {% else %}
+                        <span class="badge badge-info">Pending</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No test runs found.</p>
+    <p class="text-muted">Run <code>python test-dataset.py [num_examples]</code> to create test runs.</p>
+    {% endif %}
+</div>
+{% endblock %}

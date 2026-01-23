@@ -1,0 +1,124 @@
+{
+  "id": "20260122-165126-claude-claude-sonnet-4-20250514",
+  "agent_name": "claude (claude-sonnet-4-20250514)",
+  "timestamp": "2026-01-22T16:51:26.813855",
+  "status": "complete",
+  "progress": {
+    "completed": 3,
+    "total": 3
+  },
+  "examples": [
+    {
+      "index": 0,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Under what condition does the collate function use the feature extractor\u2019s padding value for input IDs instead of the tokenizer\u2019s?",
+      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+      "facts": [
+        "The function pad_collate_fn.inner is defined in src/transformers/pipelines/base.py.",
+        "pad_collate_fn.inner handles the `\"input_ids\"` key.",
+        "If tokenizer is None and feature_extractor is not None, pad_collate_fn.inner uses the feature extractor\u2019s padding value (f_padding_value).",
+        "Otherwise, pad_collate_fn.inner uses the tokenizer\u2019s padding value (t_padding_value)."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 1,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "What scaling factor is applied to the feature map dimensions when removing keypoints near image borders?",
+      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+      "facts": [
+        "The function SuperPointInterestPointDecoder._extract_keypoints is defined in src/transformers/models/superpoint/modeling_superpoint.py.",
+        "The function SuperPointInterestPointDecoder._extract_keypoints calls remove_keypoints_from_borders.",
+        "The call to remove_keypoints_from_borders includes height * 8 as an argument.",
+        "The call to remove_keypoints_from_borders includes width * 8 as an argument.",
+        "The scaling factor used in the call to remove_keypoints_from_borders is 8."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": true,
+        "includes_code": false,
+        "includes_location_hints": false
+      }
+    },
+    {
+      "index": 2,
+      "repo_url": "https://github.com/huggingface/transformers",
+      "commit": "a1ad9197c5756858e9014a0e01fe5fb1791efdf2",
+      "question": "Which internal attribute disables fast parameter buffer assignment by default in the GPT2 model?",
+      "response": "[ERROR: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted\"]",
+      "facts": [
+        "The file src/transformers/models/gpt2/modeling_gpt2.py contains the class attribute GPT2Model._supports_param_buffer_assignment.",
+        "The class attribute GPT2Model._supports_param_buffer_assignment is set to False.",
+        "Fast parameter buffer assignment is disabled by default."
+      ],
+      "llm_fact_verdicts": [
+        false,
+        false,
+        false
+      ],
+      "metadata": {
+        "type": "open_question",
+        "difficulty": "moderate",
+        "scope": "deep",
+        "is_core_question": false,
+        "includes_code": false,
+        "includes_location_hints": true
+      }
+    }
+  ],
+  "summary": {
+    "total_examples": 3,
+    "passed_examples": 0,
+    "total_facts": 12,
+    "llm_verified_facts": 0,
+    "accuracy": 0.0
+  },
+  "results_by_type": {
+    "open_question": {
+      "total": 12,
+      "verified": 0,
+      "examples": 3,
+      "passed": 0
+    }
+  },
+  "results_by_difficulty": {
+    "moderate": {
+      "total": 12,
+      "verified": 0,
+      "examples": 3,
+      "passed": 0
+    }
+  },
+  "results_by_scope": {
+    "deep": {
+      "total": 12,
+      "verified": 0,
+      "examples": 3,
+      "passed": 0
+    }
+  }
+}

@@ -11,6 +11,28 @@ bun install
 bun run test-ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
+## Evaluation
+
+The `eval/` folder contains a human-in-the-loop evaluation system for testing code analysis agents.
+
+```bash
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Run tests
+cd eval
+python test-dataset.py 5 ask-forge
+
+# Start review server
+python review-server.py
+# Open http://localhost:5001
+```
+
+### Configuration
+
+- `config.ts` - Agent model and prompt settings (TypeScript)
+- `eval/config.py` - LLM judge and Claude agent settings (Python)
+
 
 
 ## Implementation Decisions
