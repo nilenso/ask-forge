@@ -5,7 +5,8 @@
 	"scripts": {
 		"format": "biome format --write .",
 		"lint": "biome lint .",
-		"check": "biome check --write ."
+		"check": "biome check --write .",
+		"web": "bun run web/server.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.11",

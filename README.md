@@ -11,6 +11,22 @@ bun install
 bun run test-ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
+## Web UI
+
+Run the web interface to ask questions and collect feedback:
+
+```bash
+bun run web
+# Open http://localhost:3000
+```
+
+Features:
+- Ask questions about any git repo (GitHub, GitLab, etc.)
+- View agent responses and tool calls
+- Provide binary feedback (correct/incorrect)
+- Tag difficulty (easy/medium/hard)
+- Samples saved to `web/data/samples.json`
+
 ## Evaluation
 
 The `eval/` folder contains a human-in-the-loop evaluation system for testing code analysis agents.
@@ -54,3 +70,10 @@ Since ask-forge is exposed as a library, different service users may request the
 - [ ] Revisit tools that we use
 - [ ] Revisit and optimise parallel git clone (currently using a simple lock to prevent race conditions)
 - [ ] Revisit eval metrics (precision, recall, accuracy definitions)
+- [x] Build a web UI for ask-forge where users can:
+  - Ask questions about any git repo (GitHub, GitLab, etc.) with repo URL and optional committish
+  - View the agent's response
+  - Provide binary feedback (correct/incorrect)
+  - Tag answers with difficulty (easy/medium/hard)
+  - This will be used to create a new dataset for evaluating ask-forge
+  - Each sample: question, answer, repo URL, committish, difficulty tag, binary feedback

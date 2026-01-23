@@ -1,0 +1,32 @@
+[
+  {
+    "id": "d69c7810-34d4-4027-96d4-b830d647c369",
+    "timestamp": "2026-01-23T08:16:16.141Z",
+    "repoUrl": "https://github.com/nilenso/goose",
+    "committish": "HEAD",
+    "question": "What is the usecase of this project?",
+    "response": "## Use Case of Goose\n\n**Goose is a background job processing library for Clojure** that enables asynchronous task execution in distributed systems.\n\n### Primary Use Cases:\n\n1. **Background Job Processing**\n   - Execute time-consuming tasks asynchronously\n   - Offload heavy computations from web requests\n   - Process tasks that don't need immediate response\n\n2. **Task Scheduling**\n   - Schedule jobs to run at specific times\n   - Support for cron-like scheduling\n   - Delayed job execution (perform-in-sec)\n\n3. **Distributed Work Queue**\n   - Process jobs across multiple workers\n   - Support for RabbitMQ and Redis as message brokers\n   - Reliable message delivery with failure handling\n\n4. **Batch Processing**\n   - Handle batch jobs efficiently\n   - Process large datasets asynchronously\n\n### Key Features Supporting Use Cases:\n\n- **Reliability**: Handles code/hardware/network failures without data loss\n- **Scalability**: Performant and concurrent processing\n- **Extensibility**: Middleware support for custom logic\n- **Monitoring**: Built-in metrics and job management console\n- **Error Handling**: Automatic retries and failure management\n\n### Production Usage:\nCurrently used by **5 companies** in production including:\n- Aspect Analytics\n- BeeCastle  \n- Consolidate Health\n\nThe library is designed for enterprise-grade background processing needs in Clojure applications.",
+    "toolCalls": [
+      {
+        "name": "ls",
+        "arguments": {
+          "path": "."
+        }
+      },
+      {
+        "name": "read",
+        "arguments": {
+          "path": "README.md"
+        }
+      },
+      {
+        "name": "read",
+        "arguments": {
+          "path": "deps.edn"
+        }
+      }
+    ],
+    "feedback": "correct",
+    "difficulty": "easy"
+  }
+]
