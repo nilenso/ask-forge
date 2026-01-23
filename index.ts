@@ -316,6 +316,14 @@ export interface AskResult {
 	prompt: string;
 	toolCalls: ToolCallRecord[];
 	response: string;
+	usage: {
+		inputTokens: number;
+		outputTokens: number;
+		totalTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+	};
+	inferenceTimeMs: number;
 }
 
 export type ProgressEvent =
@@ -371,7 +379,15 @@ function createSession(repo: Repo): Session {
 	};
 
 	async function doAsk(question: string, onProgress?: OnProgress): Promise<AskResult> {
+		const startTime = Date.now();
 		const toolCallRecords: ToolCallRecord[] = [];
+		const accumulatedUsage = {
+			inputTokens: 0,
+			outputTokens: 0,
+			totalTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+		};
 		context.messages.push({ role: "user", content: question, timestamp: Date.now() });
 
 		for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
@@ -387,7 +403,18 @@ function createSession(repo: Repo): Session {
 					prompt: question,
 					toolCalls: toolCallRecords,
 					response: `[ERROR: API call failed: ${errorMessage}]`,
+					usage: accumulatedUsage,
+					inferenceTimeMs: Date.now() - startTime,
 				};
+			}
+
+			// Accumulate usage from this response
+			if (response.usage) {
+				accumulatedUsage.inputTokens += response.usage.input ?? 0;
+				accumulatedUsage.outputTokens += response.usage.output ?? 0;
+				accumulatedUsage.totalTokens += response.usage.totalTokens ?? 0;
+				accumulatedUsage.cacheReadTokens += response.usage.cacheRead ?? 0;
+				accumulatedUsage.cacheWriteTokens += response.usage.cacheWrite ?? 0;
 			}
 
 			const apiResponse = response as { stopReason?: string; errorMessage?: string };
@@ -403,6 +430,8 @@ function createSession(repo: Repo): Session {
 					prompt: question,
 					toolCalls: toolCallRecords,
 					response: `[ERROR: ${errorMsg}]`,
+					usage: accumulatedUsage,
+					inferenceTimeMs: Date.now() - startTime,
 				};
 			}
 
@@ -424,6 +453,8 @@ function createSession(repo: Repo): Session {
 						prompt: question,
 						toolCalls: toolCallRecords,
 						response: "[ERROR: Empty response from API - check API key and credits]",
+						usage: accumulatedUsage,
+						inferenceTimeMs: Date.now() - startTime,
 					};
 				}
 
@@ -432,6 +463,8 @@ function createSession(repo: Repo): Session {
 					prompt: question,
 					toolCalls: toolCallRecords,
 					response: responseText,
+					usage: accumulatedUsage,
+					inferenceTimeMs: Date.now() - startTime,
 				};
 			}
 
@@ -464,6 +497,8 @@ function createSession(repo: Repo): Session {
 			prompt: question,
 			toolCalls: toolCallRecords,
 			response: "[ERROR: Max iterations reached without a final answer.]",
+			usage: accumulatedUsage,
+			inferenceTimeMs: Date.now() - startTime,
 		};
 	}
 
