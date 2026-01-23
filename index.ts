@@ -318,10 +318,22 @@ export interface AskResult {
 	response: string;
 }
 
+export type ProgressEvent =
+	| { type: "thinking" }
+	| { type: "tool_start"; name: string; arguments: Record<string, unknown> }
+	| { type: "tool_end"; name: string }
+	| { type: "responding" };
+
+export type OnProgress = (event: ProgressEvent) => void;
+
+export interface AskOptions {
+	onProgress?: OnProgress;
+}
+
 export interface Session {
 	id: string;
 	repo: Repo;
-	ask(question: string): Promise<AskResult>;
+	ask(question: string, options?: AskOptions): Promise<AskResult>;
 	close(): void;
 }
 
@@ -358,11 +370,13 @@ function createSession(repo: Repo): Session {
 		console.error(`${"═".repeat(60)}\n`);
 	};
 
-	async function doAsk(question: string): Promise<AskResult> {
+	async function doAsk(question: string, onProgress?: OnProgress): Promise<AskResult> {
 		const toolCallRecords: ToolCallRecord[] = [];
 		context.messages.push({ role: "user", content: question, timestamp: Date.now() });
 
 		for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
+			onProgress?.({ type: "thinking" });
+			
 			let response: Awaited<ReturnType<typeof complete>>;
 			try {
 				response = await complete(model, context);
@@ -396,6 +410,7 @@ function createSession(repo: Repo): Session {
 			const toolCalls = response.content.filter((b) => b.type === "toolCall");
 
 			if (toolCalls.length === 0) {
+				onProgress?.({ type: "responding" });
 				const textBlocks = response.content.filter((b) => b.type === "text");
 				const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
 
@@ -424,7 +439,11 @@ function createSession(repo: Repo): Session {
 				if (call.type !== "toolCall") continue;
 
 				log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
+				onProgress?.({ type: "tool_start", name: call.name, arguments: call.arguments });
+				
 				const result = await executeTool(call.name, call.arguments, repo.localPath);
+				
+				onProgress?.({ type: "tool_end", name: call.name });
 
 				toolCallRecords.push({
 					name: call.name,
@@ -452,7 +471,7 @@ function createSession(repo: Repo): Session {
 		id,
 		repo,
 
-		async ask(question: string): Promise<AskResult> {
+		async ask(question: string, options?: AskOptions): Promise<AskResult> {
 			if (closed) {
 				throw new Error(`Session ${id} is closed`);
 			}
@@ -461,14 +480,31 @@ function createSession(repo: Repo): Session {
 				await pending;
 			}
 
-			pending = doAsk(question);
+			pending = doAsk(question, options?.onProgress);
 			const result = await pending;
 			pending = null;
 			return result;
 		},
 
 		close() {
+			if (closed) return;
 			closed = true;
+
+			// Clean up worktree asynchronously (fire and forget)
+			(async () => {
+				try {
+					// Remove worktree from git's tracking
+					const proc = Bun.spawn(["git", "worktree", "remove", "--force", repo.localPath], {
+						cwd: repo.cachePath,
+						stdout: "pipe",
+						stderr: "pipe",
+						env: GIT_ENV,
+					});
+					await proc.exited;
+				} catch {
+					// Ignore cleanup errors
+				}
+			})();
 		},
 	};
 }
