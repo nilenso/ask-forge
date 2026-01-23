@@ -1,0 +1,119 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "deep_code_bench",
+  "dataset_size": 1551131,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/Qodo/deep_code_bench@5a3e3809067e779f2128058f00c8db58e124edc9/data/train-00000-of-00001.parquet": {
+      "num_bytes": 572234,
+      "checksum": null
+    },
+    "hf://datasets/Qodo/deep_code_bench@5a3e3809067e779f2128058f00c8db58e124edc9/data/test-00000-of-00001.parquet": {
+      "num_bytes": 160476,
+      "checksum": null
+    }
+  },
+  "download_size": 732710,
+  "features": {
+    "question": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "answer": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "facts": {
+      "feature": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "_type": "List"
+    },
+    "metadata": {
+      "commit": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "difficulty": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "found_stats": {
+        "path": {
+          "dtype": "int64",
+          "_type": "Value"
+        }
+      },
+      "includes_code": {
+        "dtype": "bool",
+        "_type": "Value"
+      },
+      "includes_location_hints": {
+        "dtype": "bool",
+        "_type": "Value"
+      },
+      "is_core_question": {
+        "dtype": "bool",
+        "_type": "Value"
+      },
+      "n_context_files": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "n_context_nodes": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "n_files_pr": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "pr": {
+        "dtype": "int64",
+        "_type": "Value"
+      },
+      "repo": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "scope": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "type": {
+        "dtype": "string",
+        "_type": "Value"
+      }
+    },
+    "id": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 2283841,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 1233617,
+      "num_examples": 912,
+      "dataset_name": "deep_code_bench"
+    },
+    "test": {
+      "name": "test",
+      "num_bytes": 317514,
+      "num_examples": 232,
+      "dataset_name": "deep_code_bench"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}

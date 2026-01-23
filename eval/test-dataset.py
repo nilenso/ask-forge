@@ -615,10 +615,16 @@ def main():
         print("Using keyword matching for fact verification")
         print("(Set OPENROUTER_API_KEY to use LLM judge)")
     
-    # Load the dataset
+    # Load the dataset (local first, then Hugging Face)
     print()
-    print("Loading dataset from Hugging Face...")
-    dataset = load_dataset("Qodo/deep_code_bench", split="train")
+    local_dataset_path = os.path.join(os.path.dirname(__file__), "data", "deep_code_bench")
+    if os.path.exists(local_dataset_path):
+        print(f"Loading dataset from local cache: {local_dataset_path}")
+        from datasets import Dataset
+        dataset = Dataset.load_from_disk(local_dataset_path)
+    else:
+        print("Loading dataset from Hugging Face...")
+        dataset = load_dataset("Qodo/deep_code_bench", split="train")
     print(f"Loaded {len(dataset)} examples")
     print(f"Agent: {agent.name}")
     print()
