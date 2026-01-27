@@ -525,14 +525,24 @@ function createSession(repo: Repo): Session {
 				};
 			}
 
-			// Execute tool calls (results already streamed via tool_end events)
-			for (const call of toolCalls) {
-				if (call.type !== "toolCall") continue;
-
+			// Execute tool calls in parallel (all tools are I/O bound and read-only)
+			const validCalls = toolCalls.filter((call) => call.type === "toolCall");
+			for (const call of validCalls) {
 				log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
+			}
+			const toolExecStart = Date.now();
+			const results = await Promise.all(
+				validCalls.map(async (call) => {
+					const t0 = Date.now();
+					const result = await executeTool(call.name, call.arguments, repo.localPath);
+					log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
+					return result;
+				}),
+			);
+			log(`ALL_TOOLS_DONE: ${validCalls.length} calls`, `${Date.now() - toolExecStart}ms`);
 
-				const result = await executeTool(call.name, call.arguments, repo.localPath);
-
+			// Push results back in request order to preserve conversation context
+			validCalls.forEach((call, j) => {
 				toolCallRecords.push({
 					name: call.name,
 					arguments: call.arguments,
@@ -541,11 +551,11 @@ function createSession(repo: Repo): Session {
 					role: "toolResult",
 					toolCallId: call.id,
 					toolName: call.name,
-					content: [{ type: "text", text: result }],
+					content: [{ type: "text", text: results[j] as string }],
 					isError: false,
 					timestamp: Date.now(),
 				});
-			}
+			});
 		}
 
 		return {
