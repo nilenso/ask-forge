@@ -15,7 +15,7 @@ export const MODEL_PROVIDER = "openrouter";
 export const MODEL_NAME = "anthropic/claude-opus-4";
 
 /** Maximum tool-use iterations (how many tool calls the agent can make before giving a final answer) */
-export const MAX_TOOL_ITERATIONS = 10;
+export const MAX_TOOL_ITERATIONS = 20;
 
 // =============================================================================
 // SYSTEM PROMPT
