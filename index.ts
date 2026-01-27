@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { type Context, complete, getModel, type Tool } from "@mariozechner/pi-ai";
+import { type AssistantMessage, type Context, getModel, stream, type Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import * as config from "./config";
 
@@ -328,8 +328,11 @@ export interface AskResult {
 
 export type ProgressEvent =
 	| { type: "thinking" }
+	| { type: "thinking_delta"; delta: string }
+	| { type: "text_delta"; delta: string }
 	| { type: "tool_start"; name: string; arguments: Record<string, unknown> }
-	| { type: "tool_end"; name: string }
+	| { type: "tool_delta"; name: string; delta: string }
+	| { type: "tool_end"; name: string; arguments: Record<string, unknown> }
 	| { type: "responding" };
 
 export type OnProgress = (event: ProgressEvent) => void;
@@ -390,12 +393,66 @@ function createSession(repo: Repo): Session {
 		};
 		context.messages.push({ role: "user", content: question, timestamp: Date.now() });
 
+		// Track tool call names during streaming (before we have full arguments)
+		const toolCallNames = new Map<number, string>();
+
 		for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
 			onProgress?.({ type: "thinking" });
-			
-			let response: Awaited<ReturnType<typeof complete>>;
+
+			let response: AssistantMessage;
 			try {
-				response = await complete(model, context);
+				const eventStream = stream(model, context);
+
+				// Process streaming events
+				for await (const event of eventStream) {
+					switch (event.type) {
+						case "thinking_delta":
+							onProgress?.({ type: "thinking_delta", delta: event.delta });
+							break;
+						case "text_delta":
+							onProgress?.({ type: "text_delta", delta: event.delta });
+							break;
+						case "toolcall_start":
+							// We don't have the name yet, just track that a tool call started
+							break;
+						case "toolcall_delta": {
+							// Try to parse the name from the partial tool call
+							const partialToolCall = event.partial.content[event.contentIndex];
+							if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
+								const prevName = toolCallNames.get(event.contentIndex);
+								if (!prevName) {
+									toolCallNames.set(event.contentIndex, partialToolCall.name);
+									onProgress?.({ type: "tool_start", name: partialToolCall.name, arguments: {} });
+								}
+								onProgress?.({ type: "tool_delta", name: partialToolCall.name, delta: event.delta });
+							}
+							break;
+						}
+						case "toolcall_end":
+							onProgress?.({
+								type: "tool_end",
+								name: event.toolCall.name,
+								arguments: event.toolCall.arguments,
+							});
+							toolCallNames.delete(event.contentIndex);
+							break;
+						case "error": {
+							const errorMsg = event.error?.content?.[0];
+							const errorText = errorMsg?.type === "text" ? errorMsg.text : "Unknown API error";
+							logError(`API call failed (iteration ${i + 1})`, errorText);
+							return {
+								prompt: question,
+								toolCalls: toolCallRecords,
+								response: `[ERROR: API call failed: ${errorText}]`,
+								usage: accumulatedUsage,
+								inferenceTimeMs: Date.now() - startTime,
+							};
+						}
+					}
+				}
+
+				// Get the final response
+				response = await eventStream.result();
 			} catch (error) {
 				logError(`API call failed (iteration ${i + 1})`, error);
 				const errorMessage = error instanceof Error ? error.message : String(error);
@@ -468,15 +525,13 @@ function createSession(repo: Repo): Session {
 				};
 			}
 
+			// Execute tool calls (results already streamed via tool_end events)
 			for (const call of toolCalls) {
 				if (call.type !== "toolCall") continue;
 
 				log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
-				onProgress?.({ type: "tool_start", name: call.name, arguments: call.arguments });
-				
+
 				const result = await executeTool(call.name, call.arguments, repo.localPath);
-				
-				onProgress?.({ type: "tool_end", name: call.name });
 
 				toolCallRecords.push({
 					name: call.name,
