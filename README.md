@@ -77,3 +77,7 @@ Since ask-forge is exposed as a library, different service users may request the
   - Tag answers with difficulty (easy/medium/hard)
   - This will be used to create a new dataset for evaluating ask-forge
   - Each sample: question, answer, repo URL, committish, difficulty tag, binary feedback
+  - [ ] A user should be able login using github or gmail. 
+- [ ] A user should be able to the last 10 server session history. Sessions will be stored in server.
+- [ ] A user should be able to switch sessions.
+- [ ] A user should be able to continue from where it left off when they switch to a previous session.
