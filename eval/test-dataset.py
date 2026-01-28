@@ -175,8 +175,8 @@ def verify_fact_with_llm(fact: str, response: str, openrouter_api_key: str) -> b
     
     prompt = config.LLM_JUDGE_PROMPT.format(fact=fact, response=response)
 
+    import requests
     try:
-        import requests
         resp = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -194,6 +194,10 @@ def verify_fact_with_llm(fact: str, response: str, openrouter_api_key: str) -> b
         data = resp.json()
         result = data["choices"][0]["message"]["content"].strip().lower()
         return result == "true"
+    except requests.exceptions.HTTPError as e:
+        print(f"    [LLM Judge Error: {e}]")
+        print(f"    [Response: {e.response.text}]")
+        return False
     except Exception as e:
         print(f"    [LLM Judge Error: {e}]")
         return False
@@ -619,9 +623,14 @@ def main():
     print()
     local_dataset_path = os.path.join(os.path.dirname(__file__), "data", "deep_code_bench")
     if os.path.exists(local_dataset_path):
-        print(f"Loading dataset from local cache: {local_dataset_path}")
-        from datasets import Dataset
-        dataset = Dataset.load_from_disk(local_dataset_path)
+        try:
+            print(f"Loading dataset from local cache: {local_dataset_path}")
+            from datasets import Dataset
+            dataset = Dataset.load_from_disk(local_dataset_path)
+        except Exception as e:
+            print(f"Failed to load from local cache: {e}")
+            print("Falling back to Hugging Face...")
+            dataset = load_dataset("Qodo/deep_code_bench", split="train")
     else:
         print("Loading dataset from Hugging Face...")
         dataset = load_dataset("Qodo/deep_code_bench", split="train")
