@@ -439,7 +439,16 @@ function createSession(repo: Repo): Session {
 						case "error": {
 							const errorMsg = event.error?.content?.[0];
 							const errorText = errorMsg?.type === "text" ? errorMsg.text : "Unknown API error";
-							logError(`API call failed (iteration ${i + 1})`, errorText);
+							
+							// Create detailed error object for logging
+							const errorDetails = {
+								message: errorText,
+								fullError: event.error,
+								iteration: i + 1,
+								timestamp: new Date().toISOString(),
+							};
+							
+							logError(`API call failed (iteration ${i + 1})`, errorDetails);
 							return {
 								prompt: question,
 								toolCalls: toolCallRecords,
@@ -454,7 +463,20 @@ function createSession(repo: Repo): Session {
 				// Get the final response
 				response = await eventStream.result();
 			} catch (error) {
-				logError(`API call failed (iteration ${i + 1})`, error);
+				// Create detailed error object for logging
+				const errorDetails = {
+					error: error,
+					errorType: error?.constructor?.name,
+					iteration: i + 1,
+					timestamp: new Date().toISOString(),
+					...(error instanceof Error && {
+						message: error.message,
+						stack: error.stack,
+						cause: error.cause,
+					}),
+				};
+				
+				logError(`API call failed (iteration ${i + 1})`, errorDetails);
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				return {
 					prompt: question,
@@ -480,8 +502,11 @@ function createSession(repo: Repo): Session {
 				console.error(`\n${"═".repeat(60)}`);
 				console.error("│ API ERROR");
 				console.error(`${"═".repeat(60)}`);
+				console.error(`Iteration: ${i + 1}`);
 				console.error(`Stop Reason: ${apiResponse.stopReason}`);
 				console.error(`Error Message: ${errorMsg}`);
+				console.error(`Timestamp: ${new Date().toISOString()}`);
+				console.error(`Full Response:`, JSON.stringify(apiResponse, null, 2));
 				console.error(`${"═".repeat(60)}\n`);
 				return {
 					prompt: question,
