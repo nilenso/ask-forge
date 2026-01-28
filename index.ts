@@ -142,8 +142,9 @@ async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promi
 	const commitish = options.commitish ?? "HEAD";
 
 	await withCloneLock(cachePath, async () => {
-		const gitDir = join(cachePath, ".git");
-		if (await exists(gitDir)) {
+		// Check if bare repo exists (bare repos have HEAD directly in the directory)
+		const headFile = join(cachePath, "HEAD");
+		if (await exists(headFile)) {
 			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
 			if (!hasCommitish) {
 				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
@@ -157,7 +158,7 @@ async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promi
 		} else {
 			await mkdir(cachePath, { recursive: true });
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-			const proc = Bun.spawn(["git", "clone", cloneUrl, cachePath], {
+			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
 				env: GIT_ENV,
