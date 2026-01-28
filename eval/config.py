@@ -10,10 +10,10 @@ Note: ask-forge agent config is in config.ts (TypeScript)
 
 # Model to use for fact verification (via OpenRouter)
 # Examples: "openai/gpt-4o-mini", "openai/gpt-4o", "anthropic/claude-3-haiku"
-LLM_JUDGE_MODEL = "openai/gpt-5"
+LLM_JUDGE_MODEL = "anthropic/claude-sonnet-4.5"
 
 # Maximum tokens for judge response
-LLM_JUDGE_MAX_TOKENS = 10
+LLM_JUDGE_MAX_TOKENS = 16
 
 # Prompt template for fact verification
 # Available placeholders: {fact}, {response}
