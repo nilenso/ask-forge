@@ -145,6 +145,7 @@ async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promi
 		// Check if bare repo exists (bare repos have HEAD directly in the directory)
 		const headFile = join(cachePath, "HEAD");
 		if (await exists(headFile)) {
+			// Valid bare repo exists - fetch if needed
 			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
 			if (!hasCommitish) {
 				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
@@ -156,6 +157,11 @@ async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promi
 				await proc.exited;
 			}
 		} else {
+			// Clean up incomplete clone if directory exists but HEAD doesn't
+			if (await exists(cachePath)) {
+				const { rm } = await import("node:fs/promises");
+				await rm(cachePath, { recursive: true, force: true });
+			}
 			await mkdir(cachePath, { recursive: true });
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
 			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
