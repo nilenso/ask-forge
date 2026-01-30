@@ -444,8 +444,11 @@ function createSession(repo: Repo): Session {
 							toolCallNames.delete(event.contentIndex);
 							break;
 						case "error": {
-							const errorMsg = event.error?.content?.[0];
-							const errorText = errorMsg?.type === "text" ? errorMsg.text : "Unknown API error";
+							const firstTextBlock = event.error?.content?.find((b: { type: string }) => b.type === "text") as
+								| { type: "text"; text: string }
+								| undefined;
+							const errorText =
+								event.error?.errorMessage || firstTextBlock?.text || "Unknown API error";
 							
 							// Create detailed error object for logging
 							const errorDetails = {
