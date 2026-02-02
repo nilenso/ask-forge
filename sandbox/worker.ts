@@ -346,11 +346,14 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			if (glob) cmd.push("--glob", glob);
 			const result = await runToolSandboxed(cmd, worktree);
 			if (result.exitCode !== 0) {
-				return Response.json({ ok: true, output: `Error (exit ${result.exitCode}):\n${result.stderr}` });
+				return Response.json(
+					{ ok: false, error: `rg failed (exit ${result.exitCode}):\n${result.stderr}` },
+					{ status: 500 },
+				);
 			}
 			return Response.json({ ok: true, output: result.stdout || "(no output)" });
 		}
-		case "fd": {
+		case "find": {
 			const pattern = args.pattern as string;
 			const type = args.type as "f" | "d" | undefined;
 			const cmd = ["find", ".", "-name", `*${pattern}*`];
@@ -358,7 +361,10 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			else if (type === "d") cmd.push("-type", "d");
 			const result = await runToolSandboxed(cmd, worktree);
 			if (result.exitCode !== 0) {
-				return Response.json({ ok: true, output: `Error (exit ${result.exitCode}):\n${result.stderr}` });
+				return Response.json(
+					{ ok: false, error: `find failed (exit ${result.exitCode}):\n${result.stderr}` },
+					{ status: 500 },
+				);
 			}
 			return Response.json({ ok: true, output: result.stdout || "(no output)" });
 		}
@@ -366,11 +372,14 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			const path = (args.path as string) || ".";
 			const fullPath = validatePath(worktree, path);
 			if (!fullPath) {
-				return Response.json({ ok: true, output: `Error: path traversal not allowed: ${path}` });
+				return Response.json({ ok: false, error: `path traversal not allowed: ${path}` }, { status: 400 });
 			}
 			const result = await runToolSandboxed(["ls", "-la", fullPath], worktree);
 			if (result.exitCode !== 0) {
-				return Response.json({ ok: true, output: `Error (exit ${result.exitCode}):\n${result.stderr}` });
+				return Response.json(
+					{ ok: false, error: `ls failed (exit ${result.exitCode}):\n${result.stderr}` },
+					{ status: 500 },
+				);
 			}
 			return Response.json({ ok: true, output: result.stdout || "(no output)" });
 		}
@@ -378,14 +387,14 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			const path = args.path as string;
 			const fullPath = validatePath(worktree, path);
 			if (!fullPath) {
-				return Response.json({ ok: true, output: `Error: path traversal not allowed: ${path}` });
+				return Response.json({ ok: false, error: `path traversal not allowed: ${path}` }, { status: 400 });
 			}
 			const result = await runToolSandboxed(["cat", fullPath], worktree);
 			if (result.exitCode !== 0) {
-				return Response.json({
-					ok: true,
-					output: `Error reading file (exit ${result.exitCode}):\n${result.stderr}`,
-				});
+				return Response.json(
+					{ ok: false, error: `read failed (exit ${result.exitCode}):\n${result.stderr}` },
+					{ status: 500 },
+				);
 			}
 			return Response.json({ ok: true, output: result.stdout || "(empty file)" });
 		}

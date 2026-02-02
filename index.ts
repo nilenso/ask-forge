@@ -104,7 +104,11 @@ async function runLocalCommand(cmd: string[], cwd: string): Promise<string> {
 	return stdout || "(no output)";
 }
 
-async function executeLocalTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
+export async function executeLocalTool(
+	toolName: string,
+	args: Record<string, unknown>,
+	repoPath: string,
+): Promise<string> {
 	if (toolName === "rg") {
 		const pattern = args.pattern as string;
 		const glob = args.glob as string | undefined;
@@ -113,7 +117,7 @@ async function executeLocalTool(toolName: string, args: Record<string, unknown>,
 		return runLocalCommand(cmd, repoPath);
 	}
 
-	if (toolName === "fd") {
+	if (toolName === "find") {
 		const pattern = args.pattern as string;
 		const type = args.type as "f" | "d" | undefined;
 		const cmd = ["find", ".", "-name", `*${pattern}*`];
@@ -326,8 +330,8 @@ const tools: Tool[] = [
 		}),
 	},
 	{
-		name: "fd",
-		description: "Find files by name pattern using fd. Returns matching file paths.",
+		name: "find",
+		description: "Find files by name pattern. Returns matching file paths.",
 		parameters: Type.Object({
 			pattern: Type.String({ description: "The pattern to match file names against" }),
 			type: Type.Optional(
