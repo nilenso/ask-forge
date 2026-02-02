@@ -319,7 +319,7 @@ const HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-const server = Bun.serve({
+const _server = Bun.serve({
 	port: PORT,
 	async fetch(req) {
 		const url = new URL(req.url);
@@ -396,7 +396,7 @@ const server = Bun.serve({
 				}
 
 				return Response.json({ success: true });
-			} catch (error) {
+			} catch {
 				return Response.json({ error: "Failed to save feedback" }, { status: 500 });
 			}
 		}
@@ -417,7 +417,7 @@ const server = Bun.serve({
 				}
 
 				return Response.json({ success: true });
-			} catch (error) {
+			} catch {
 				return Response.json({ error: "Failed to save difficulty" }, { status: 500 });
 			}
 		}
