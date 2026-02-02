@@ -1,26 +1,153 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { type AssistantMessage, type Context, getModel, stream, type Tool } from "@mariozechner/pi-ai";
+import {
+	type AssistantMessage,
+	type Context,
+	getModel,
+	type Message,
+	stream,
+	type Tool,
+	type ToolCall,
+	type Usage,
+} from "@mariozechner/pi-ai";
+
+export type { Message, ToolCall, Usage } from "@mariozechner/pi-ai";
+
 import { Type } from "@sinclair/typebox";
 import * as config from "./config";
+import { SandboxClient } from "./sandbox/client";
+
+// Re-export for consumers
+export { SandboxClient } from "./sandbox/client";
+
+// =============================================================================
+// TOOL EXECUTOR ABSTRACTION
+// =============================================================================
+
+/**
+ * A ToolExecutor knows how to run tools (rg, fd, ls, read) against a repo.
+ * Two implementations: local (runs on host) and container (delegates to sandbox service).
+ */
+interface ToolExecutor {
+	executeTool(name: string, args: Record<string, unknown>): Promise<string>;
+	close(): Promise<void>;
+}
+
+// =============================================================================
+// CONTAINER TOOL EXECUTOR
+// =============================================================================
+
+class ContainerToolExecutor implements ToolExecutor {
+	constructor(
+		private client: SandboxClient,
+		private slug: string,
+		private sha: string,
+	) {}
+
+	async executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+		return this.client.executeTool(this.slug, this.sha, name, args);
+	}
+
+	async close(): Promise<void> {
+		// Nothing to clean up — repos live on tmpfs inside the container.
+		// They vanish when the container restarts.
+	}
+}
+
+// =============================================================================
+// LOCAL TOOL EXECUTOR (fallback when no SANDBOX_URL)
+// =============================================================================
 
 // Git environment to prevent interactive prompts and SSH key loading
 const GIT_ENV: Record<string, string> = {
-	// Disable SSH agent and key loading
 	SSH_AUTH_SOCK: "",
-	// Use a non-existent SSH key to prevent loading default keys
 	GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityFile=/dev/null",
-	// Disable terminal prompts for credentials
 	GIT_TERMINAL_PROMPT: "0",
-	// Disable askpass programs
 	GIT_ASKPASS: "",
 	SSH_ASKPASS: "",
-	// Preserve PATH for git to work
 	PATH: process.env.PATH || "",
 };
 
-// Lock map to prevent race conditions when cloning the same repo in parallel
+class LocalToolExecutor implements ToolExecutor {
+	constructor(
+		private repoPath: string,
+		private cachePath: string,
+	) {}
+
+	async executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+		return executeLocalTool(name, args, this.repoPath);
+	}
+
+	async close(): Promise<void> {
+		try {
+			const proc = Bun.spawn(["git", "worktree", "remove", "--force", this.repoPath], {
+				cwd: this.cachePath,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: GIT_ENV,
+			});
+			await proc.exited;
+		} catch {
+			// Ignore cleanup errors
+		}
+	}
+}
+
+async function runLocalCommand(cmd: string[], cwd: string): Promise<string> {
+	const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) {
+		return `Error (exit ${exitCode}):\n${stderr}`;
+	}
+	return stdout || "(no output)";
+}
+
+async function executeLocalTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
+	if (toolName === "rg") {
+		const pattern = args.pattern as string;
+		const glob = args.glob as string | undefined;
+		const cmd = ["rg", "--line-number", pattern];
+		if (glob) cmd.push("--glob", glob);
+		return runLocalCommand(cmd, repoPath);
+	}
+
+	if (toolName === "fd") {
+		const pattern = args.pattern as string;
+		const type = args.type as "f" | "d" | undefined;
+		const cmd = ["find", ".", "-name", `*${pattern}*`];
+		if (type === "f") cmd.push("-type", "f");
+		else if (type === "d") cmd.push("-type", "d");
+		return runLocalCommand(cmd, repoPath);
+	}
+
+	if (toolName === "ls") {
+		const path = (args.path as string | undefined) || ".";
+		return runLocalCommand(["ls", "-la", path], repoPath);
+	}
+
+	if (toolName === "read") {
+		const filePath = args.path as string;
+		const fullPath = resolve(repoPath, filePath);
+		// Prevent path traversal outside the repo directory
+		if (!fullPath.startsWith(resolve(repoPath))) {
+			return `Error reading file: path traversal not allowed: ${filePath}`;
+		}
+		try {
+			return await readFile(fullPath, "utf-8");
+		} catch (e) {
+			return `Error reading file: ${(e as Error).message}`;
+		}
+	}
+
+	return `Unknown tool: ${toolName}`;
+}
+
+// =============================================================================
+// LOCAL REPO CLONING (fallback)
+// =============================================================================
+
 const cloneLocks = new Map<string, Promise<void>>();
 
 async function withCloneLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -62,6 +189,10 @@ async function commitishExistsLocally(repoPath: string, commitish: string): Prom
 	const exitCode = await proc.exited;
 	return exitCode === 0 && (output === "commit" || output === "tag");
 }
+
+// =============================================================================
+// FORGE TYPES
+// =============================================================================
 
 export type ForgeName = "github" | "gitlab";
 
@@ -115,6 +246,10 @@ function parseRepoPath(repoUrl: string): { username: string; reponame: string } 
 	return { username: parts[0], reponame: parts[1] };
 }
 
+// =============================================================================
+// PUBLIC TYPES
+// =============================================================================
+
 export interface ConnectOptions {
 	token?: string;
 	forge?: ForgeName;
@@ -129,98 +264,52 @@ export interface Repo {
 	cachePath: string;
 }
 
-async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
-	const forgeName = options.forge ?? inferForge(repoUrl);
-	if (!forgeName) {
-		throw new Error(`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`);
-	}
-
-	const forge = forges[forgeName];
-	const { username, reponame } = parseRepoPath(repoUrl);
-	const basePath = join("workdir", username, reponame);
-	const cachePath = join(basePath, "repo");
-	const commitish = options.commitish ?? "HEAD";
-
-	await withCloneLock(cachePath, async () => {
-		// Check if bare repo exists (bare repos have HEAD directly in the directory)
-		const headFile = join(cachePath, "HEAD");
-		if (await exists(headFile)) {
-			// Valid bare repo exists - fetch if needed
-			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
-			if (!hasCommitish) {
-				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
-					cwd: cachePath,
-					stdout: "inherit",
-					stderr: "inherit",
-					env: GIT_ENV,
-				});
-				await proc.exited;
-			}
-		} else {
-			// Clean up incomplete clone if directory exists but HEAD doesn't
-			if (await exists(cachePath)) {
-				const { rm } = await import("node:fs/promises");
-				await rm(cachePath, { recursive: true, force: true });
-			}
-			await mkdir(cachePath, { recursive: true });
-			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
-				stdout: "inherit",
-				stderr: "inherit",
-				env: GIT_ENV,
-			});
-			const exitCode = await proc.exited;
-			if (exitCode !== 0) {
-				throw new Error(`git clone failed with exit code ${exitCode}`);
-			}
-		}
-	});
-
-	const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
-		cwd: cachePath,
-		stdout: "pipe",
-		stderr: "pipe",
-		env: GIT_ENV,
-	});
-	const sha = (await new Response(revParseProc.stdout).text()).trim();
-	const revParseExit = await revParseProc.exited;
-	if (revParseExit !== 0) {
-		throw new Error(`Failed to resolve commitish: ${commitish}`);
-	}
-
-	const shortSha = sha.slice(0, 12);
-	const worktreePath = resolve(basePath, "trees", shortSha);
-
-	if (await exists(worktreePath)) {
-		return {
-			url: repoUrl,
-			localPath: worktreePath,
-			forge,
-			commitish: sha,
-			cachePath: resolve(cachePath),
-		};
-	}
-
-	await mkdir(resolve(basePath, "trees"), { recursive: true });
-	const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
-		cwd: cachePath,
-		stdout: "inherit",
-		stderr: "inherit",
-		env: GIT_ENV,
-	});
-	const worktreeExit = await worktreeProc.exited;
-	if (worktreeExit !== 0) {
-		throw new Error(`git worktree add failed with exit code ${worktreeExit}`);
-	}
-
-	return {
-		url: repoUrl,
-		localPath: worktreePath,
-		forge,
-		commitish: sha,
-		cachePath: resolve(cachePath),
-	};
+export interface ToolCallRecord {
+	name: string;
+	arguments: Record<string, unknown>;
 }
+
+export interface AskResult {
+	prompt: string;
+	toolCalls: ToolCallRecord[];
+	response: string;
+	usage: {
+		inputTokens: number;
+		outputTokens: number;
+		totalTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+	};
+	inferenceTimeMs: number;
+}
+
+export type ProgressEvent =
+	| { type: "thinking" }
+	| { type: "thinking_delta"; delta: string }
+	| { type: "text_delta"; delta: string }
+	| { type: "tool_start"; name: string; arguments: Record<string, unknown> }
+	| { type: "tool_delta"; name: string; delta: string }
+	| { type: "tool_end"; name: string; arguments: Record<string, unknown> }
+	| { type: "responding" };
+
+export type OnProgress = (event: ProgressEvent) => void;
+
+export interface AskOptions {
+	onProgress?: OnProgress;
+}
+
+export interface Session {
+	id: string;
+	repo: Repo;
+	ask(question: string, options?: AskOptions): Promise<AskResult>;
+	replaceMessages(messages: Message[]): void;
+	getMessages(): Message[];
+	close(): Promise<void>;
+}
+
+// =============================================================================
+// TOOLS (shared between both executors — these define the LLM's tool schema)
+// =============================================================================
 
 const tools: Tool[] = [
 	{
@@ -268,94 +357,11 @@ const tools: Tool[] = [
 	},
 ];
 
-async function runCommand(cmd: string[], cwd: string): Promise<string> {
-	const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
-	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-	const exitCode = await proc.exited;
-	if (exitCode !== 0) {
-		return `Error (exit ${exitCode}):\n${stderr}`;
-	}
-	return stdout || "(no output)";
-}
+// =============================================================================
+// SESSION
+// =============================================================================
 
-async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
-	if (toolName === "rg") {
-		const pattern = args.pattern as string;
-		const glob = args.glob as string | undefined;
-		const cmd = ["rg", "--line-number", pattern];
-		if (glob) cmd.push("--glob", glob);
-		return runCommand(cmd, repoPath);
-	}
-
-	if (toolName === "fd") {
-		const pattern = args.pattern as string;
-		const type = args.type as "f" | "d" | undefined;
-		const cmd = ["find", ".", "-name", `*${pattern}*`];
-		if (type === "f") cmd.push("-type", "f");
-		else if (type === "d") cmd.push("-type", "d");
-		return runCommand(cmd, repoPath);
-	}
-
-	if (toolName === "ls") {
-		const path = (args.path as string | undefined) || ".";
-		return runCommand(["ls", "-la", path], repoPath);
-	}
-
-	if (toolName === "read") {
-		const filePath = args.path as string;
-		const fullPath = join(repoPath, filePath);
-		try {
-			return await readFile(fullPath, "utf-8");
-		} catch (e) {
-			return `Error reading file: ${(e as Error).message}`;
-		}
-	}
-
-	return `Unknown tool: ${toolName}`;
-}
-
-export interface ToolCallRecord {
-	name: string;
-	arguments: Record<string, unknown>;
-}
-
-export interface AskResult {
-	prompt: string;
-	toolCalls: ToolCallRecord[];
-	response: string;
-	usage: {
-		inputTokens: number;
-		outputTokens: number;
-		totalTokens: number;
-		cacheReadTokens: number;
-		cacheWriteTokens: number;
-	};
-	inferenceTimeMs: number;
-}
-
-export type ProgressEvent =
-	| { type: "thinking" }
-	| { type: "thinking_delta"; delta: string }
-	| { type: "text_delta"; delta: string }
-	| { type: "tool_start"; name: string; arguments: Record<string, unknown> }
-	| { type: "tool_delta"; name: string; delta: string }
-	| { type: "tool_end"; name: string; arguments: Record<string, unknown> }
-	| { type: "responding" };
-
-export type OnProgress = (event: ProgressEvent) => void;
-
-export interface AskOptions {
-	onProgress?: OnProgress;
-}
-
-export interface Session {
-	id: string;
-	repo: Repo;
-	ask(question: string, options?: AskOptions): Promise<AskResult>;
-	close(): void;
-}
-
-function createSession(repo: Repo): Session {
+function createSession(repo: Repo, executor: ToolExecutor): Session {
 	const id = randomUUID();
 	const model = getModel(config.MODEL_PROVIDER, config.MODEL_NAME);
 	const context: Context = {
@@ -390,17 +396,17 @@ function createSession(repo: Repo): Session {
 
 	async function doAsk(question: string, onProgress?: OnProgress): Promise<AskResult> {
 		const startTime = Date.now();
-		const toolCallRecords: ToolCallRecord[] = [];
-		const accumulatedUsage = {
-			inputTokens: 0,
-			outputTokens: 0,
+		const toolCallRecords: ToolCall[] = [];
+		const accumulatedUsage: Usage = {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
 			totalTokens: 0,
-			cacheReadTokens: 0,
-			cacheWriteTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		};
 		context.messages.push({ role: "user", content: question, timestamp: Date.now() });
 
-		// Track tool call names during streaming (before we have full arguments)
 		const toolCallNames = new Map<number, string>();
 
 		for (let i = 0; i < config.MAX_TOOL_ITERATIONS; i++) {
@@ -410,7 +416,6 @@ function createSession(repo: Repo): Session {
 			try {
 				const eventStream = stream(model, context);
 
-				// Process streaming events
 				for await (const event of eventStream) {
 					switch (event.type) {
 						case "thinking_delta":
@@ -420,10 +425,8 @@ function createSession(repo: Repo): Session {
 							onProgress?.({ type: "text_delta", delta: event.delta });
 							break;
 						case "toolcall_start":
-							// We don't have the name yet, just track that a tool call started
 							break;
 						case "toolcall_delta": {
-							// Try to parse the name from the partial tool call
 							const partialToolCall = event.partial.content[event.contentIndex];
 							if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
 								const prevName = toolCallNames.get(event.contentIndex);
@@ -449,15 +452,12 @@ function createSession(repo: Repo): Session {
 								| undefined;
 							const errorText = event.error?.errorMessage || firstTextBlock?.text || "Unknown API error";
 
-							// Create detailed error object for logging
-							const errorDetails = {
+							logError(`API call failed (iteration ${i + 1})`, {
 								message: errorText,
 								fullError: event.error,
 								iteration: i + 1,
 								timestamp: new Date().toISOString(),
-							};
-
-							logError(`API call failed (iteration ${i + 1})`, errorDetails);
+							});
 							return {
 								prompt: question,
 								toolCalls: toolCallRecords,
@@ -469,12 +469,10 @@ function createSession(repo: Repo): Session {
 					}
 				}
 
-				// Get the final response
 				response = await eventStream.result();
 			} catch (error) {
-				// Create detailed error object for logging
-				const errorDetails = {
-					error: error,
+				logError(`API call failed (iteration ${i + 1})`, {
+					error,
 					errorType: error?.constructor?.name,
 					iteration: i + 1,
 					timestamp: new Date().toISOString(),
@@ -483,9 +481,7 @@ function createSession(repo: Repo): Session {
 						stack: error.stack,
 						cause: error.cause,
 					}),
-				};
-
-				logError(`API call failed (iteration ${i + 1})`, errorDetails);
+				});
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				return {
 					prompt: question,
@@ -496,27 +492,29 @@ function createSession(repo: Repo): Session {
 				};
 			}
 
-			// Accumulate usage from this response
 			if (response.usage) {
-				accumulatedUsage.inputTokens += response.usage.input ?? 0;
-				accumulatedUsage.outputTokens += response.usage.output ?? 0;
+				accumulatedUsage.input += response.usage.input ?? 0;
+				accumulatedUsage.output += response.usage.output ?? 0;
 				accumulatedUsage.totalTokens += response.usage.totalTokens ?? 0;
-				accumulatedUsage.cacheReadTokens += response.usage.cacheRead ?? 0;
-				accumulatedUsage.cacheWriteTokens += response.usage.cacheWrite ?? 0;
+				accumulatedUsage.cacheRead += response.usage.cacheRead ?? 0;
+				accumulatedUsage.cacheWrite += response.usage.cacheWrite ?? 0;
+				if (response.usage.cost) {
+					accumulatedUsage.cost.input += response.usage.cost.input ?? 0;
+					accumulatedUsage.cost.output += response.usage.cost.output ?? 0;
+					accumulatedUsage.cost.cacheRead += response.usage.cost.cacheRead ?? 0;
+					accumulatedUsage.cost.cacheWrite += response.usage.cost.cacheWrite ?? 0;
+					accumulatedUsage.cost.total += response.usage.cost.total ?? 0;
+				}
 			}
 
 			const apiResponse = response as { stopReason?: string; errorMessage?: string };
 			if (apiResponse.stopReason === "error" || apiResponse.errorMessage) {
 				const errorMsg = apiResponse.errorMessage || "Unknown API error";
-				console.error(`\n${"═".repeat(60)}`);
-				console.error("│ API ERROR");
-				console.error(`${"═".repeat(60)}`);
-				console.error(`Iteration: ${i + 1}`);
-				console.error(`Stop Reason: ${apiResponse.stopReason}`);
-				console.error(`Error Message: ${errorMsg}`);
-				console.error(`Timestamp: ${new Date().toISOString()}`);
-				console.error(`Full Response:`, JSON.stringify(apiResponse, null, 2));
-				console.error(`${"═".repeat(60)}\n`);
+				logError("API ERROR", {
+					iteration: i + 1,
+					stopReason: apiResponse.stopReason,
+					errorMessage: errorMsg,
+				});
 				return {
 					prompt: question,
 					toolCalls: toolCallRecords,
@@ -535,11 +533,7 @@ function createSession(repo: Repo): Session {
 				const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
 
 				if (!responseText.trim()) {
-					console.error(`\n${"═".repeat(60)}`);
-					console.error("│ WARNING: Empty response from API");
-					console.error(`${"═".repeat(60)}`);
-					console.error("Full response:", JSON.stringify(response, null, 2));
-					console.error(`${"═".repeat(60)}\n`);
+					logError("Empty response from API", { response });
 					return {
 						prompt: question,
 						toolCalls: toolCallRecords,
@@ -559,7 +553,7 @@ function createSession(repo: Repo): Session {
 				};
 			}
 
-			// Execute tool calls in parallel (all tools are I/O bound and read-only)
+			// Execute tool calls in parallel
 			const validCalls = toolCalls.filter((call) => call.type === "toolCall");
 			for (const call of validCalls) {
 				log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
@@ -568,19 +562,15 @@ function createSession(repo: Repo): Session {
 			const results = await Promise.all(
 				validCalls.map(async (call) => {
 					const t0 = Date.now();
-					const result = await executeTool(call.name, call.arguments, repo.localPath);
+					const result = await executor.executeTool(call.name, call.arguments);
 					log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
 					return result;
 				}),
 			);
 			log(`ALL_TOOLS_DONE: ${validCalls.length} calls`, `${Date.now() - toolExecStart}ms`);
 
-			// Push results back in request order to preserve conversation context
 			validCalls.forEach((call, j) => {
-				toolCallRecords.push({
-					name: call.name,
-					arguments: call.arguments,
-				});
+				toolCallRecords.push(call);
 				context.messages.push({
 					role: "toolResult",
 					toolCallId: call.id,
@@ -609,47 +599,180 @@ function createSession(repo: Repo): Session {
 			if (closed) {
 				throw new Error(`Session ${id} is closed`);
 			}
-
 			if (pending) {
 				await pending;
 			}
-
 			pending = doAsk(question, options?.onProgress);
 			const result = await pending;
 			pending = null;
 			return result;
 		},
 
-		close() {
+		replaceMessages(messages: Message[]) {
+			context.messages = messages;
+		},
+
+		getMessages(): Message[] {
+			return context.messages;
+		},
+
+		async close() {
 			if (closed) return;
 			closed = true;
-
-			// Clean up worktree asynchronously (fire and forget)
-			(async () => {
-				try {
-					// Remove worktree from git's tracking
-					const proc = Bun.spawn(["git", "worktree", "remove", "--force", repo.localPath], {
-						cwd: repo.cachePath,
-						stdout: "pipe",
-						stderr: "pipe",
-						env: GIT_ENV,
-					});
-					await proc.exited;
-				} catch {
-					// Ignore cleanup errors
-				}
-			})();
+			await executor.close();
 		},
 	};
 }
 
+// =============================================================================
+// LOCAL CONNECT (fallback — clones on the host)
+// =============================================================================
+
+async function connectLocal(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
+	const forgeName = options.forge ?? inferForge(repoUrl);
+	if (!forgeName) {
+		throw new Error(`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`);
+	}
+
+	const forge = forges[forgeName];
+	const { username, reponame } = parseRepoPath(repoUrl);
+	const basePath = join("workdir", username, reponame);
+	const cachePath = join(basePath, "repo");
+	const commitish = options.commitish ?? "HEAD";
+
+	await withCloneLock(cachePath, async () => {
+		const headFile = join(cachePath, "HEAD");
+		if (await exists(headFile)) {
+			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
+			if (!hasCommitish) {
+				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
+					cwd: cachePath,
+					stdout: "inherit",
+					stderr: "inherit",
+					env: GIT_ENV,
+				});
+				await proc.exited;
+			}
+		} else {
+			await mkdir(cachePath, { recursive: true });
+			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
+			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
+				stdout: "inherit",
+				stderr: "inherit",
+				env: GIT_ENV,
+			});
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				throw new Error(`git clone failed with exit code ${exitCode}`);
+			}
+		}
+	});
+
+	const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
+		cwd: cachePath,
+		stdout: "pipe",
+		stderr: "pipe",
+		env: GIT_ENV,
+	});
+	const sha = (await new Response(revParseProc.stdout).text()).trim();
+	const revParseExit = await revParseProc.exited;
+	if (revParseExit !== 0) {
+		throw new Error(`Failed to resolve commitish: ${commitish}`);
+	}
+
+	const shortSha = sha.slice(0, 12);
+	const worktreePath = resolve(basePath, "trees", shortSha);
+
+	if (!(await exists(worktreePath))) {
+		await mkdir(resolve(basePath, "trees"), { recursive: true });
+		const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
+			cwd: cachePath,
+			stdout: "inherit",
+			stderr: "inherit",
+			env: GIT_ENV,
+		});
+		const worktreeExit = await worktreeProc.exited;
+		if (worktreeExit !== 0) {
+			throw new Error(`git worktree add failed with exit code ${worktreeExit}`);
+		}
+	}
+
+	const repo: Repo = {
+		url: repoUrl,
+		localPath: worktreePath,
+		forge,
+		commitish: sha,
+		cachePath: resolve(cachePath),
+	};
+
+	const executor = new LocalToolExecutor(worktreePath, resolve(cachePath));
+	return createSession(repo, executor);
+}
+
+// =============================================================================
+// CONTAINER CONNECT (delegates to sandbox service)
+// =============================================================================
+
+/** Shared SandboxClient — one per process, reused across sessions. */
+let sharedSandboxClient: SandboxClient | null = null;
+
+async function connectContainer(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
+	const forgeName = options.forge ?? inferForge(repoUrl);
+	if (!forgeName) {
+		throw new Error(`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`);
+	}
+
+	const forge = forges[forgeName];
+	const commitish = options.commitish ?? "HEAD";
+
+	// Build the clone URL (with token embedded if provided)
+	const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
+
+	if (!sharedSandboxClient) {
+		sharedSandboxClient = new SandboxClient();
+		console.log(`[sandbox] Connecting to sandbox service at ${process.env.SANDBOX_URL || "http://sandbox:8080"}`);
+		await sharedSandboxClient.waitForReady();
+		console.log("[sandbox] Sandbox service is ready");
+	}
+
+	const { slug, sha } = await sharedSandboxClient.clone(cloneUrl, commitish);
+
+	const repo: Repo = {
+		url: repoUrl,
+		localPath: `sandbox://${slug}/trees/${sha.slice(0, 12)}`,
+		forge,
+		commitish: sha,
+		cachePath: `sandbox://${slug}/bare`,
+	};
+
+	const executor = new ContainerToolExecutor(sharedSandboxClient, slug, sha);
+	return createSession(repo, executor);
+}
+
+// =============================================================================
+// PUBLIC API
+// =============================================================================
+
 /**
- * Connect to a repository and create a session
+ * Returns true if the sandbox service is configured (SANDBOX_URL is set).
+ */
+export function isSandboxMode(): boolean {
+	return !!process.env.SANDBOX_URL;
+}
+
+/**
+ * Connect to a repository and create a session.
+ *
+ * If SANDBOX_URL is set, cloning and tool execution happen inside an isolated
+ * container (the sandbox service). Otherwise, they run locally on the host.
+ *
  * @param repoUrl - The URL of the repository to connect to
  * @param options - Connection options (token, forge override, commitish)
  * @returns A Session for asking questions about the repository
  */
 export async function connect(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
-	const repo = await connectRepo(repoUrl, options);
-	return createSession(repo);
+	if (isSandboxMode()) {
+		return connectContainer(repoUrl, options);
+	}
+	return connectLocal(repoUrl, options);
 }
