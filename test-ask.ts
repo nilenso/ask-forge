@@ -74,6 +74,6 @@ console.log(`\n✓ pom.xml version ${revision1} verified in revision ${revision1
 console.log(`✓ pom.xml version ${revision2} verified in revision ${revision2}`);
 
 // Clean up sessions
-session1.close();
-session2.close();
+await session1.close();
+await session2.close();
 console.log("\n✓ Sessions closed");

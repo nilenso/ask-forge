@@ -1,0 +1,34 @@
+# Sandbox worker: runs git + code search tools in isolation.
+#
+# Defense in depth:
+#   Layer 1 — bwrap (bubblewrap): per-operation filesystem and PID namespace
+#             isolation. Tool calls are scoped to their worktree. Git clones
+#             get write access only to their target directory with hooks
+#             disabled. (--unshare-net not used; gVisor doesn't support it.)
+#   Layer 2 — gVisor (runsc): kernel-level syscall sandboxing for the container.
+#   Layer 3 — Path validation in the worker code itself.
+#
+# Exposes an HTTP API on port 8080 (internal network only).
+# The orchestrator sends tool calls here; this container never touches the internet.
+
+FROM oven/bun:1-alpine
+
+RUN apk add --no-cache \
+    git \
+    ripgrep \
+    findutils \
+    coreutils \
+    bubblewrap \
+    bash \
+    && adduser -D -h /home/forge forge \
+    && mkdir -p /home/forge/repos \
+    && chown -R forge:forge /home/forge
+
+COPY worker.ts /app/worker.ts
+
+USER forge
+WORKDIR /home/forge
+
+EXPOSE 8080
+
+CMD ["bun", "run", "/app/worker.ts"]

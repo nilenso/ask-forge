@@ -7,7 +7,8 @@
 		"lint": "biome lint .",
 		"check": "biome check --write .",
 		"test": "bun test",
-		"web": "bun run web/server.ts"
+		"web": "bun run web/server.ts",
+		"test:sandbox": "bun test tests/sandbox.integration.test.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.11",
