@@ -4,18 +4,88 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-runtime-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/)
 
-Typescript library that can be used to safely query a remote git repository.
+Ask Forge allows you to programmatically ask questions to a github/gitlab repository.
 
-Ask forge clones that repository and runs an LLM agent with access to that repository that consumers can query.
+## Requirements
+
+- [Bun](https://bun.sh/) (or Node.js ≥ 18)
+- `git`
+- `ripgrep` (`rg`)
+- An LLM API key (set via environment variable, e.g. `OPENROUTER_API_KEY`)
+
+## Installation
+
+```bash
+# npm
+npm install ask-forge
+
+# bun
+bun add ask-forge
+```
 
 ## Usage
 
-```bash
-bun install
-bun run test-ask.ts https://github.com/owner/repo "What frameworks does this project use?"
+```typescript
+import { connect } from "ask-forge";
+
+// Connect to a public repository
+const session = await connect("https://github.com/owner/repo");
+
+// Ask a question
+const result = await session.ask("What frameworks does this project use?");
+console.log(result.response);
+
+// Clean up when done
+session.close();
 ```
 
-## Web UI
+### Options
+
+```typescript
+// Connect to a specific commit, branch, or tag
+const session = await connect("https://github.com/owner/repo", {
+  commitish: "v1.0.0",
+});
+
+// Connect to a private repository with a token
+const session = await connect("https://github.com/owner/repo", {
+  token: process.env.GITHUB_TOKEN,
+});
+
+// Explicitly specify the forge (auto-detected for github.com and gitlab.com)
+const session = await connect("https://gitlab.example.com/owner/repo", {
+  forge: "gitlab",
+  token: process.env.GITLAB_TOKEN,
+});
+```
+
+### Streaming progress
+
+```typescript
+const result = await session.ask("Explain the auth flow", {
+  onProgress(event) {
+    switch (event.type) {
+      case "text_delta":
+        process.stdout.write(event.delta);
+        break;
+      case "tool_start":
+        console.log(`Using tool: ${event.name}`);
+        break;
+    }
+  },
+});
+```
+
+### Running from source
+
+```bash
+bun install
+bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
+```
+
+## Development
+
+### Web UI
 
 Run the web interface to ask questions and collect feedback:
 
@@ -31,7 +101,7 @@ Features:
 - Tag difficulty (easy/medium/hard)
 - Samples saved to `web/data/samples.json`
 
-## Evaluation
+### Evaluation
 
 The `eval/` folder contains a human-in-the-loop evaluation system for testing code analysis agents.
 
@@ -50,38 +120,14 @@ python review-server.py
 
 ### Configuration
 
-- `config.ts` - Agent model and prompt settings (TypeScript)
-- `eval/config.py` - LLM judge and Claude agent settings (Python)
-
-
-
-## Implementation Decisions
+- `config.ts` — Agent model and prompt settings (TypeScript)
+- `eval/config.py` — LLM judge and Claude agent settings (Python)
 
 ### Repo Isolation
 
-For repo isolation, we will `git fetch` (if needed) and add a new worktree with the committish provided. This approach:
+For repo isolation, we `git fetch` (if needed) and add a new worktree with the committish provided. This approach:
 - Ensures each query operates on an isolated copy of the repository at the specified revision
 - Avoids conflicts with the main working directory
 - Allows concurrent queries on different commits/branches without interference
 
 Since ask-forge is exposed as a library, different service users may request the same repo@commit. We skip fetching if the committish is already available locally, avoiding redundant network calls.
-
-## TODOs
-
-- [x] Test with a specific forge revision (commit/branch/tags)
-- [x] Test if model is able to access other repos in workdir
-  - [x] Explore sandboxing to prevent access to other repos in workdir
-- [ ] Revisit tools that we use
-- [ ] Revisit and optimise parallel git clone (currently using a simple lock to prevent race conditions)
-- [ ] Revisit eval metrics (precision, recall, accuracy definitions)
-- [x] Build a web UI for ask-forge where users can:
-  - Ask questions about any git repo (GitHub, GitLab, etc.) with repo URL and optional committish
-  - View the agent's response
-  - Provide binary feedback (correct/incorrect)
-  - Tag answers with difficulty (easy/medium/hard)
-  - This will be used to create a new dataset for evaluating ask-forge
-  - Each sample: question, answer, repo URL, committish, difficulty tag, binary feedback
-  - [ ] A user should be able login using github or gmail. 
-- [ ] A user should be able to the last 10 server session history. Sessions will be stored in server.
-- [ ] A user should be able to switch sessions.
-- [ ] A user should be able to continue from where it left off when they switch to a previous session.
