@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { type AssistantMessage, type Context, getModel, stream, type Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
@@ -137,7 +138,7 @@ async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promi
 
 	const forge = forges[forgeName];
 	const { username, reponame } = parseRepoPath(repoUrl);
-	const basePath = join("workdir", username, reponame);
+	const basePath = join(homedir(), ".ask-forge", "repos", username, reponame);
 	const cachePath = join(basePath, "repo");
 	const commitish = options.commitish ?? "HEAD";
 
