@@ -17,7 +17,6 @@ export type { Message, ToolCall, Usage } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import * as config from "./config";
 import { SandboxClient } from "./sandbox/client";
-import { executeSandboxedTool } from "./sandbox/srt-executor";
 
 // Re-export for consumers
 export { SandboxClient } from "./sandbox/client";
@@ -28,10 +27,7 @@ export { SandboxClient } from "./sandbox/client";
 
 /**
  * A ToolExecutor knows how to run tools (rg, fd, ls, read) against a repo.
- * Three implementations:
- *   - local: runs tools directly on host (no isolation)
- *   - container: delegates to sandbox service via HTTP (Docker/gVisor isolation)
- *   - srt: uses Anthropic Sandbox Runtime for OS-level process sandboxing
+ * Two implementations: local (runs on host) and container (delegates to sandbox service).
  */
 interface ToolExecutor {
 	executeTool(name: string, args: Record<string, unknown>): Promise<string>;
@@ -60,24 +56,7 @@ class ContainerToolExecutor implements ToolExecutor {
 }
 
 // =============================================================================
-// SRT TOOL EXECUTOR (Anthropic Sandbox Runtime — OS-level sandboxing)
-// =============================================================================
-
-class SrtToolExecutor implements ToolExecutor {
-	constructor(private repoPath: string) {}
-
-	async executeTool(name: string, args: Record<string, unknown>): Promise<string> {
-		return executeSandboxedTool(name, args, this.repoPath);
-	}
-
-	async close(): Promise<void> {
-		// SandboxManager is process-global; don't reset per-session.
-		// Call resetSandbox() on process exit if needed.
-	}
-}
-
-// =============================================================================
-// LOCAL TOOL EXECUTOR (fallback when no SANDBOX_URL or SANDBOX_MODE)
+// LOCAL TOOL EXECUTOR (fallback when no SANDBOX_URL)
 // =============================================================================
 
 // Git environment to prevent interactive prompts and SSH key loading
@@ -726,9 +705,7 @@ async function connectLocal(repoUrl: string, options: ConnectOptions = {}): Prom
 		cachePath: resolve(cachePath),
 	};
 
-	const executor = isSrtMode()
-		? new SrtToolExecutor(worktreePath)
-		: new LocalToolExecutor(worktreePath, resolve(cachePath));
+	const executor = new LocalToolExecutor(worktreePath, resolve(cachePath));
 	return createSession(repo, executor);
 }
 
@@ -777,27 +754,17 @@ async function connectContainer(repoUrl: string, options: ConnectOptions = {}): 
 // =============================================================================
 
 /**
- * Returns true if the container sandbox service is configured (SANDBOX_URL is set).
+ * Returns true if the sandbox service is configured (SANDBOX_URL is set).
  */
 export function isSandboxMode(): boolean {
 	return !!process.env.SANDBOX_URL;
 }
 
 /**
- * Returns true if Anthropic Sandbox Runtime (srt) mode is enabled.
- * Set SANDBOX_MODE=srt to use OS-level process sandboxing via bubblewrap/sandbox-exec.
- */
-export function isSrtMode(): boolean {
-	return process.env.SANDBOX_MODE === "srt";
-}
-
-/**
  * Connect to a repository and create a session.
  *
- * Execution mode is selected by environment variables:
- *   - SANDBOX_URL set → container mode (Docker/gVisor isolation)
- *   - SANDBOX_MODE=srt → Anthropic Sandbox Runtime (OS-level bubblewrap/sandbox-exec)
- *   - Neither → local mode (no isolation, tools run directly on host)
+ * If SANDBOX_URL is set, cloning and tool execution happen inside an isolated
+ * container (the sandbox service). Otherwise, they run locally on the host.
  *
  * @param repoUrl - The URL of the repository to connect to
  * @param options - Connection options (token, forge override, commitish)
