@@ -3,7 +3,7 @@ import { access, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { type AssistantMessage, type Context, getModel, stream, type Tool } from "@mariozechner/pi-ai";
-
+import { Type } from "@sinclair/typebox";
 import * as config from "./config";
 
 // Git environment to prevent interactive prompts and SSH key loading
@@ -228,57 +228,44 @@ const tools: Tool[] = [
 		name: "rg",
 		description:
 			"Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers.",
-		parameters: {
-			type: "object" as const,
-			properties: {
-				pattern: { type: "string" as const, description: "The regex pattern to search for" },
-				glob: {
-					type: "string" as const,
+		parameters: Type.Object({
+			pattern: Type.String({ description: "The regex pattern to search for" }),
+			glob: Type.Optional(
+				Type.String({
 					description: "File glob pattern to filter files (e.g., '*.ts', '**/*.json')",
-				},
-			},
-			required: ["pattern"],
-		},
+				}),
+			),
+		}),
 	},
 	{
 		name: "fd",
 		description: "Find files by name pattern using fd. Returns matching file paths.",
-		parameters: {
-			type: "object" as const,
-			properties: {
-				pattern: { type: "string" as const, description: "The pattern to match file names against" },
-				type: {
-					type: "string" as const,
-					enum: ["f", "d"],
+		parameters: Type.Object({
+			pattern: Type.String({ description: "The pattern to match file names against" }),
+			type: Type.Optional(
+				Type.Union([Type.Literal("f"), Type.Literal("d")], {
 					description: "Filter by type: 'f' for files, 'd' for directories",
-				},
-			},
-			required: ["pattern"],
-		},
+				}),
+			),
+		}),
 	},
 	{
 		name: "ls",
 		description: "List files and directories in a given path.",
-		parameters: {
-			type: "object" as const,
-			properties: {
-				path: {
-					type: "string" as const,
+		parameters: Type.Object({
+			path: Type.Optional(
+				Type.String({
 					description: "Path to list, relative to repository root. Defaults to root if not specified.",
-				},
-			},
-		},
+				}),
+			),
+		}),
 	},
 	{
 		name: "read",
 		description: "Read the contents of a file.",
-		parameters: {
-			type: "object" as const,
-			properties: {
-				path: { type: "string" as const, description: "Path to the file, relative to repository root" },
-			},
-			required: ["path"],
-		},
+		parameters: Type.Object({
+			path: Type.String({ description: "Path to the file, relative to repository root" }),
+		}),
 	},
 ];
 
