@@ -1,7 +1,7 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
 	"files": {
-		"includes": ["**", "!workdir/**", "!eval/templates/**"]
+		"includes": ["**", "!workdir", "!eval/templates"]
 	},
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"linter": {

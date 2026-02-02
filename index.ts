@@ -447,9 +447,8 @@ function createSession(repo: Repo): Session {
 							const firstTextBlock = event.error?.content?.find((b: { type: string }) => b.type === "text") as
 								| { type: "text"; text: string }
 								| undefined;
-							const errorText =
-								event.error?.errorMessage || firstTextBlock?.text || "Unknown API error";
-							
+							const errorText = event.error?.errorMessage || firstTextBlock?.text || "Unknown API error";
+
 							// Create detailed error object for logging
 							const errorDetails = {
 								message: errorText,
@@ -457,7 +456,7 @@ function createSession(repo: Repo): Session {
 								iteration: i + 1,
 								timestamp: new Date().toISOString(),
 							};
-							
+
 							logError(`API call failed (iteration ${i + 1})`, errorDetails);
 							return {
 								prompt: question,
@@ -485,7 +484,7 @@ function createSession(repo: Repo): Session {
 						cause: error.cause,
 					}),
 				};
-				
+
 				logError(`API call failed (iteration ${i + 1})`, errorDetails);
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				return {
