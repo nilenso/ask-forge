@@ -1,5 +1,9 @@
 # Ask Forge
 
+[![CI](https://github.com/nilenso/ask-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/nilenso/ask-forge/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-runtime-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/)
+
 Typescript library that can be used to safely query a remote git repository.
 
 Ask forge clones that repository and runs an LLM agent with access to that repository that consumers can query.
