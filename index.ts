@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { type AssistantMessage, type Context, getModel, stream, type Tool } from "@mariozechner/pi-ai";
+import { type AssistantMessage, type Context, getModel, type Message, stream, type Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import * as config from "./config";
 
@@ -349,10 +349,16 @@ export interface AskOptions {
 	onProgress?: OnProgress;
 }
 
+export type { Message };
+
 export interface Session {
 	id: string;
 	repo: Repo;
 	ask(question: string, options?: AskOptions): Promise<AskResult>;
+	/** Get all messages in the session's conversation context */
+	getMessages(): Message[];
+	/** Replace all messages in the session's conversation context (useful for restoring session history) */
+	replaceMessages(messages: Message[]): void;
 	close(): void;
 }
 
@@ -619,6 +625,14 @@ function createSession(repo: Repo): Session {
 			const result = await pending;
 			pending = null;
 			return result;
+		},
+
+		getMessages(): Message[] {
+			return context.messages;
+		},
+
+		replaceMessages(messages: Message[]): void {
+			context.messages = messages;
 		},
 
 		close() {
