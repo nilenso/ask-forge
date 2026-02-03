@@ -17,17 +17,27 @@ Ask Forge allows you to programmatically ask questions to a github/gitlab reposi
 ## Installation
 
 ```bash
-# npm
-npm install ask-forge
+# Using JSR (recommended)
+bunx jsr add @nilenso/ask-forge
 
-# bun
-bun add ask-forge
+# Or with npx
+npx jsr add @nilenso/ask-forge
+```
+
+For Docker or manual setup, add to `package.json`:
+```json
+"@nilenso/ask-forge": "npm:@jsr/nilenso__ask-forge@0.0.2"
+```
+
+And create `.npmrc`:
+```
+@jsr:registry=https://npm.jsr.io
 ```
 
 ## Usage
 
 ```typescript
-import { connect } from "ask-forge";
+import { connect } from "@nilenso/ask-forge";
 
 // Connect to a public repository
 const session = await connect("https://github.com/owner/repo");
