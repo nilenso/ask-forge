@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-runtime-f9f1e1?logo=bun&logoColor=black)](https://bun.sh/)
 
-Ask Forge allows you to programmatically ask questions to a github/gitlab repository.
+Ask Forge allows you to programmatically ask questions to a GitHub/GitLab repository.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ npx jsr add @nilenso/ask-forge
 
 For Docker or manual setup, add to `package.json`:
 ```json
-"@nilenso/ask-forge": "npm:@jsr/nilenso__ask-forge@0.0.2"
+"@nilenso/ask-forge": "npm:@jsr/nilenso__ask-forge@0.0.5"
 ```
 
 And create `.npmrc`:
@@ -50,9 +50,11 @@ console.log(result.response);
 session.close();
 ```
 
-### Options
+### Connect Options
 
 ```typescript
+import { connect, type ConnectOptions } from "@nilenso/ask-forge";
+
 // Connect to a specific commit, branch, or tag
 const session = await connect("https://github.com/owner/repo", {
   commitish: "v1.0.0",
@@ -70,22 +72,59 @@ const session = await connect("https://gitlab.example.com/owner/repo", {
 });
 ```
 
-### Streaming progress
+### Custom Logger
 
 ```typescript
-const result = await session.ask("Explain the auth flow", {
-  onProgress(event) {
-    switch (event.type) {
-      case "text_delta":
-        process.stdout.write(event.delta);
-        break;
-      case "tool_start":
-        console.log(`Using tool: ${event.name}`);
-        break;
-    }
-  },
-});
+import { connect, consoleLogger, nullLogger, type Logger } from "@nilenso/ask-forge";
+
+// Use console logger (default)
+const session = await connect(url, {}, consoleLogger);
+
+// Silence all logging
+const session = await connect(url, {}, nullLogger);
+
+// Custom logger
+const customLogger: Logger = {
+  info: (msg) => myLogSystem.info(msg),
+  error: (msg) => myLogSystem.error(msg),
+};
+const session = await connect(url, {}, customLogger);
 ```
+
+### Ask Result
+
+```typescript
+import { connect, type AskResult, type Usage } from "@nilenso/ask-forge";
+
+const session = await connect("https://github.com/owner/repo");
+const result: AskResult = await session.ask("Explain the auth flow");
+
+console.log(result.prompt);          // Original question
+console.log(result.response);        // Final response text
+console.log(result.toolCalls);       // List of tools used: { name, arguments }[]
+console.log(result.inferenceTimeMs); // Total inference time in ms
+console.log(result.usage);           // Token usage statistics
+```
+
+### Session API
+
+```typescript
+import { connect, type Session, type Message } from "@nilenso/ask-forge";
+
+const session: Session = await connect("https://github.com/owner/repo");
+
+// Properties
+session.id;       // Unique session ID
+session.repo;     // Repository info: { url, localPath, commitish, ... }
+
+// Methods
+await session.ask("question");           // Ask a question
+session.getMessages();                   // Get conversation history
+session.replaceMessages(newMessages);    // Replace conversation history
+session.close();                         // Clean up resources
+```
+
+## Development
 
 ### Running from source
 
@@ -93,8 +132,6 @@ const result = await session.ask("Explain the auth flow", {
 bun install
 bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
-
-## Development
 
 ### Web UI
 
