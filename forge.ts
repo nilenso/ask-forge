@@ -17,9 +17,6 @@ const GIT_ENV: Record<string, string> = {
 	PATH: process.env.PATH || "",
 };
 
-// Exported for session.ts worktree cleanup
-export { GIT_ENV };
-
 // Lock map to prevent race conditions when cloning the same repo in parallel
 const cloneLocks = new Map<string, Promise<void>>();
 
@@ -127,6 +124,20 @@ export interface Repo {
 	forge: Forge;
 	commitish: string;
 	cachePath: string;
+}
+
+export async function cleanupWorktree(repo: Repo): Promise<void> {
+	try {
+		const proc = Bun.spawn(["git", "worktree", "remove", "--force", repo.localPath], {
+			cwd: repo.cachePath,
+			stdout: "pipe",
+			stderr: "pipe",
+			env: GIT_ENV,
+		});
+		await proc.exited;
+	} catch {
+		// Ignore cleanup errors
+	}
 }
 
 export async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {

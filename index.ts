@@ -1,14 +1,15 @@
-import type { Message } from "@mariozechner/pi-ai";
+import { getModel, type Message } from "@mariozechner/pi-ai";
+import * as config from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import {
 	type AskOptions,
 	type AskResult,
-	createSession,
 	type OnProgress,
 	type ProgressEvent,
-	type Session,
+	Session,
 	type ToolCallRecord,
 } from "./session";
+import { executeTool, tools } from "./tools";
 
 // Re-export all public types
 export type {
@@ -33,5 +34,13 @@ export type {
  */
 export async function connect(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
 	const repo = await connectRepo(repoUrl, options);
-	return createSession(repo);
+	const model = getModel(config.MODEL_PROVIDER, config.MODEL_NAME);
+
+	return new Session(repo, {
+		model,
+		systemPrompt: config.SYSTEM_PROMPT,
+		tools,
+		maxIterations: config.MAX_TOOL_ITERATIONS,
+		executeTool,
+	});
 }
