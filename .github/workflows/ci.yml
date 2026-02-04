@@ -21,6 +21,9 @@ jobs:
       - name: Check (lint + format)
         run: bunx biome check .
 
+      - name: Test
+        run: bun test
+
       - name: Build
         run: bun build ./index.ts --outdir ./dist --target=bun
 
