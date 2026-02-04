@@ -1,30 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { type AssistantMessage, type Context, getModel, type Message, stream } from "@mariozechner/pi-ai";
 import * as config from "./config";
+import { GIT_ENV, type Repo } from "./forge";
 import { executeTool, tools } from "./tools";
-
-export interface Forge {
-	name: string;
-	buildCloneUrl(repoUrl: string, token?: string): string;
-}
-
-export interface Repo {
-	url: string;
-	localPath: string;
-	forge: Forge;
-	commitish: string;
-	cachePath: string;
-}
-
-// GIT_ENV needed for worktree cleanup
-const GIT_ENV: Record<string, string> = {
-	SSH_AUTH_SOCK: "",
-	GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityFile=/dev/null",
-	GIT_TERMINAL_PROMPT: "0",
-	GIT_ASKPASS: "",
-	SSH_ASKPASS: "",
-	PATH: process.env.PATH || "",
-};
 
 export interface ToolCallRecord {
 	name: string;
