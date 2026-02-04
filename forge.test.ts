@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,44 +104,45 @@ async function createTestRepo(baseDir: string): Promise<TestRepo> {
 // =============================================================================
 
 describe("forge", () => {
+	// Fixture: created once for all tests in this suite
 	let testDir: string;
 	let testRepo: TestRepo;
-	let originalHome: string | undefined;
 
-	beforeEach(async () => {
-		// Override HOME FIRST to isolate cache directory
-		// Note: homedir() from node:os caches at module load, so setting HOME here
-		// doesn't affect where forge.ts stores its cache. Tests will share the real
-		// ~/.ask-forge cache. We clean it up in afterEach to ensure test isolation.
-		originalHome = process.env.HOME;
+	// Cache cleanup paths
+	const cacheCleanupPaths: string[] = [];
+
+	beforeAll(async () => {
+		// Create test directory and repository once for all tests
 		testDir = join(tmpdir(), `ask-forge-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		await mkdir(testDir, { recursive: true });
-		process.env.HOME = testDir;
-
-		// Create test repository
 		testRepo = await createTestRepo(testDir);
+
+		// Track cache paths to clean up (based on URL parsing behavior)
+		// file:///tmp/... or file:///var/... parses to username="tmp" or "var"
+		const home = process.env.HOME || "";
+		cacheCleanupPaths.push(join(home, ".ask-forge", "repos", "tmp"));
+		cacheCleanupPaths.push(join(home, ".ask-forge", "repos", "var"));
 	});
 
-	afterEach(async () => {
-		// Restore HOME
-		if (originalHome) {
-			process.env.HOME = originalHome;
-		}
-
+	afterAll(async () => {
 		// Clean up test directory
 		try {
 			await rm(testDir, { recursive: true, force: true });
 		} catch {
 			// Ignore cleanup errors
 		}
+	});
 
-		// Clean up shared cache to ensure test isolation
-		// All file:// URLs in /var/folders/... or /tmp/... parse to username="var" or "tmp"
-		try {
-			await rm(join(originalHome || "", ".ask-forge", "repos", "var"), { recursive: true, force: true });
-			await rm(join(originalHome || "", ".ask-forge", "repos", "tmp"), { recursive: true, force: true });
-		} catch {
-			// Ignore cleanup errors
+	afterEach(async () => {
+		// Clean up shared cache after each test to ensure test isolation
+		// This is needed because homedir() caches at module load, so all tests
+		// write to the real ~/.ask-forge cache regardless of HOME env changes
+		for (const cachePath of cacheCleanupPaths) {
+			try {
+				await rm(cachePath, { recursive: true, force: true });
+			} catch {
+				// Ignore cleanup errors
+			}
 		}
 	});
 
