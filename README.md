@@ -11,7 +11,8 @@ Ask Forge allows you to programmatically ask questions to a GitHub/GitLab reposi
 
 - [Bun](https://bun.sh/) (or Node.js ≥ 18)
 - `git`
-- `ripgrep` (`rg`)
+- `ripgrep`
+- `fd`
 - An LLM API key (set via environment variable, e.g. `OPENROUTER_API_KEY`)
 
 ## Installation
@@ -106,23 +107,6 @@ console.log(result.inferenceTimeMs); // Total inference time in ms
 console.log(result.usage);           // Token usage statistics
 ```
 
-### Session API
-
-```typescript
-import { connect, type Session, type Message } from "@nilenso/ask-forge";
-
-const session: Session = await connect("https://github.com/owner/repo");
-
-// Properties
-session.id;       // Unique session ID
-session.repo;     // Repository info: { url, localPath, commitish, ... }
-
-// Methods
-await session.ask("question");           // Ask a question
-session.getMessages();                   // Get conversation history
-session.replaceMessages(newMessages);    // Replace conversation history
-session.close();                         // Clean up resources
-```
 
 ## Development
 
@@ -133,25 +117,9 @@ bun install
 bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
-### Web UI
-
-Run the web interface to ask questions and collect feedback:
-
-```bash
-bun run web
-# Open http://localhost:3000
-```
-
-Features:
-- Ask questions about any git repo (GitHub, GitLab, etc.)
-- View agent responses and tool calls
-- Provide binary feedback (correct/incorrect)
-- Tag difficulty (easy/medium/hard)
-- Samples saved to `web/data/samples.json`
-
 ### Evaluation
 
-The `eval/` folder contains a human-in-the-loop evaluation system for testing code analysis agents.
+The `eval/` folder contains an evaluation system for testing code analysis agents.
 
 ```bash
 # Activate the virtual environment
@@ -177,5 +145,4 @@ For repo isolation, we `git fetch` (if needed) and add a new worktree with the c
 - Ensures each query operates on an isolated copy of the repository at the specified revision
 - Avoids conflicts with the main working directory
 - Allows concurrent queries on different commits/branches without interference
-
-Since ask-forge is exposed as a library, different service users may request the same repo@commit. We skip fetching if the committish is already available locally, avoiding redundant network calls.
+- Since ask-forge is exposed as a library, different service users may request the same repo@commit. We skip fetching if the committish is already available locally, avoiding redundant network calls.
