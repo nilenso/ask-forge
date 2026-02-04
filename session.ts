@@ -9,6 +9,7 @@ import {
 	type Tool,
 } from "@mariozechner/pi-ai";
 import { cleanupWorktree, type Repo } from "./forge";
+import { consoleLogger, type Logger } from "./logger";
 
 // =============================================================================
 // Types
@@ -55,27 +56,6 @@ export type { Message };
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-function log(label: string, content: string) {
-	console.log(`\n${"─".repeat(60)}`);
-	console.log(`│ ${label}`);
-	console.log(`${"─".repeat(60)}`);
-	console.log(content);
-}
-
-function logError(label: string, error: unknown) {
-	console.error(`\n${"═".repeat(60)}`);
-	console.error(`│ ERROR: ${label}`);
-	console.error(`${"═".repeat(60)}`);
-	if (error instanceof Error) {
-		console.error(`Message: ${error.message}`);
-		if (error.cause) console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
-		if (error.stack) console.error(`Stack: ${error.stack}`);
-	} else {
-		console.error(JSON.stringify(error, null, 2));
-	}
-	console.error(`${"═".repeat(60)}\n`);
-}
 
 function extractErrorText(error: unknown): string {
 	const err = error as { errorMessage?: string; content?: { type: string; text?: string }[] } | undefined;
@@ -131,6 +111,7 @@ export interface SessionConfig {
 	tools: Tool[];
 	maxIterations: number;
 	executeTool: (name: string, args: Record<string, unknown>, cwd: string) => Promise<string>;
+	logger?: Logger;
 }
 
 export class Session {
@@ -138,6 +119,7 @@ export class Session {
 	readonly repo: Repo;
 
 	#config: SessionConfig;
+	#logger: Logger;
 	#context: Context;
 	#pending: Promise<AskResult> | null = null;
 	#closed = false;
@@ -146,6 +128,7 @@ export class Session {
 		this.id = randomUUID();
 		this.repo = repo;
 		this.#config = config;
+		this.#logger = config.logger ?? consoleLogger;
 		this.#context = {
 			systemPrompt: config.systemPrompt,
 			messages: [],
@@ -232,7 +215,7 @@ export class Session {
 
 			response = await eventStream.result();
 		} catch (error) {
-			logError(`API call failed (iteration ${iteration + 1})`, {
+			this.#logger.error(`API call failed (iteration ${iteration + 1})`, {
 				error,
 				errorType: error?.constructor?.name,
 				iteration: iteration + 1,
@@ -256,7 +239,7 @@ export class Session {
 		const apiResponse = response as { stopReason?: string; errorMessage?: string };
 		if (apiResponse.stopReason === "error" || apiResponse.errorMessage) {
 			const errorMsg = apiResponse.errorMessage || "Unknown API error";
-			logError("API ERROR", {
+			this.#logger.error("API ERROR", {
 				iteration: iteration + 1,
 				stopReason: apiResponse.stopReason,
 				errorMessage: errorMsg,
@@ -325,7 +308,7 @@ export class Session {
 			}
 			case "error": {
 				const errorText = extractErrorText(event.error);
-				logError(`API call failed (iteration ${iteration + 1})`, {
+				this.#logger.error(`API call failed (iteration ${iteration + 1})`, {
 					message: errorText,
 					fullError: event.error,
 					iteration: iteration + 1,
@@ -344,11 +327,11 @@ export class Session {
 		const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
 
 		if (!responseText.trim()) {
-			logError("WARNING: Empty response from API", { fullResponse: response });
+			this.#logger.error("WARNING: Empty response from API", { fullResponse: response });
 			return buildResult(ctx, "[ERROR: Empty response from API - check API key and credits]");
 		}
 
-		log("RESPONSE", "");
+		this.#logger.log("RESPONSE", "");
 		return buildResult(ctx, responseText);
 	}
 
@@ -357,7 +340,7 @@ export class Session {
 		toolCallRecords: ToolCallRecord[],
 	): Promise<void> {
 		for (const call of toolCalls) {
-			log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
+			this.#logger.log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
 		}
 
 		const toolExecStart = Date.now();
@@ -365,11 +348,11 @@ export class Session {
 			toolCalls.map(async (call) => {
 				const t0 = Date.now();
 				const result = await this.#config.executeTool(call.name, call.arguments, this.repo.localPath);
-				log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
+				this.#logger.log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
 				return result;
 			}),
 		);
-		log(`ALL_TOOLS_DONE: ${toolCalls.length} calls`, `${Date.now() - toolExecStart}ms`);
+		this.#logger.log(`ALL_TOOLS_DONE: ${toolCalls.length} calls`, `${Date.now() - toolExecStart}ms`);
 
 		// Push results back in request order to preserve conversation context
 		toolCalls.forEach((call, j) => {

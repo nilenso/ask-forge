@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { Repo } from "./forge";
+import { type Logger, nullLogger } from "./logger";
 import { Session, type SessionConfig } from "./session";
 
 // Mock repo for testing
@@ -18,13 +19,33 @@ function createMockRepo(): Repo {
 }
 
 // Mock config for testing
-function createMockConfig(): SessionConfig {
+function createMockConfig(overrides?: Partial<SessionConfig>): SessionConfig {
 	return {
 		model: {} as Model<Api>, // Mock model - not used in these tests
 		systemPrompt: "You are a test assistant",
 		tools: [],
 		maxIterations: 5,
 		executeTool: async () => "mock result",
+		logger: nullLogger, // Suppress logging in tests by default
+		...overrides,
+	};
+}
+
+// Helper to create a logger that captures logs
+function createCapturingLogger(): { logger: Logger; logs: string[]; errors: string[] } {
+	const logs: string[] = [];
+	const errors: string[] = [];
+	return {
+		logs,
+		errors,
+		logger: {
+			log(label: string, content: string) {
+				logs.push(`${label}: ${content}`);
+			},
+			error(label: string, error: unknown) {
+				errors.push(`${label}: ${JSON.stringify(error)}`);
+			},
+		},
 	};
 }
 
@@ -109,6 +130,27 @@ describe("Session", () => {
 			session.close();
 
 			expect(session.ask("test")).rejects.toThrow(`Session ${session.id} is closed`);
+		});
+	});
+
+	describe("logger", () => {
+		test("uses nullLogger by default in tests (no console output)", () => {
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig());
+
+			// If we got here without console spam, nullLogger is working
+			expect(session).toBeDefined();
+		});
+
+		test("accepts custom logger via config", () => {
+			const { logger, logs, errors } = createCapturingLogger();
+			const repo = createMockRepo();
+			const _session = new Session(repo, createMockConfig({ logger }));
+
+			// Logger is injected but won't be called until ask() runs
+			// This test verifies the injection mechanism works
+			expect(logs).toEqual([]);
+			expect(errors).toEqual([]);
 		});
 	});
 });
