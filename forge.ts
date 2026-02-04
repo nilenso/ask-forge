@@ -1,23 +1,19 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { GIT_ENV } from "./config";
 
-// Git environment to prevent interactive prompts and SSH key loading
-const GIT_ENV: Record<string, string> = {
-	// Disable SSH agent and key loading
-	SSH_AUTH_SOCK: "",
-	// Use a non-existent SSH key to prevent loading default keys
-	GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityFile=/dev/null",
-	// Disable terminal prompts for credentials
-	GIT_TERMINAL_PROMPT: "0",
-	// Disable askpass programs
-	GIT_ASKPASS: "",
-	SSH_ASKPASS: "",
-	// Preserve PATH for git to work
-	PATH: process.env.PATH || "",
-};
-
-// Lock map to prevent race conditions when cloning the same repo in parallel
+/**
+ * Lock map to prevent race conditions when cloning the same repo in parallel.
+ *
+ * When multiple concurrent calls try to clone the same repository, this lock ensures
+ * only one clone happens while others wait. Without this, concurrent clones to the
+ * same path would corrupt the repository.
+ *
+ * Note: This lock is process-local. If multiple Node.js processes run simultaneously,
+ * they will not share this lock and may still race. For multi-process scenarios,
+ * consider using file-based locking or ensuring only one process clones at a time.
+ */
 const cloneLocks = new Map<string, Promise<void>>();
 
 async function withCloneLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

@@ -53,6 +53,24 @@ function extractErrorText(error: unknown): string {
 }
 
 /**
+ * Parse tool call delta event data.
+ * Returns null if the event doesn't contain valid tool call info.
+ */
+function parseToolCallDelta(event: RawStreamEvent): {
+	contentIndex: number;
+	name: string;
+	delta: string;
+} | null {
+	const contentIndex = event.contentIndex ?? 0;
+	const partialToolCall = event.partial?.content[contentIndex];
+
+	if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
+		return { contentIndex, name: partialToolCall.name, delta: event.delta ?? "" };
+	}
+	return null;
+}
+
+/**
  * Maps a raw stream event to a ProgressEvent.
  * Returns the progress event to emit, or an error if the stream errored.
  */
@@ -74,11 +92,9 @@ function mapStreamEvent(
 		case "toolcall_delta": {
 			// Note: tool_start is emitted by handleStreamEvent which can emit multiple events
 			// This function only returns tool_delta; tool_start tracking happens in handleStreamEvent
-			const contentIndex = event.contentIndex ?? 0;
-			const partialToolCall = event.partial?.content[contentIndex];
-
-			if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
-				return { progress: { type: "tool_delta", name: partialToolCall.name, delta: event.delta ?? "" } };
+			const parsed = parseToolCallDelta(event);
+			if (parsed) {
+				return { progress: { type: "tool_delta", name: parsed.name, delta: parsed.delta } };
 			}
 			return {};
 		}
@@ -113,15 +129,13 @@ function handleStreamEvent(
 ): { text: string; details: unknown } | null {
 	// Special handling for toolcall_delta to emit tool_start first if needed
 	if (event.type === "toolcall_delta") {
-		const contentIndex = event.contentIndex ?? 0;
-		const partialToolCall = event.partial?.content[contentIndex];
-
-		if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
-			if (!toolCallNames.has(contentIndex)) {
-				toolCallNames.set(contentIndex, partialToolCall.name);
-				onProgress?.({ type: "tool_start", name: partialToolCall.name, arguments: {} });
+		const parsed = parseToolCallDelta(event);
+		if (parsed) {
+			if (!toolCallNames.has(parsed.contentIndex)) {
+				toolCallNames.set(parsed.contentIndex, parsed.name);
+				onProgress?.({ type: "tool_start", name: parsed.name, arguments: {} });
 			}
-			onProgress?.({ type: "tool_delta", name: partialToolCall.name, delta: event.delta ?? "" });
+			onProgress?.({ type: "tool_delta", name: parsed.name, delta: parsed.delta });
 		}
 		return null;
 	}
