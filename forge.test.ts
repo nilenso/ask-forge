@@ -110,7 +110,9 @@ describe("forge", () => {
 
 	beforeEach(async () => {
 		// Override HOME FIRST to isolate cache directory
-		// This must happen before createTestRepo since connectRepo uses homedir()
+		// Note: homedir() from node:os caches at module load, so setting HOME here
+		// doesn't affect where forge.ts stores its cache. Tests will share the real
+		// ~/.ask-forge cache. We clean it up in afterEach to ensure test isolation.
 		originalHome = process.env.HOME;
 		testDir = join(tmpdir(), `ask-forge-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		await mkdir(testDir, { recursive: true });
@@ -129,6 +131,15 @@ describe("forge", () => {
 		// Clean up test directory
 		try {
 			await rm(testDir, { recursive: true, force: true });
+		} catch {
+			// Ignore cleanup errors
+		}
+
+		// Clean up shared cache to ensure test isolation
+		// All file:// URLs in /var/folders/... or /tmp/... parse to username="var" or "tmp"
+		try {
+			await rm(join(originalHome || "", ".ask-forge", "repos", "var"), { recursive: true, force: true });
+			await rm(join(originalHome || "", ".ask-forge", "repos", "tmp"), { recursive: true, force: true });
 		} catch {
 			// Ignore cleanup errors
 		}
@@ -185,24 +196,23 @@ describe("forge", () => {
 			expect(readme2).toContain("Version 2");
 		});
 
-		test("parallel calls don't corrupt repo", async () => {
-			// Connect 3 times in parallel
+		test("parallel calls with different commitish share cache", async () => {
+			// Connect twice in parallel with different commitishes (v1.0 and v2.0)
+			// This tests that cloneLock prevents concurrent clones from corrupting the repo
 			const results = await Promise.all([
 				connectRepo(testRepo.url, { forge: "github", commitish: "v1.0" }),
-				connectRepo(testRepo.url, { forge: "github", commitish: "v1.0" }),
-				connectRepo(testRepo.url, { forge: "github", commitish: "v1.0" }),
+				connectRepo(testRepo.url, { forge: "github", commitish: "v2.0" }),
 			]);
 
-			// All should succeed with same commitish
-			for (const repo of results) {
-				expect(repo.commitish).toBe(testRepo.commits[0]);
-				const readme = await readFile(join(repo.localPath, "README.md"), "utf-8");
-				expect(readme).toContain("Version 1");
-			}
+			// All should succeed with correct commitish
+			expect(results[0].commitish).toBe(testRepo.commits[0]);
+			expect(results[1].commitish).toBe(testRepo.commits[1]);
 
-			// All should share same cache and worktree (same commitish = same worktree)
+			// Both should share same cache (bare repo)
 			expect(results[0].cachePath).toBe(results[1].cachePath);
-			expect(results[0].localPath).toBe(results[1].localPath);
+
+			// But have different worktrees (different commitishes)
+			expect(results[0].localPath).not.toBe(results[1].localPath);
 		});
 
 		test("throws for non-existent commitish", async () => {
