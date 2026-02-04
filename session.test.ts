@@ -18,6 +18,31 @@ function createMockRepo(): Repo {
 	};
 }
 
+// Mock stream that returns a simple text response
+function createMockStream() {
+	return () => {
+		const events: { type: string; delta?: string }[] = [{ type: "text_delta", delta: "Hello world" }];
+
+		return {
+			[Symbol.asyncIterator]: async function* () {
+				for (const event of events) {
+					yield event;
+				}
+			},
+			result: async () => ({
+				role: "assistant" as const,
+				content: [{ type: "text" as const, text: "Hello world" }],
+				usage: { input: 10, output: 5, totalTokens: 15 },
+				timestamp: Date.now(),
+				api: "test",
+				provider: "test",
+				model: "test",
+				stopReason: "end_turn",
+			}),
+		};
+	};
+}
+
 // Mock config for testing
 function createMockConfig(overrides?: Partial<SessionConfig>): SessionConfig {
 	return {
@@ -27,6 +52,7 @@ function createMockConfig(overrides?: Partial<SessionConfig>): SessionConfig {
 		maxIterations: 5,
 		executeTool: async () => "mock result",
 		logger: nullLogger, // Suppress logging in tests by default
+		stream: createMockStream() as SessionConfig["stream"],
 		...overrides,
 	};
 }
@@ -151,6 +177,48 @@ describe("Session", () => {
 			// This test verifies the injection mechanism works
 			expect(logs).toEqual([]);
 			expect(errors).toEqual([]);
+		});
+	});
+
+	describe("ask", () => {
+		test("returns response from mock stream", async () => {
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig());
+
+			const result = await session.ask("What is 2+2?");
+
+			expect(result.prompt).toBe("What is 2+2?");
+			expect(result.response).toBe("Hello world");
+			expect(result.toolCalls).toEqual([]);
+			expect(result.usage.inputTokens).toBe(10);
+			expect(result.usage.outputTokens).toBe(5);
+		});
+
+		test("adds user message to context", async () => {
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig());
+
+			await session.ask("Test question");
+
+			const messages = session.getMessages();
+			expect(messages.length).toBeGreaterThanOrEqual(1);
+			expect(messages[0].role).toBe("user");
+			expect(messages[0].content).toBe("Test question");
+		});
+
+		test("uses injected stream function", async () => {
+			let streamCalled = false;
+			const customStream = () => {
+				streamCalled = true;
+				return createMockStream()();
+			};
+
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig({ stream: customStream as SessionConfig["stream"] }));
+
+			await session.ask("Test");
+
+			expect(streamCalled).toBe(true);
 		});
 	});
 });

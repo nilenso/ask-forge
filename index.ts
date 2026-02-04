@@ -1,4 +1,4 @@
-import { getModel, type Message } from "@mariozechner/pi-ai";
+import { getModel, type Message, stream } from "@mariozechner/pi-ai";
 import * as config from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
@@ -51,5 +51,6 @@ export async function connect(
 		maxIterations: config.MAX_TOOL_ITERATIONS,
 		executeTool,
 		logger,
+		stream,
 	});
 }

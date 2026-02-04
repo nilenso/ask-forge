@@ -112,6 +112,7 @@ export interface SessionConfig {
 	maxIterations: number;
 	executeTool: (name: string, args: Record<string, unknown>, cwd: string) => Promise<string>;
 	logger?: Logger;
+	stream?: typeof stream;
 }
 
 export class Session {
@@ -120,6 +121,7 @@ export class Session {
 
 	#config: SessionConfig;
 	#logger: Logger;
+	#stream: typeof stream;
 	#context: Context;
 	#pending: Promise<AskResult> | null = null;
 	#closed = false;
@@ -129,6 +131,7 @@ export class Session {
 		this.repo = repo;
 		this.#config = config;
 		this.#logger = config.logger ?? consoleLogger;
+		this.#stream = config.stream ?? stream;
 		this.#context = {
 			systemPrompt: config.systemPrompt,
 			messages: [],
@@ -201,9 +204,7 @@ export class Session {
 
 		let response: AssistantMessage;
 		try {
-			const eventStream = stream(this.#config.model, this.#context, {
-				headers: { "X-Transform": "middle-out" },
-			});
+			const eventStream = this.#stream(this.#config.model, this.#context);
 
 			// Process streaming events
 			for await (const event of eventStream) {
