@@ -60,10 +60,14 @@ async function commitishExistsLocally(repoPath: string, commitish: string): Prom
 	return exitCode === 0 && (output === "commit" || output === "tag");
 }
 
+/** Supported git forge types */
 export type ForgeName = "github" | "gitlab";
 
+/** Interface for git forge implementations */
 export interface Forge {
+	/** The forge identifier */
 	name: ForgeName;
+	/** Build an authenticated clone URL */
 	buildCloneUrl(repoUrl: string, token?: string): string;
 }
 
@@ -112,21 +116,38 @@ function parseRepoPath(repoUrl: string): { username: string; reponame: string } 
 	return { username: parts[0], reponame: parts[1] };
 }
 
+/** Options for connecting to a repository */
 export interface ConnectOptions {
+	/** Authentication token for private repositories */
 	token?: string;
+	/** Forge type override (auto-detected from URL if not specified) */
 	forge?: ForgeName;
+	/** Git commitish to checkout (branch, tag, SHA, or relative ref like HEAD~1) */
 	commitish?: string;
 }
 
+/** Represents a connected repository */
 export interface Repo {
+	/** Original repository URL */
 	url: string;
+	/** Local filesystem path to the worktree */
 	localPath: string;
+	/** The forge this repository is hosted on */
 	forge: Forge;
+	/** The resolved commit SHA */
 	commitish: string;
+	/** Path to the bare git cache */
 	cachePath: string;
 }
 
-export async function cleanupWorktree(repo: Repo): Promise<void> {
+/**
+ * Remove a git worktree associated with a repository.
+ * Called automatically by Session.close().
+ *
+ * @param repo - The repository whose worktree should be removed
+ * @returns true if cleanup succeeded, false otherwise
+ */
+export async function cleanupWorktree(repo: Repo): Promise<boolean> {
 	try {
 		const proc = Bun.spawn(["git", "worktree", "remove", "--force", repo.localPath], {
 			cwd: repo.cachePath,
@@ -134,12 +155,24 @@ export async function cleanupWorktree(repo: Repo): Promise<void> {
 			stderr: "pipe",
 			env: GIT_ENV,
 		});
-		await proc.exited;
+		const exitCode = await proc.exited;
+		return exitCode === 0;
 	} catch {
-		// Ignore cleanup errors
+		return false;
 	}
 }
 
+/**
+ * Connect to a git repository, cloning if necessary and creating a worktree.
+ *
+ * Repositories are cached as bare clones in ~/.ask-forge/repos/{user}/{repo}/repo.
+ * Each unique commitish gets its own worktree in ~/.ask-forge/repos/{user}/{repo}/trees/{sha}.
+ *
+ * @param repoUrl - The repository URL (https://github.com/user/repo)
+ * @param options - Connection options (token, forge, commitish)
+ * @returns A Repo object with paths and metadata
+ * @throws Error if the forge cannot be inferred or git operations fail
+ */
 export async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
 	const forgeName = options.forge ?? inferForge(repoUrl);
 	if (!forgeName) {

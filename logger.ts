@@ -1,8 +1,18 @@
+/**
+ * Logger interface for Session output.
+ * Implement this interface to customize logging behavior.
+ */
 export interface Logger {
+	/** Log an informational message */
 	log(label: string, content: string): void;
+	/** Log an error with details */
 	error(label: string, error: unknown): void;
 }
 
+/**
+ * Default logger that writes formatted output to console.
+ * Uses box-drawing characters for visual separation.
+ */
 export const consoleLogger: Logger = {
 	log(label: string, content: string) {
 		console.log(`\n${"─".repeat(60)}`);
@@ -26,6 +36,10 @@ export const consoleLogger: Logger = {
 	},
 };
 
+/**
+ * No-op logger that discards all output.
+ * Useful for testing or when logging is not desired.
+ */
 export const nullLogger: Logger = {
 	log() {},
 	error() {},

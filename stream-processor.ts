@@ -5,17 +5,41 @@ import type { OnProgress, ProgressEvent } from "./session";
 // Types
 // =============================================================================
 
+/** Raw stream event from pi-ai (loosely typed) */
+interface RawStreamEvent {
+	type: string;
+	delta?: string;
+	contentIndex?: number;
+	partial?: {
+		content: Array<{ type: string; name?: string }>;
+	};
+	toolCall?: {
+		name: string;
+		arguments: Record<string, unknown>;
+	};
+	error?: unknown;
+}
+
+/** Successful stream processing result */
 export interface StreamSuccess {
 	ok: true;
+	/** The completed assistant message */
 	response: AssistantMessage;
 }
 
+/** Failed stream processing result */
 export interface StreamError {
 	ok: false;
+	/** Human-readable error message */
 	error: string;
+	/** Raw error details for logging */
 	errorDetails?: unknown;
 }
 
+/**
+ * Result of processing an AI model stream.
+ * Use `outcome.ok` to discriminate between success and error.
+ */
 export type StreamOutcome = StreamSuccess | StreamError;
 
 // =============================================================================
@@ -31,45 +55,41 @@ function extractErrorText(error: unknown): string {
 /**
  * Maps a raw stream event to a ProgressEvent.
  * Returns the progress event to emit, or an error if the stream errored.
- * Handles toolCallNames state for deduplicating tool_start events.
  */
 function mapStreamEvent(
-	event: { type: string; [key: string]: unknown },
+	event: RawStreamEvent,
 	toolCallNames: Map<number, string>,
 ): { progress?: ProgressEvent; error?: { text: string; details: unknown } } {
 	switch (event.type) {
 		case "thinking_delta":
-			return { progress: { type: "thinking_delta", delta: event.delta as string } };
+			return { progress: { type: "thinking_delta", delta: event.delta ?? "" } };
 
 		case "text_delta":
-			return { progress: { type: "text_delta", delta: event.delta as string } };
+			return { progress: { type: "text_delta", delta: event.delta ?? "" } };
 
 		case "toolcall_start":
 			// We don't have the name yet, no event to emit
 			return {};
 
 		case "toolcall_delta": {
-			const partial = event.partial as { content: { type: string; name?: string }[] };
-			const contentIndex = event.contentIndex as number;
-			const partialToolCall = partial.content[contentIndex];
+			// Note: tool_start is emitted by handleStreamEvent which can emit multiple events
+			// This function only returns tool_delta; tool_start tracking happens in handleStreamEvent
+			const contentIndex = event.contentIndex ?? 0;
+			const partialToolCall = event.partial?.content[contentIndex];
 
 			if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
-				// Check if we need to emit tool_start first
-				if (!toolCallNames.has(contentIndex)) {
-					toolCallNames.set(contentIndex, partialToolCall.name);
-					// Return tool_start - caller should also emit tool_delta after
-					// But we can only return one event, so we need a different approach
-				}
-				return { progress: { type: "tool_delta", name: partialToolCall.name, delta: event.delta as string } };
+				return { progress: { type: "tool_delta", name: partialToolCall.name, delta: event.delta ?? "" } };
 			}
 			return {};
 		}
 
 		case "toolcall_end": {
-			const toolCall = event.toolCall as { name: string; arguments: Record<string, unknown> };
-			const contentIndex = event.contentIndex as number;
+			const contentIndex = event.contentIndex ?? 0;
 			toolCallNames.delete(contentIndex);
-			return { progress: { type: "tool_end", name: toolCall.name, arguments: toolCall.arguments } };
+			if (event.toolCall) {
+				return { progress: { type: "tool_end", name: event.toolCall.name, arguments: event.toolCall.arguments } };
+			}
+			return {};
 		}
 
 		case "error": {
@@ -87,22 +107,21 @@ function mapStreamEvent(
  * Returns an error result if the stream errored, otherwise null.
  */
 function handleStreamEvent(
-	event: { type: string; [key: string]: unknown },
+	event: RawStreamEvent,
 	toolCallNames: Map<number, string>,
 	onProgress?: OnProgress,
 ): { text: string; details: unknown } | null {
 	// Special handling for toolcall_delta to emit tool_start first if needed
 	if (event.type === "toolcall_delta") {
-		const partial = event.partial as { content: { type: string; name?: string }[] };
-		const contentIndex = event.contentIndex as number;
-		const partialToolCall = partial.content[contentIndex];
+		const contentIndex = event.contentIndex ?? 0;
+		const partialToolCall = event.partial?.content[contentIndex];
 
 		if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
 			if (!toolCallNames.has(contentIndex)) {
 				toolCallNames.set(contentIndex, partialToolCall.name);
 				onProgress?.({ type: "tool_start", name: partialToolCall.name, arguments: {} });
 			}
-			onProgress?.({ type: "tool_delta", name: partialToolCall.name, delta: event.delta as string });
+			onProgress?.({ type: "tool_delta", name: partialToolCall.name, delta: event.delta ?? "" });
 		}
 		return null;
 	}
@@ -145,7 +164,7 @@ export async function processStream(
 		const eventStream = streamFn(model, context);
 
 		for await (const event of eventStream) {
-			const error = handleStreamEvent(event, toolCallNames, onProgress);
+			const error = handleStreamEvent(event as RawStreamEvent, toolCallNames, onProgress);
 			if (error) {
 				return {
 					ok: false,

@@ -16,27 +16,54 @@ import { processStream } from "./stream-processor";
 // Types
 // =============================================================================
 
+/** Record of a tool call made during a session */
 export interface ToolCallRecord {
+	/** Name of the tool that was called */
 	name: string;
+	/** Arguments passed to the tool */
 	arguments: Record<string, unknown>;
 }
 
+/** Result returned from Session.ask() */
 export interface AskResult {
+	/** The original question/prompt */
 	prompt: string;
+	/** List of tool calls made while answering */
 	toolCalls: ToolCallRecord[];
+	/** The final response text (or error message) */
 	response: string;
+	/** Token usage statistics */
 	usage: Usage;
+	/** Total time taken for inference in milliseconds */
 	inferenceTimeMs: number;
 }
 
-interface Usage {
+/** Token usage statistics for an ask operation */
+export interface Usage {
+	/** Number of input tokens */
 	inputTokens: number;
+	/** Number of output tokens */
 	outputTokens: number;
+	/** Total tokens (input + output) */
 	totalTokens: number;
+	/** Tokens read from cache */
 	cacheReadTokens: number;
+	/** Tokens written to cache */
 	cacheWriteTokens: number;
 }
 
+/**
+ * Progress events emitted during Session.ask() via the onProgress callback.
+ *
+ * Event sequence:
+ * 1. "thinking" - Emitted at the start of each iteration
+ * 2. "thinking_delta" - Model's thinking/reasoning (streaming)
+ * 3. "text_delta" - Response text (streaming)
+ * 4. "tool_start" - Tool call initiated
+ * 5. "tool_delta" - Tool call arguments (streaming)
+ * 6. "tool_end" - Tool call complete with final arguments
+ * 7. "responding" - Final response ready (no more tool calls)
+ */
 export type ProgressEvent =
 	| { type: "thinking" }
 	| { type: "thinking_delta"; delta: string }
@@ -46,9 +73,12 @@ export type ProgressEvent =
 	| { type: "tool_end"; name: string; arguments: Record<string, unknown> }
 	| { type: "responding" };
 
+/** Callback function for receiving progress events during ask() */
 export type OnProgress = (event: ProgressEvent) => void;
 
+/** Options for Session.ask() */
 export interface AskOptions {
+	/** Callback for real-time progress events */
 	onProgress?: OnProgress;
 }
 
@@ -100,18 +130,48 @@ function buildResult(ctx: AskContext, response: string): AskResult {
 // Session Class
 // =============================================================================
 
+/**
+ * Configuration for creating a Session.
+ * All dependencies are injectable for testing.
+ */
 export interface SessionConfig {
+	/** The AI model to use for inference */
 	model: Model<Api>;
+	/** System prompt that defines the assistant's behavior */
 	systemPrompt: string;
+	/** Available tools the model can call */
 	tools: Tool[];
+	/** Maximum number of tool-use iterations before giving up */
 	maxIterations: number;
+	/** Function to execute tool calls */
 	executeTool: (name: string, args: Record<string, unknown>, cwd: string) => Promise<string>;
+	/** Logger for debug output (defaults to consoleLogger) */
 	logger?: Logger;
+	/** Stream function for AI inference (defaults to pi-ai's stream) */
 	stream?: typeof stream;
 }
 
+/**
+ * A Session manages a conversation with an AI model about a code repository.
+ *
+ * Sessions provide:
+ * - Multi-turn conversations with message history
+ * - Tool execution (file reading, code search, etc.)
+ * - Progress callbacks for streaming UI updates
+ * - Automatic cleanup of git worktrees on close
+ *
+ * @example
+ * ```ts
+ * const session = await connect(repoUrl);
+ * const result = await session.ask("What does this repo do?");
+ * console.log(result.response);
+ * session.close();
+ * ```
+ */
 export class Session {
+	/** Unique identifier for this session */
 	readonly id: string;
+	/** The repository this session is connected to */
 	readonly repo: Repo;
 
 	#config: SessionConfig;
@@ -134,6 +194,17 @@ export class Session {
 		};
 	}
 
+	/**
+	 * Ask a question about the repository.
+	 *
+	 * The model will use available tools to explore the codebase and formulate an answer.
+	 * Concurrent calls are serialized (queued) to maintain conversation coherence.
+	 *
+	 * @param question - The question to ask
+	 * @param options - Optional settings including progress callback
+	 * @returns Result containing the response, tool calls made, and usage statistics
+	 * @throws Error if the session has been closed
+	 */
 	async ask(question: string, options?: AskOptions): Promise<AskResult> {
 		if (this.#closed) {
 			throw new Error(`Session ${this.id} is closed`);
@@ -150,20 +221,41 @@ export class Session {
 		return result;
 	}
 
+	/**
+	 * Get all messages in the conversation history.
+	 * Includes user messages, assistant responses, and tool results.
+	 */
 	getMessages(): Message[] {
 		return this.#context.messages;
 	}
 
+	/**
+	 * Replace the entire conversation history.
+	 * Useful for restoring a previous session state.
+	 *
+	 * @param messages - The new message history
+	 */
 	replaceMessages(messages: Message[]): void {
 		this.#context.messages = messages;
 	}
 
+	/**
+	 * Close the session and clean up resources.
+	 *
+	 * This removes the git worktree associated with the session.
+	 * The session cannot be used after closing.
+	 * Safe to call multiple times.
+	 */
 	close(): void {
 		if (this.#closed) return;
 		this.#closed = true;
 
-		// Clean up worktree asynchronously (fire and forget)
-		cleanupWorktree(this.repo);
+		// Clean up worktree asynchronously, log if it fails
+		cleanupWorktree(this.repo).then((success) => {
+			if (!success) {
+				this.#logger.error("Failed to cleanup worktree", { path: this.repo.localPath });
+			}
+		});
 	}
 
 	async #doAsk(question: string, onProgress?: OnProgress): Promise<AskResult> {
@@ -211,16 +303,16 @@ export class Session {
 		const response = outcome.response;
 		accumulateUsage(ctx.usage, response);
 
-		// Check for API error in response
-		const apiResponse = response as { stopReason?: string; errorMessage?: string };
-		if (apiResponse.stopReason === "error" || apiResponse.errorMessage) {
-			const errorMsg = apiResponse.errorMessage || "Unknown API error";
+		// Check for API error in response (fields may exist but not be in pi-ai's public types)
+		const apiError = response as unknown as { stopReason?: string; errorMessage?: string };
+		if (apiError.stopReason === "error" || apiError.errorMessage) {
+			const errorMsg = apiError.errorMessage || "Unknown API error";
 			this.#logger.error("API ERROR", {
 				iteration: iteration + 1,
-				stopReason: apiResponse.stopReason,
+				stopReason: apiError.stopReason,
 				errorMessage: errorMsg,
 				timestamp: new Date().toISOString(),
-				fullResponse: apiResponse,
+				fullResponse: response,
 			});
 			return {
 				done: true,
@@ -289,7 +381,7 @@ export class Session {
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: results[j] as string }],
+				content: [{ type: "text", text: results[j] }],
 				isError: false,
 				timestamp: Date.now(),
 			});
