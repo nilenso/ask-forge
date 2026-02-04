@@ -227,7 +227,7 @@ const tools: Tool[] = [
 	{
 		name: "rg",
 		description:
-			"Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers.",
+			"Search for a pattern in files using ripgrep. Returns matching lines with file paths and line numbers. Limited to 50 matches per file to prevent excessive output.",
 		parameters: Type.Object({
 			pattern: Type.String({ description: "The regex pattern to search for" }),
 			glob: Type.Optional(
@@ -262,9 +262,12 @@ const tools: Tool[] = [
 	},
 	{
 		name: "read",
-		description: "Read the contents of a file.",
+		description:
+			"Read the contents of a file. Output is limited to 2000 lines by default. Use offset and limit parameters to read specific sections of large files.",
 		parameters: Type.Object({
 			path: Type.String({ description: "Path to the file, relative to repository root" }),
+			offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed). Default: 1" })),
+			limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read. Default: 2000" })),
 		}),
 	},
 ];
@@ -279,11 +282,15 @@ async function runCommand(cmd: string[], cwd: string): Promise<string> {
 	return stdout || "(no output)";
 }
 
+// Default limits for tool outputs to prevent context window overflow
+const DEFAULT_READ_LINE_LIMIT = 2000;
+const RG_MAX_MATCHES_PER_FILE = 50;
+
 async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
 	if (toolName === "rg") {
 		const pattern = args.pattern as string;
 		const glob = args.glob as string | undefined;
-		const cmd = ["rg", "--line-number", pattern];
+		const cmd = ["rg", "--line-number", "--max-count", String(RG_MAX_MATCHES_PER_FILE), pattern];
 		if (glob) cmd.push("--glob", glob);
 		return runCommand(cmd, repoPath);
 	}
@@ -304,9 +311,34 @@ async function executeTool(toolName: string, args: Record<string, unknown>, repo
 
 	if (toolName === "read") {
 		const filePath = args.path as string;
+		const offset = (args.offset as number | undefined) ?? 1;
+		const limit = (args.limit as number | undefined) ?? DEFAULT_READ_LINE_LIMIT;
 		const fullPath = join(repoPath, filePath);
+
 		try {
-			return await readFile(fullPath, "utf-8");
+			const content = await readFile(fullPath, "utf-8");
+			const lines = content.split("\n");
+			const totalLines = lines.length;
+
+			// Convert to 0-indexed for slicing
+			const startIdx = Math.max(0, offset - 1);
+			const endIdx = startIdx + limit;
+			const selectedLines = lines.slice(startIdx, endIdx);
+
+			let result = selectedLines.join("\n");
+
+			// Add metadata if file is truncated or offset is used
+			if (totalLines > limit || offset > 1) {
+				const displayEnd = Math.min(offset + selectedLines.length - 1, totalLines);
+				result = `[Lines ${offset}-${displayEnd} of ${totalLines} total]\n\n${result}`;
+
+				if (endIdx < totalLines) {
+					const remaining = totalLines - endIdx;
+					result += `\n\n[${remaining} more lines. Use offset=${endIdx + 1} to continue reading]`;
+				}
+			}
+
+			return result;
 		} catch (e) {
 			return `Error reading file: ${(e as Error).message}`;
 		}
@@ -415,7 +447,13 @@ function createSession(repo: Repo): Session {
 
 			let response: AssistantMessage;
 			try {
-				const eventStream = stream(model, context);
+				const eventStream = stream(model, context, {
+					// Enable OpenRouter's middle-out transform to automatically compress
+					// context when it exceeds the model's limit
+					headers: {
+						"X-Transform": "middle-out",
+					},
+				});
 
 				// Process streaming events
 				for await (const event of eventStream) {
