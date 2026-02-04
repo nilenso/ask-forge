@@ -10,6 +10,7 @@ import {
 } from "@mariozechner/pi-ai";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
+import { processStream } from "./stream-processor";
 
 // =============================================================================
 // Types
@@ -56,12 +57,6 @@ export type { Message };
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-function extractErrorText(error: unknown): string {
-	const err = error as { errorMessage?: string; content?: { type: string; text?: string }[] } | undefined;
-	const firstTextBlock = err?.content?.find((b) => b.type === "text") as { type: "text"; text: string } | undefined;
-	return err?.errorMessage || firstTextBlock?.text || "Unknown API error";
-}
 
 function createEmptyUsage(): Usage {
 	return {
@@ -199,41 +194,21 @@ export class Session {
 		iteration: number,
 		onProgress?: OnProgress,
 	): Promise<{ done: true; result: AskResult } | { done: false }> {
-		// Track tool call names during streaming (before we have full arguments)
-		const toolCallNames = new Map<number, string>();
+		const outcome = await processStream(this.#stream, this.#config.model, this.#context, onProgress);
 
-		let response: AssistantMessage;
-		try {
-			const eventStream = this.#stream(this.#config.model, this.#context);
-
-			// Process streaming events
-			for await (const event of eventStream) {
-				const errorResult = this.#handleStreamEvent(event, toolCallNames, ctx, iteration, onProgress);
-				if (errorResult) {
-					return { done: true, result: errorResult };
-				}
-			}
-
-			response = await eventStream.result();
-		} catch (error) {
+		if (!outcome.ok) {
 			this.#logger.error(`API call failed (iteration ${iteration + 1})`, {
-				error,
-				errorType: error?.constructor?.name,
+				...(typeof outcome.errorDetails === "object" ? outcome.errorDetails : { error: outcome.errorDetails }),
 				iteration: iteration + 1,
 				timestamp: new Date().toISOString(),
-				...(error instanceof Error && {
-					message: error.message,
-					stack: error.stack,
-					cause: error.cause,
-				}),
 			});
-			const errorMessage = error instanceof Error ? error.message : String(error);
 			return {
 				done: true,
-				result: buildResult(ctx, `[ERROR: API call failed: ${errorMessage}]`),
+				result: buildResult(ctx, `[ERROR: ${outcome.error}]`),
 			};
 		}
 
+		const response = outcome.response;
 		accumulateUsage(ctx.usage, response);
 
 		// Check for API error in response
@@ -268,57 +243,6 @@ export class Session {
 		await this.#executeToolCalls(responseToolCalls, ctx.toolCalls);
 
 		return { done: false };
-	}
-
-	#handleStreamEvent(
-		event: { type: string; [key: string]: unknown },
-		toolCallNames: Map<number, string>,
-		ctx: AskContext,
-		iteration: number,
-		onProgress?: OnProgress,
-	): AskResult | null {
-		switch (event.type) {
-			case "thinking_delta":
-				onProgress?.({ type: "thinking_delta", delta: event.delta as string });
-				break;
-			case "text_delta":
-				onProgress?.({ type: "text_delta", delta: event.delta as string });
-				break;
-			case "toolcall_start":
-				// We don't have the name yet
-				break;
-			case "toolcall_delta": {
-				const partial = event.partial as { content: { type: string; name?: string }[] };
-				const contentIndex = event.contentIndex as number;
-				const partialToolCall = partial.content[contentIndex];
-				if (partialToolCall?.type === "toolCall" && partialToolCall.name) {
-					if (!toolCallNames.has(contentIndex)) {
-						toolCallNames.set(contentIndex, partialToolCall.name);
-						onProgress?.({ type: "tool_start", name: partialToolCall.name, arguments: {} });
-					}
-					onProgress?.({ type: "tool_delta", name: partialToolCall.name, delta: event.delta as string });
-				}
-				break;
-			}
-			case "toolcall_end": {
-				const toolCall = event.toolCall as { name: string; arguments: Record<string, unknown> };
-				const contentIndex = event.contentIndex as number;
-				onProgress?.({ type: "tool_end", name: toolCall.name, arguments: toolCall.arguments });
-				toolCallNames.delete(contentIndex);
-				break;
-			}
-			case "error": {
-				const errorText = extractErrorText(event.error);
-				this.#logger.error(`API call failed (iteration ${iteration + 1})`, {
-					message: errorText,
-					fullError: event.error,
-					iteration: iteration + 1,
-					timestamp: new Date().toISOString(),
-				});
-				return buildResult(ctx, `[ERROR: API call failed: ${errorText}]`);
-			}
-		}
-		return null;
 	}
 
 	#buildTextResponse(ctx: AskContext, response: AssistantMessage, onProgress?: OnProgress): AskResult {

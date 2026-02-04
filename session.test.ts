@@ -19,28 +19,30 @@ function createMockRepo(): Repo {
 }
 
 // Mock stream that returns a simple text response
-function createMockStream() {
-	return () => {
-		const events: { type: string; delta?: string }[] = [{ type: "text_delta", delta: "Hello world" }];
+function createMockStreamResult() {
+	const events: { type: string; delta?: string }[] = [{ type: "text_delta", delta: "Hello world" }];
 
-		return {
-			[Symbol.asyncIterator]: async function* () {
-				for (const event of events) {
-					yield event;
-				}
-			},
-			result: async () => ({
-				role: "assistant" as const,
-				content: [{ type: "text" as const, text: "Hello world" }],
-				usage: { input: 10, output: 5, totalTokens: 15 },
-				timestamp: Date.now(),
-				api: "test",
-				provider: "test",
-				model: "test",
-				stopReason: "end_turn",
-			}),
-		};
+	return {
+		[Symbol.asyncIterator]: async function* () {
+			for (const event of events) {
+				yield event;
+			}
+		},
+		result: async () => ({
+			role: "assistant" as const,
+			content: [{ type: "text" as const, text: "Hello world" }],
+			usage: { input: 10, output: 5, totalTokens: 15 },
+			timestamp: Date.now(),
+			api: "test",
+			provider: "test",
+			model: "test",
+			stopReason: "end_turn",
+		}),
 	};
+}
+
+function createMockStream(): SessionConfig["stream"] {
+	return (() => createMockStreamResult()) as unknown as SessionConfig["stream"];
 }
 
 // Mock config for testing
@@ -52,7 +54,7 @@ function createMockConfig(overrides?: Partial<SessionConfig>): SessionConfig {
 		maxIterations: 5,
 		executeTool: async () => "mock result",
 		logger: nullLogger, // Suppress logging in tests by default
-		stream: createMockStream() as SessionConfig["stream"],
+		stream: createMockStream(),
 		...overrides,
 	};
 }
@@ -202,19 +204,19 @@ describe("Session", () => {
 
 			const messages = session.getMessages();
 			expect(messages.length).toBeGreaterThanOrEqual(1);
-			expect(messages[0].role).toBe("user");
-			expect(messages[0].content).toBe("Test question");
+			expect(messages[0]?.role).toBe("user");
+			expect(messages[0]?.content).toBe("Test question");
 		});
 
 		test("uses injected stream function", async () => {
 			let streamCalled = false;
-			const customStream = () => {
+			const customStream = (() => {
 				streamCalled = true;
-				return createMockStream()();
-			};
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
 
 			const repo = createMockRepo();
-			const session = new Session(repo, createMockConfig({ stream: customStream as SessionConfig["stream"] }));
+			const session = new Session(repo, createMockConfig({ stream: customStream }));
 
 			await session.ask("Test");
 
