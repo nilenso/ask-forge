@@ -20,18 +20,44 @@ export const tools: Tool[] = [
 				}),
 			),
 			max_count: Type.Optional(Type.Number({ description: "Max matching lines per file" })),
-			max_results: Type.Optional(Type.Number({ description: "Max total matches (global), enforced via head" })),
+			max_results: Type.Optional(
+				Type.Number({
+					description: "Max total matches (global), enforced via head",
+				}),
+			),
 			word: Type.Optional(Type.Boolean({ description: "Match whole words only (-w)" })),
 		}),
 	},
 	{
 		name: "fd",
-		description: "Find files by name pattern using fd. Returns matching file paths.",
+		description:
+			"Find files by name pattern using fd. Returns matching file paths. Defaults to respecting .gitignore and excluding hidden files. Supports relevant filters and output limits.",
 		parameters: Type.Object({
-			pattern: Type.String({ description: "The pattern to match file names against" }),
+			pattern: Type.String({
+				description: "The regex pattern to match file names against (use --glob for glob patterns)",
+			}),
 			type: Type.Optional(
-				Type.Union([Type.Literal("f"), Type.Literal("d")], {
-					description: "Filter by type: 'f' for files, 'd' for directories",
+				Type.Union([Type.Literal("f"), Type.Literal("d"), Type.Literal("l"), Type.Literal("x")], {
+					description: "Filter by type: 'f' for files, 'd' for directories, 'l' for symlinks, 'x' for executables",
+				}),
+			),
+			extension: Type.Optional(
+				Type.String({
+					description: "Filter by file extension (e.g., 'ts', 'json'). Can be comma-separated for multiple extensions.",
+				}),
+			),
+			max_depth: Type.Optional(Type.Number({ description: "Maximum directory depth to search" })),
+			max_results: Type.Optional(Type.Number({ description: "Maximum number of results to return" })),
+			hidden: Type.Optional(Type.Boolean({ description: "Include hidden files and directories" })),
+			glob: Type.Optional(Type.Boolean({ description: "Use glob pattern instead of regex" })),
+			exclude: Type.Optional(
+				Type.String({
+					description: "Exclude entries matching this glob pattern (e.g., 'node_modules' or '*.pyc')",
+				}),
+			),
+			full_path: Type.Optional(
+				Type.Boolean({
+					description: "Match pattern against full path, not just filename",
 				}),
 			),
 		}),
@@ -52,9 +78,19 @@ export const tools: Tool[] = [
 		description:
 			"Read the contents of a file. Output is limited to 2000 lines by default. Use offset and limit parameters to read specific sections of large files.",
 		parameters: Type.Object({
-			path: Type.String({ description: "Path to the file, relative to repository root" }),
-			offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed). Default: 1" })),
-			limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read. Default: 2000" })),
+			path: Type.String({
+				description: "Path to the file, relative to repository root",
+			}),
+			offset: Type.Optional(
+				Type.Number({
+					description: "Line number to start reading from (1-indexed). Default: 1",
+				}),
+			),
+			limit: Type.Optional(
+				Type.Number({
+					description: "Maximum number of lines to read. Default: 2000",
+				}),
+			),
 		}),
 	},
 ];
@@ -82,7 +118,11 @@ async function executeRg(args: Record<string, unknown>, repoPath: string): Promi
 
 	if (maxResults) {
 		// Use head to limit total results
-		const rgProc = Bun.spawn(cmd, { cwd: repoPath, stdout: "pipe", stderr: "pipe" });
+		const rgProc = Bun.spawn(cmd, {
+			cwd: repoPath,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
 		const headProc = Bun.spawn(["head", "-n", String(maxResults)], {
 			stdin: rgProc.stdout,
 			stdout: "pipe",
@@ -106,10 +146,36 @@ async function executeRg(args: Record<string, unknown>, repoPath: string): Promi
 
 async function executeFd(args: Record<string, unknown>, repoPath: string): Promise<string> {
 	const pattern = args.pattern as string;
-	const type = args.type as "f" | "d" | undefined;
-	const cmd = ["find", ".", "-name", `*${pattern}*`];
-	if (type === "f") cmd.push("-type", "f");
-	else if (type === "d") cmd.push("-type", "d");
+	const type = args.type as "f" | "d" | "l" | "x" | undefined;
+	const extension = args.extension as string | undefined;
+	const maxDepth = args.max_depth as number | undefined;
+	const maxResults = args.max_results as number | undefined;
+	const hidden = args.hidden as boolean | undefined;
+	const glob = args.glob as boolean | undefined;
+	const exclude = args.exclude as string | undefined;
+	const fullPath = args.full_path as boolean | undefined;
+
+	const cmd = ["fd"];
+
+	// Add flags before pattern
+	if (type) cmd.push("--type", type);
+	if (hidden) cmd.push("--hidden");
+	if (glob) cmd.push("--glob");
+	if (fullPath) cmd.push("--full-path");
+	if (maxDepth !== undefined) cmd.push("--max-depth", String(maxDepth));
+	if (maxResults !== undefined) cmd.push("--max-results", String(maxResults));
+	if (exclude) cmd.push("--exclude", exclude);
+
+	// Handle multiple extensions (comma-separated)
+	if (extension) {
+		for (const ext of extension.split(",").map((e) => e.trim())) {
+			cmd.push("--extension", ext);
+		}
+	}
+
+	// Add pattern
+	cmd.push(pattern);
+
 	return runCommand(cmd, repoPath);
 }
 
