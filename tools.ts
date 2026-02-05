@@ -75,22 +75,11 @@ export const tools: Tool[] = [
 	},
 	{
 		name: "read",
-		description:
-			"Read the contents of a file. Output is limited to 2000 lines by default. Use offset and limit parameters to read specific sections of large files.",
+		description: "Read the contents of a file. Output is limited to 2000 lines.",
 		parameters: Type.Object({
 			path: Type.String({
 				description: "Path to the file, relative to repository root",
 			}),
-			offset: Type.Optional(
-				Type.Number({
-					description: "Line number to start reading from (1-indexed). Default: 1",
-				}),
-			),
-			limit: Type.Optional(
-				Type.Number({
-					description: "Maximum number of lines to read. Default: 2000",
-				}),
-			),
 		}),
 	},
 ];
@@ -186,8 +175,6 @@ async function executeLs(args: Record<string, unknown>, repoPath: string): Promi
 
 async function executeRead(args: Record<string, unknown>, repoPath: string): Promise<string> {
 	const filePath = args.path as string;
-	const offset = (args.offset as number | undefined) ?? 1;
-	const limit = (args.limit as number | undefined) ?? DEFAULT_READ_LINE_LIMIT;
 	const fullPath = join(repoPath, filePath);
 
 	try {
@@ -195,22 +182,14 @@ async function executeRead(args: Record<string, unknown>, repoPath: string): Pro
 		const lines = content.split("\n");
 		const totalLines = lines.length;
 
-		// Convert to 0-indexed for slicing
-		const startIdx = Math.max(0, offset - 1);
-		const endIdx = startIdx + limit;
-		const selectedLines = lines.slice(startIdx, endIdx);
-
+		const selectedLines = lines.slice(0, DEFAULT_READ_LINE_LIMIT);
 		let result = selectedLines.join("\n");
 
-		// Add metadata if file is truncated or offset is used
-		if (totalLines > limit || offset > 1) {
-			const displayEnd = Math.min(offset + selectedLines.length - 1, totalLines);
-			result = `[Lines ${offset}-${displayEnd} of ${totalLines} total]\n\n${result}`;
-
-			if (endIdx < totalLines) {
-				const remaining = totalLines - endIdx;
-				result += `\n\n[${remaining} more lines. Use offset=${endIdx + 1} to continue reading]`;
-			}
+		// Add metadata if file is truncated
+		if (totalLines > DEFAULT_READ_LINE_LIMIT) {
+			result = `[Lines 1-${DEFAULT_READ_LINE_LIMIT} of ${totalLines} total]\n\n${result}`;
+			const remaining = totalLines - DEFAULT_READ_LINE_LIMIT;
+			result += `\n\n[${remaining} more lines truncated]`;
 		}
 
 		return result;
