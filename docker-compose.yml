@@ -5,8 +5,10 @@ services:
     build:
       context: ./sandbox
       dockerfile: Containerfile
-    privileged: true  # Required for bwrap namespace creation
-    # runtime: runsc  # Uncomment for gVisor (requires installation)
+    # Development: privileged needed because bwrap's capability checks fail
+    # with partial caps on runc. Production uses gVisor which handles this.
+    privileged: true
+    # runtime: runsc  # Production: use gVisor + cap_add SYS_ADMIN instead
     tmpfs:
       - /tmp:rw,size=64m
     ports:
