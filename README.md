@@ -176,59 +176,86 @@ session.close();
 
 For production deployments, Ask Forge can run tool execution in an isolated container with defense-in-depth security:
 
-- **Layer 1 — bwrap (bubblewrap)**: Per-operation filesystem and PID namespace isolation. Tool calls are scoped to their worktree with no visibility of other processes.
-- **Layer 2 — seccomp**: BPF filter blocks network socket creation (`AF_INET`/`AF_INET6`) for tool execution. Tools cannot make any network connections.
-- **Layer 3 — gVisor (runsc)**: Kernel-level syscall sandboxing for the container runtime (when enabled via `--runtime=runsc`).
-- **Layer 4 — Path validation**: Worker code validates all paths to prevent traversal attacks.
+| Layer | Mechanism | Protection |
+|-------|-----------|------------|
+| 1 | bwrap (bubblewrap) | Filesystem and PID namespace isolation |
+| 2 | seccomp BPF | Blocks network socket creation for tools |
+| 3 | gVisor (optional) | Kernel-level syscall sandboxing |
+| 4 | Path validation | Prevents directory traversal attacks |
 
-> **Note**: Git operations require network access for cloning. Tool execution (rg, fd, ls, read) has network access blocked via seccomp BPF filter.
+### Architecture
 
-### Running with Docker/Podman
+```
+sandbox/
+├── index.ts           # Exports SandboxClient
+├── client.ts          # HTTP client for the sandbox worker
+├── worker.ts          # HTTP server (runs in container)
+├── Containerfile
+└── isolation/         # Security primitives
+    ├── index.ts       # bwrap + seccomp wrappers
+    └── seccomp/       # BPF filter sources (C)
+```
+
+### Running the Sandbox
 
 ```bash
-# Start the sandbox worker (development - no gVisor)
+# Using just (recommended)
+just sandbox-up        # Start container
+just sandbox-down      # Stop container
+just sandbox-logs      # View logs
+
+# Or with docker-compose
 docker-compose up -d
 ```
 
-**For production**, enable gVisor for kernel-level syscall sandboxing:
-
-1. [Install gVisor](https://gvisor.dev/docs/user_guide/install/) on the host
+For production with gVisor:
+1. [Install gVisor](https://gvisor.dev/docs/user_guide/install/)
 2. Uncomment `runtime: runsc` in `docker-compose.yml`
-3. Run `docker-compose up -d`
 
-The sandbox worker exposes an HTTP API on port 8080. Configure your application with:
+### Using the SandboxClient
 
-```bash
-export SANDBOX_URL="http://localhost:8080"
-export SANDBOX_SECRET="your-shared-secret"  # Optional authentication
+```typescript
+import { SandboxClient } from "./sandbox";
+
+const client = new SandboxClient({
+  baseUrl: "http://localhost:8080",
+  secret: process.env.SANDBOX_SECRET,  // Optional
+});
+
+// Clone a repository
+const { slug, sha } = await client.clone("https://github.com/owner/repo", "main");
+
+// Execute tools
+const output = await client.executeTool(slug, sha, "rg", { pattern: "TODO" });
+
+// Clean up
+await client.reset();
 ```
 
-### Sandbox HTTP API
-
-The sandbox worker exposes these endpoints:
+### HTTP API
 
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
 | `/health` | GET | — | Liveness check |
-| `/clone` | POST | `{ url, commitish? }` | Clone a repo and checkout a commit |
-| `/tool` | POST | `{ slug, sha, name, args }` | Execute a tool (rg, fd, ls, read) |
+| `/clone` | POST | `{ url, commitish? }` | Clone repo and checkout commit |
+| `/tool` | POST | `{ slug, sha, name, args }` | Execute tool (rg, fd, ls, read) |
 | `/reset` | POST | — | Delete all cloned repos |
 
-Example:
+### Testing the Sandbox
 
 ```bash
-# Clone a repository
-curl -X POST http://localhost:8080/clone \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SANDBOX_SECRET" \
-  -d '{"url": "https://github.com/owner/repo", "commitish": "main"}'
-
-# Execute ripgrep
-curl -X POST http://localhost:8080/tool \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SANDBOX_SECRET" \
-  -d '{"slug": "github.com_owner_repo", "sha": "abc123...", "name": "rg", "args": {"pattern": "TODO"}}'
+just isolation-tests     # Test bwrap + seccomp (runs on host)
+just sandbox-tests       # Test HTTP API + security (runs against container)
+just sandbox-all-tests   # Run both
 ```
+
+The test suite includes 49 tests covering:
+- Filesystem isolation and read-only enforcement
+- PID namespace isolation
+- Network blocking via seccomp
+- Path traversal prevention
+- Command injection protection
+- Input validation
 
 ## Development
 
@@ -239,32 +266,27 @@ bun install
 bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
+### Testing
+
+```bash
+just test               # Run all unit tests
+just isolation-tests    # Test security isolation (bwrap + seccomp)
+just sandbox-tests      # Test sandbox HTTP API
+just sandbox-all-tests  # Run all sandbox tests
+```
+
 ### Evaluation
 
 The `eval/` folder contains an evaluation system for testing code analysis agents.
 
 ```bash
-# Activate the virtual environment
 source .venv/bin/activate
-
-# Run tests
 cd eval
 python test-dataset.py 5 ask-forge
-
-# Start review server
-python review-server.py
-# Open http://localhost:5001
+python review-server.py  # Open http://localhost:5001
 ```
 
 ### Configuration
 
-- `config.ts` — Agent model and prompt settings (TypeScript)
-- `eval/config.py` — LLM judge and Claude agent settings (Python)
-
-### Repo Isolation
-
-For repo isolation, we `git fetch` (if needed) and add a new worktree with the committish provided. This approach:
-- Ensures each query operates on an isolated copy of the repository at the specified revision
-- Avoids conflicts with the main working directory
-- Allows concurrent queries on different commits/branches without interference
-- Since ask-forge is exposed as a library, different service users may request the same repo@commit. We skip fetching if the committish is already available locally, avoiding redundant network calls.
+- `config.ts` — Agent model and prompt settings
+- `eval/config.py` — LLM judge and Claude agent settings
