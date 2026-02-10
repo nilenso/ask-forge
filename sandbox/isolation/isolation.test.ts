@@ -7,11 +7,10 @@
  * Run with: bun test sandbox/isolation/isolation.test.ts
  */
 
-import { describe, test, expect, beforeAll } from "bun:test";
-import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { bwrapArgsForGit, bwrapArgsForTool } from "./index";
 
 // =============================================================================
@@ -298,14 +297,7 @@ describe("combined bwrap + seccomp isolation", () => {
 
 		const bwrapArgs = bwrapArgsForTool(testDir, testDir);
 		// Use bash /dev/tcp which requires socket creation
-		const result = run([
-			...bwrapArgs,
-			APPLY_SECCOMP,
-			SECCOMP_FILTER,
-			"bash",
-			"-c",
-			"echo > /dev/tcp/1.1.1.1/53",
-		]);
+		const result = run([...bwrapArgs, APPLY_SECCOMP, SECCOMP_FILTER, "bash", "-c", "echo > /dev/tcp/1.1.1.1/53"]);
 
 		expect(result.exitCode).not.toBe(0);
 

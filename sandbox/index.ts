@@ -11,5 +11,5 @@
  *   - isolation/: Security primitives (bwrap, seccomp)
  */
 
-export { SandboxClient, type SandboxClientConfig, type CloneResult } from "./client";
+export { type CloneResult, SandboxClient, type SandboxClientConfig } from "./client";
 export * as isolation from "./isolation";

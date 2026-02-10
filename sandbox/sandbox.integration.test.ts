@@ -7,7 +7,7 @@
  * Run with: just sandbox-integration-tests
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { SandboxClient } from "./client";
 
 const SANDBOX_URL = process.env.SANDBOX_URL || "http://localhost:8080";
@@ -20,7 +20,7 @@ const TEST_REPO = "https://github.com/octocat/Hello-World";
 async function isSandboxRunning(): Promise<boolean> {
 	try {
 		const res = await fetch(`${SANDBOX_URL}/health`, { signal: AbortSignal.timeout(2000) });
-		const body = await res.json() as { ok: boolean };
+		const body = (await res.json()) as { ok: boolean };
 		return body.ok === true;
 	} catch {
 		return false;
@@ -48,7 +48,7 @@ describe("sandbox normal operations", () => {
 		if (!(await isSandboxRunning())) return;
 
 		const res = await fetch(`${SANDBOX_URL}/health`);
-		const body = await res.json() as { ok: boolean };
+		const body = (await res.json()) as { ok: boolean };
 		expect(body.ok).toBe(true);
 	});
 
@@ -408,7 +408,7 @@ describe("sandbox authentication", () => {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ url: TEST_REPO }),
 		});
-		const body = await res.json() as { ok: boolean };
+		const body = (await res.json()) as { ok: boolean };
 		expect(body.ok).toBe(true);
 	});
 

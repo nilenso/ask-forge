@@ -11,7 +11,7 @@
  */
 
 import { resolve } from "node:path";
-import { isolatedGitCommand, isolatedToolCommand, isolatedGitToolCommand } from "./isolation";
+import { isolatedGitCommand, isolatedGitToolCommand, isolatedToolCommand } from "./isolation";
 
 const PORT = Number(process.env.PORT) || 8080;
 const REPO_BASE = "/home/forge/repos";
@@ -280,7 +280,17 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			const gitArgs = (args.args as string[]) || [];
 
 			// Allowlist of read-only git subcommands
-			const allowedCommands = ["log", "show", "blame", "diff", "shortlog", "describe", "rev-parse", "ls-tree", "cat-file"];
+			const allowedCommands = [
+				"log",
+				"show",
+				"blame",
+				"diff",
+				"shortlog",
+				"describe",
+				"rev-parse",
+				"ls-tree",
+				"cat-file",
+			];
 			if (!allowedCommands.includes(subcommand)) {
 				return Response.json(
 					{ ok: false, error: `git subcommand not allowed: ${subcommand}. Allowed: ${allowedCommands.join(", ")}` },
