@@ -41,7 +41,7 @@ try {
 	const result = await session.ask(question);
 	console.log(JSON.stringify(result, null, 2));
 
-	session.close();
+	await session.close();
 } catch (error) {
 	logError("ask", error);
 	console.log(

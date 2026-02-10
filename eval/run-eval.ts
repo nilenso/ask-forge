@@ -2,7 +2,6 @@ import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
 import { connect, nullLogger } from "../index";
-import type { AskResult } from "../session";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -38,12 +37,7 @@ interface JudgeResult {
  * - Escaped quotes (doubled "")
  * - Commas inside quoted fields
  */
-const REQUIRED_COLUMNS = [
-	"session_id",
-	"repository",
-	"commit_id",
-	"question",
-] as const;
+const REQUIRED_COLUMNS = ["session_id", "repository", "commit_id", "question"] as const;
 
 const OUTPUT_COLUMNS = [
 	"session_id",
@@ -86,10 +80,10 @@ function parseCsv(content: string): ParseResult {
 	for (let i = 1; i < records.length; i++) {
 		const fields = records[i]!;
 		rows.push({
-			session_id: fields[colIndex["session_id"]!] ?? "",
-			repository: fields[colIndex["repository"]!] ?? "",
-			commit_id: fields[colIndex["commit_id"]!] ?? "",
-			question: fields[colIndex["question"]!] ?? "",
+			session_id: fields[colIndex.session_id!] ?? "",
+			repository: fields[colIndex.repository!] ?? "",
+			commit_id: fields[colIndex.commit_id!] ?? "",
+			question: fields[colIndex.question!] ?? "",
 			answer: "",
 			is_answer_relevant: "",
 			is_evidence_supported: "",
@@ -165,7 +159,7 @@ function rowToCsv(row: EvalRow): string {
 
 function writeCsvString(rows: EvalRow[]): string {
 	const header = OUTPUT_COLUMNS.join(",");
-	return [header, ...rows.map(rowToCsv)].join("\n") + "\n";
+	return `${[header, ...rows.map(rowToCsv)].join("\n")}\n`;
 }
 
 // =============================================================================

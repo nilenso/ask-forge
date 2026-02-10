@@ -86,8 +86,8 @@ const session = await connect(url, {}, nullLogger);
 
 // Custom logger
 const customLogger: Logger = {
-  info: (msg) => myLogSystem.info(msg),
-  error: (msg) => myLogSystem.error(msg),
+  log: (label, content) => myLogSystem.info(`${label}: ${content}`),
+  error: (label, error) => myLogSystem.error(label, error),
 };
 const session = await connect(url, {}, customLogger);
 ```
@@ -95,7 +95,7 @@ const session = await connect(url, {}, customLogger);
 ### Ask Result
 
 ```typescript
-import { connect, type AskResult, type Usage } from "@nilenso/ask-forge";
+import { connect, type AskResult } from "@nilenso/ask-forge";
 
 const session = await connect("https://github.com/owner/repo");
 const result: AskResult = await session.ask("Explain the auth flow");
@@ -104,9 +104,136 @@ console.log(result.prompt);          // Original question
 console.log(result.response);        // Final response text
 console.log(result.toolCalls);       // List of tools used: { name, arguments }[]
 console.log(result.inferenceTimeMs); // Total inference time in ms
-console.log(result.usage);           // Token usage statistics
+console.log(result.usage);           // Token usage: { inputTokens, outputTokens, totalTokens, cacheReadTokens, cacheWriteTokens }
 ```
 
+### Streaming Progress
+
+Use the `onProgress` callback to receive real-time events during inference:
+
+```typescript
+import { connect, type AskOptions, type ProgressEvent, type OnProgress } from "@nilenso/ask-forge";
+
+const session = await connect("https://github.com/owner/repo");
+
+const onProgress: OnProgress = (event: ProgressEvent) => {
+  switch (event.type) {
+    case "thinking":
+      console.log("Model is thinking...");
+      break;
+    case "thinking_delta":
+      process.stdout.write(event.delta); // Streaming reasoning
+      break;
+    case "text_delta":
+      process.stdout.write(event.delta); // Streaming response text
+      break;
+    case "tool_start":
+      console.log(`Calling tool: ${event.name}`);
+      break;
+    case "tool_end":
+      console.log(`Tool ${event.name} completed`);
+      break;
+    case "responding":
+      console.log("Final response ready");
+      break;
+  }
+};
+
+const result = await session.ask("How does authentication work?", { onProgress });
+```
+
+### Session Management
+
+Sessions maintain conversation history for multi-turn interactions:
+
+```typescript
+import { connect, type Session, type Message } from "@nilenso/ask-forge";
+
+const session: Session = await connect("https://github.com/owner/repo");
+
+// Session properties
+console.log(session.id);              // Unique session identifier
+console.log(session.repo.url);        // Repository URL
+console.log(session.repo.localPath);  // Local worktree path
+console.log(session.repo.commitish);  // Resolved commit SHA
+
+// Multi-turn conversation
+await session.ask("What is this project?");
+await session.ask("Tell me more about the auth module"); // Has context from first question
+
+// Access conversation history
+const messages: Message[] = session.getMessages();
+
+// Restore a previous conversation
+session.replaceMessages(savedMessages);
+
+// Clean up (removes git worktree)
+session.close();
+```
+
+
+## Sandboxed Execution
+
+For production deployments, Ask Forge can run tool execution in an isolated container with defense-in-depth security:
+
+| Layer | Mechanism | Protection |
+|-------|-----------|------------|
+| 1 | bwrap (bubblewrap) | Filesystem and PID namespace isolation |
+| 2 | seccomp BPF | Blocks network socket creation for tools |
+| 3 | gVisor (optional) | Kernel-level syscall sandboxing |
+| 4 | Path validation | Prevents directory traversal attacks |
+
+### Architecture
+
+```
+sandbox/
+├── index.ts           # Exports SandboxClient
+├── client.ts          # HTTP client for the sandbox worker
+├── worker.ts          # HTTP server (runs in container)
+├── Containerfile
+└── isolation/         # Security primitives
+    ├── index.ts       # bwrap + seccomp wrappers
+    └── seccomp/       # BPF filter sources (C)
+```
+
+### Running the Sandbox
+
+**Prerequisite:** [Install gVisor](https://gvisor.dev/docs/user_guide/install/) and register it with Docker/Podman.
+
+```bash
+# Using just (recommended)
+just sandbox-up        # Start container
+just sandbox-down      # Stop container
+just sandbox-logs      # View logs
+
+# Or with docker-compose
+docker-compose up -d
+```
+
+### HTTP API
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/health` | GET | — | Liveness check |
+| `/clone` | POST | `{ url, commitish? }` | Clone repo and checkout commit |
+| `/tool` | POST | `{ slug, sha, name, args }` | Execute tool (rg, fd, ls, read) |
+| `/reset` | POST | — | Delete all cloned repos |
+
+### Testing the Sandbox
+
+```bash
+just isolation-tests     # Test bwrap + seccomp (runs on host)
+just sandbox-tests       # Test HTTP API + security (runs against container)
+just sandbox-all-tests   # Run both
+```
+
+The test suite includes 49 tests covering:
+- Filesystem isolation and read-only enforcement
+- PID namespace isolation
+- Network blocking via seccomp
+- Path traversal prevention
+- Command injection protection
+- Input validation
 
 ## Development
 
@@ -117,32 +244,27 @@ bun install
 bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
+### Testing
+
+```bash
+just test               # Run all unit tests
+just isolation-tests    # Test security isolation (bwrap + seccomp)
+just sandbox-tests      # Test sandbox HTTP API
+just sandbox-all-tests  # Run all sandbox tests
+```
+
 ### Evaluation
 
 The `eval/` folder contains an evaluation system for testing code analysis agents.
 
 ```bash
-# Activate the virtual environment
 source .venv/bin/activate
-
-# Run tests
 cd eval
 python test-dataset.py 5 ask-forge
-
-# Start review server
-python review-server.py
-# Open http://localhost:5001
+python review-server.py  # Open http://localhost:5001
 ```
 
 ### Configuration
 
-- `config.ts` — Agent model and prompt settings (TypeScript)
-- `eval/config.py` — LLM judge and Claude agent settings (Python)
-
-### Repo Isolation
-
-For repo isolation, we `git fetch` (if needed) and add a new worktree with the committish provided. This approach:
-- Ensures each query operates on an isolated copy of the repository at the specified revision
-- Avoids conflicts with the main working directory
-- Allows concurrent queries on different commits/branches without interference
-- Since ask-forge is exposed as a library, different service users may request the same repo@commit. We skip fetching if the committish is already available locally, avoiding redundant network calls.
+- `config.ts` — Agent model and prompt settings
+- `eval/config.py` — LLM judge and Claude agent settings

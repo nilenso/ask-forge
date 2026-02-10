@@ -1,8 +1,8 @@
 # Usage Instructions
 
 1. Install dependencies with `bun install`
-2. Import the sandbox runtime with `import { Sandbox } from "@anthropic-ai/sandbox-runtime"`
-3. Create and use a sandbox instance to execute code in an isolated environment
+2. See README.md for the library API (`connect`, `Session`, etc.)
+3. For sandboxed execution, see the `sandbox/` directory and `docker-compose.yml`
 
 # Before Committing
 

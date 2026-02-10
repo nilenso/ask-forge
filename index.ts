@@ -31,6 +31,7 @@ export { consoleLogger, nullLogger };
 
 /**
  * Connect to a repository and create a session
+ *
  * @param repoUrl - The URL of the repository to connect to
  * @param options - Connection options (token, forge override, commitish)
  * @param logger - Logger instance (defaults to consoleLogger)

@@ -1,0 +1,26 @@
+services:
+  # Sandbox worker: runs git clone + tools in isolation.
+  # See sandbox/Containerfile for security layer details.
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Containerfile
+    runtime: runsc  # gVisor required for bwrap to work with minimal caps
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN  # For bwrap namespace creation
+    security_opt:
+      - no-new-privileges
+    tmpfs:
+      - /tmp:rw,size=64m
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:8080/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
