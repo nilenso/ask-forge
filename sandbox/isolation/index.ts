@@ -52,6 +52,29 @@ export function bwrapArgsForTool(worktree: string, repoBase: string): string[] {
 }
 
 /**
+ * Build bwrap args for read-only git commands in a worktree.
+ *
+ * Git worktrees need access to their parent bare repo, so we mount:
+ * - worktree: read-only
+ * - bare repo: read-only (for .git references)
+ *
+ * Network is blocked via seccomp.
+ */
+export function bwrapArgsForGitTool(worktree: string, bareRepo: string, repoBase: string): string[] {
+	return [
+		"bwrap",
+		"--ro-bind", "/", "/",
+		"--tmpfs", repoBase,
+		"--ro-bind", worktree, worktree,
+		"--ro-bind", bareRepo, bareRepo,
+		"--dev", "/dev",
+		"--unshare-pid",
+		"--die-with-parent",
+		"--",
+	];
+}
+
+/**
  * Wrap a command with seccomp to block network syscalls.
  * Blocks socket(AF_INET, ...) and socket(AF_INET6, ...).
  */
@@ -65,6 +88,14 @@ export function withSeccomp(cmd: string[]): string[] {
  */
 export function isolatedToolCommand(cmd: string[], worktree: string, repoBase: string): string[] {
 	return [...bwrapArgsForTool(worktree, repoBase), ...withSeccomp(cmd)];
+}
+
+/**
+ * Build isolated command for read-only git operations in a worktree.
+ * Mounts both worktree and bare repo read-only, blocks network.
+ */
+export function isolatedGitToolCommand(cmd: string[], worktree: string, bareRepo: string, repoBase: string): string[] {
+	return [...bwrapArgsForGitTool(worktree, bareRepo, repoBase), ...withSeccomp(cmd)];
 }
 
 /**

@@ -422,6 +422,81 @@ describe("sandbox authentication", () => {
 });
 
 // =============================================================================
+// Git Tool
+// =============================================================================
+
+describe("sandbox git tool", () => {
+	let client: SandboxClient;
+	let cloneResult: { slug: string; sha: string; worktree: string };
+
+	beforeAll(async () => {
+		if (!(await isSandboxRunning())) return;
+		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		cloneResult = await client.clone(TEST_REPO);
+	});
+
+	test("git log shows commit history", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "log",
+			args: ["--oneline", "-5"],
+		});
+		expect(output).toContain(cloneResult.sha.slice(0, 7));
+	});
+
+	test("git show displays commit details", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "show",
+			args: ["--stat", "-1"],
+		});
+		expect(output).toContain("Author:");
+	});
+
+	test("git blame shows line attribution", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "blame",
+			args: ["README"],
+		});
+		expect(output).toContain("Hello");
+	});
+
+	test("git fetch is blocked", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "fetch",
+			args: [],
+		});
+		expect(output).toContain("not allowed");
+	});
+
+	test("git push is blocked", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "push",
+			args: [],
+		});
+		expect(output).toContain("not allowed");
+	});
+
+	test("git with path traversal is blocked", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const output = await client.executeTool(cloneResult.slug, cloneResult.sha, "git", {
+			command: "log",
+			args: ["--", "../../../etc/passwd"],
+		});
+		expect(output).toContain("traversal not allowed");
+	});
+});
+
+// =============================================================================
 // Resource Limits
 // =============================================================================
 

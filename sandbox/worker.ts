@@ -3,7 +3,7 @@
  *
  * Endpoints:
  *   POST /clone   { url, commitish? }  → clone a repo, check out a commit
- *   POST /tool    { slug, sha, name, args }  → execute a tool (rg, fd, ls, read)
+ *   POST /tool    { slug, sha, name, args }  → execute a tool (rg, fd, ls, read, git)
  *   GET  /health                       → liveness check
  *   POST /reset                        → delete all cloned data
  *
@@ -11,7 +11,7 @@
  */
 
 import { resolve } from "node:path";
-import { isolatedGitCommand, isolatedToolCommand } from "./isolation";
+import { isolatedGitCommand, isolatedToolCommand, isolatedGitToolCommand } from "./isolation";
 
 const PORT = Number(process.env.PORT) || 8080;
 const REPO_BASE = "/home/forge/repos";
@@ -273,6 +273,40 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 				);
 			}
 			return Response.json({ ok: true, output: result.stdout || "(empty file)" });
+		}
+		case "git": {
+			// Read-only git commands (log, show, blame, diff, etc.)
+			const subcommand = args.command as string;
+			const gitArgs = (args.args as string[]) || [];
+
+			// Allowlist of read-only git subcommands
+			const allowedCommands = ["log", "show", "blame", "diff", "shortlog", "describe", "rev-parse", "ls-tree", "cat-file"];
+			if (!allowedCommands.includes(subcommand)) {
+				return Response.json(
+					{ ok: false, error: `git subcommand not allowed: ${subcommand}. Allowed: ${allowedCommands.join(", ")}` },
+					{ status: 400 },
+				);
+			}
+
+			// Validate any path arguments don't escape worktree
+			for (const arg of gitArgs) {
+				if (arg.startsWith("-")) continue; // Skip flags
+				if (arg.includes("..")) {
+					return Response.json({ ok: false, error: `path traversal not allowed in args` }, { status: 400 });
+				}
+			}
+
+			// Git worktrees need access to bare repo for .git references
+			const bareRepo = `${repoDir(slug)}/bare`;
+			const cmd = isolatedGitToolCommand(["git", subcommand, ...gitArgs], worktree, bareRepo, REPO_BASE);
+			const result = await run(cmd, worktree, undefined, TOOL_TIMEOUT_MS);
+			if (result.exitCode !== 0 && result.stderr) {
+				return Response.json(
+					{ ok: false, error: `git ${subcommand} failed (exit ${result.exitCode}):\n${result.stderr}` },
+					{ status: 500 },
+				);
+			}
+			return Response.json({ ok: true, output: result.stdout || "(no output)" });
 		}
 		default:
 			return Response.json({ ok: false, error: `Unknown tool: ${name}` }, { status: 400 });
