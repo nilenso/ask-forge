@@ -1,16 +1,23 @@
-# Sandbox worker: runs git + code search tools in isolation.
-#
-# Defense in depth:
-#   Layer 1 — bwrap (bubblewrap): per-operation filesystem and PID namespace
-#             isolation. Tool calls are scoped to their worktree. Git clones
-#             get write access only to their target directory with hooks
-#             disabled. (--unshare-net not used; gVisor doesn't support it.)
-#   Layer 2 — gVisor (runsc): kernel-level syscall sandboxing for the container.
-#   Layer 3 — Path validation in the worker code itself.
-#
-# Exposes an HTTP API on port 8080 (internal network only).
-# The orchestrator sends tool calls here; this container never touches the internet.
+# Sandbox worker container.
+# See isolation/ for security primitives (bwrap, seccomp).
 
+FROM oven/bun:1-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev libseccomp-dev libseccomp-static linux-headers
+
+# Copy and build seccomp tools
+COPY isolation/seccomp/ /build/
+WORKDIR /build
+
+# Build the BPF filter generator and generate the filter
+RUN gcc -o seccomp-net-block seccomp-net-block.c -lseccomp \
+    && ./seccomp-net-block /build/net-block.bpf
+
+# Build apply-seccomp (static binary for portability)
+RUN gcc -static -O2 -o apply-seccomp apply-seccomp.c
+
+# --- Runtime stage ---
 FROM oven/bun:1-alpine
 
 RUN apk add --no-cache \
@@ -20,11 +27,18 @@ RUN apk add --no-cache \
     coreutils \
     bubblewrap \
     bash \
+    libseccomp \
     && adduser -D -h /home/forge forge \
     && mkdir -p /home/forge/repos \
     && chown -R forge:forge /home/forge
 
+# Copy seccomp binaries and filter from builder
+COPY --from=builder /build/apply-seccomp /usr/local/bin/apply-seccomp
+COPY --from=builder /build/net-block.bpf /etc/seccomp/net-block.bpf
+RUN chmod +x /usr/local/bin/apply-seccomp
+
 COPY worker.ts /app/worker.ts
+COPY isolation/index.ts /app/isolation/index.ts
 
 USER forge
 WORKDIR /home/forge

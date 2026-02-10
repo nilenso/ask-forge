@@ -1,21 +1,14 @@
 services:
-  # ── Sandbox worker ─────────────────────────────────────────────
-  # Runs git clone + tools (rg, fd, ls, cat) in an isolated container.
-  #
-  # With podman, use gVisor via:
-  #   podman-compose up --podman-run-args="--runtime=runsc"
+  # Sandbox worker: runs git clone + tools in isolation.
+  # See sandbox/Containerfile for security layer details.
   sandbox:
     build:
       context: ./sandbox
       dockerfile: Containerfile
+    privileged: true  # Required for bwrap namespace creation
+    # runtime: runsc  # Uncomment for gVisor (requires installation)
     tmpfs:
       - /tmp:rw,size=64m
-    cap_drop:
-      - ALL
-    cap_add:
-      - SYS_ADMIN   # Required for bwrap namespace creation
-    security_opt:
-      - no-new-privileges
     ports:
       - "8080:8080"
     environment:

@@ -1,17 +1,5 @@
 /**
- * Sandbox worker — HTTP server that runs inside an isolated container.
- *
- * Defense in depth:
- *   Layer 1 — bwrap (bubblewrap): per-operation filesystem and PID namespace
- *             isolation. Tool calls are scoped to their worktree with no
- *             visibility of other processes. Git clones get write access
- *             only to their target directory with hooks disabled.
- *             Note: --unshare-net is not used because gVisor doesn't support
- *             bwrap's loopback setup. Network isolation comes from gVisor +
- *             compose network instead.
- *   Layer 2 — gVisor (runsc): the container runtime provides kernel-level
- *             syscall sandboxing.
- *   Layer 3 — Path validation in the worker code itself.
+ * Sandbox worker — HTTP server for isolated git and tool operations.
  *
  * Endpoints:
  *   POST /clone   { url, commitish? }  → clone a repo, check out a commit
@@ -19,11 +7,11 @@
  *   GET  /health                       → liveness check
  *   POST /reset                        → delete all cloned data
  *
- * The container's compose network provides outbound access for git clone.
- * Tool execution has no network access (bwrap --unshare-net).
+ * Security is provided by the isolation module (see ./isolation/).
  */
 
 import { resolve } from "node:path";
+import { isolatedGitCommand, isolatedToolCommand } from "./isolation";
 
 const PORT = Number(process.env.PORT) || 8080;
 const REPO_BASE = "/home/forge/repos";
@@ -99,11 +87,7 @@ function slugify(url: string): string {
 	}
 }
 
-/**
- * Validate that a resolved path stays within the worktree root.
- * Defense-in-depth: bwrap is the primary per-session boundary, gVisor is the
- * container boundary, and this prevents traversal within the worktree.
- */
+/** Validate path stays within worktree root. */
 function validatePath(worktree: string, userPath: string): string | null {
 	const full = resolve(worktree, userPath);
 	if (!full.startsWith(resolve(worktree))) {
@@ -112,134 +96,26 @@ function validatePath(worktree: string, userPath: string): string | null {
 	return full;
 }
 
-// =============================================================================
-// bwrap wrappers
-// =============================================================================
-
-/**
- * Build bwrap args for git clone/fetch/worktree operations.
- *
- * Filesystem: read-only root, writable only to the specific repo directory.
- * Network: NOT isolated (needs to reach git remotes). TODO: add proxy filtering.
- * Hooks: disabled via git config.
- * PID: isolated.
- */
-function bwrapArgsForGit(repoBaseDir: string): string[] {
-	return [
-		"bwrap",
-		// Read-only root filesystem
-		"--ro-bind",
-		"/",
-		"/",
-		// Writable: the specific repo directory
-		"--bind",
-		repoBaseDir,
-		repoBaseDir,
-		// Writable: /tmp for git's temporary files
-		"--tmpfs",
-		"/tmp",
-		// Fresh /dev
-		"--dev",
-		"/dev",
-		// PID isolation — git can't see/signal other processes
-		"--unshare-pid",
-		// Die if parent dies
-		"--die-with-parent",
-		"--",
-	];
-}
-
-/**
- * Build bwrap args for tool execution (rg, find, ls, cat, etc).
- *
- * Filesystem: read-only root, with /home/forge/repos replaced by tmpfs
- *             and only the specific worktree bind-mounted back through.
- * Network: NOT isolated via bwrap (--unshare-net fails under gVisor).
- *          Network isolation is provided by gVisor + compose network instead.
- * PID: isolated.
- */
-function bwrapArgsForTool(worktree: string): string[] {
-	return [
-		"bwrap",
-		// Read-only root filesystem
-		"--ro-bind",
-		"/",
-		"/",
-		// Hide ALL repos, then punch through only this worktree
-		"--tmpfs",
-		REPO_BASE,
-		"--ro-bind",
-		worktree,
-		worktree,
-		// Fresh /dev
-		"--dev",
-		"/dev",
-		// PID isolation
-		"--unshare-pid",
-		// Die if parent dies
-		"--die-with-parent",
-		"--",
-	];
-}
-
-/**
- * Run a git command inside bwrap with filesystem + PID isolation.
- * Git hooks are disabled via config flags.
- */
-async function runGitSandboxed(
+/** Run a git command with filesystem + PID isolation. */
+async function runGitIsolated(
 	gitArgs: string[],
 	cwd: string | undefined,
 	repoBaseDir: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	const cmd = [
-		...bwrapArgsForGit(repoBaseDir),
-		"git",
-		// Disable hooks to prevent arbitrary code execution from malicious repos
-		"-c",
-		"core.hooksPath=/dev/null",
-		// Disable filter drivers (.gitattributes filter.*.process / filter.*.smudge)
-		"-c",
-		"filter.lfs.process=",
-		"-c",
-		"filter.lfs.smudge=",
-		"-c",
-		"filter.lfs.clean=",
-		"-c",
-		"filter.lfs.required=false",
-		// Restrict protocols to http(s) only — blocks file://, ext://, ssh:// submodules
-		"-c",
-		"protocol.allow=never",
-		"-c",
-		"protocol.https.allow=always",
-		"-c",
-		"protocol.http.allow=always",
-		...gitArgs,
-	];
-
 	return run(
-		cmd,
+		isolatedGitCommand(gitArgs, repoBaseDir),
 		cwd,
-		{
-			...GIT_ENV,
-			// Disable .gitattributes processing system-wide
-			GIT_ATTR_NOSYSTEM: "1",
-			// Prevent any global gitconfig from being loaded
-			GIT_CONFIG_NOSYSTEM: "1",
-		},
+		{ ...GIT_ENV, GIT_ATTR_NOSYSTEM: "1", GIT_CONFIG_NOSYSTEM: "1" },
 		GIT_TIMEOUT_MS,
 	);
 }
 
-/**
- * Run a tool command inside bwrap with per-worktree isolation + no network.
- */
-async function runToolSandboxed(
+/** Run a tool command with filesystem, PID, and network isolation. */
+async function runToolIsolated(
 	cmd: string[],
 	worktree: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	const fullCmd = [...bwrapArgsForTool(worktree), ...cmd];
-
-	return run(fullCmd, worktree, undefined, TOOL_TIMEOUT_MS);
+	return run(isolatedToolCommand(cmd, worktree, REPO_BASE), worktree, undefined, TOOL_TIMEOUT_MS);
 }
 
 // =============================================================================
@@ -269,19 +145,19 @@ async function handleClone(body: CloneRequest): Promise<Response> {
 		// Clone or fetch
 		const headFile = Bun.file(`${bareDir}/HEAD`);
 		if (await headFile.exists()) {
-			const { exitCode, stderr } = await runGitSandboxed(["fetch", "origin", "--tags"], bareDir, baseDir);
+			const { exitCode, stderr } = await runGitIsolated(["fetch", "origin", "--tags"], bareDir, baseDir);
 			if (exitCode !== 0) {
 				console.error(`[clone] fetch failed: ${stderr}`);
 			}
 		} else {
-			const { exitCode, stderr } = await runGitSandboxed(["clone", "--bare", url, bareDir], undefined, baseDir);
+			const { exitCode, stderr } = await runGitIsolated(["clone", "--bare", url, bareDir], undefined, baseDir);
 			if (exitCode !== 0) {
 				return Response.json({ ok: false, error: `git clone failed: ${stderr.slice(0, 500)}` }, { status: 500 });
 			}
 		}
 
 		// Resolve commitish → SHA
-		const revParse = await runGitSandboxed(["rev-parse", commitish], bareDir, baseDir);
+		const revParse = await runGitIsolated(["rev-parse", commitish], bareDir, baseDir);
 		if (revParse.exitCode !== 0) {
 			return Response.json(
 				{
@@ -298,7 +174,7 @@ async function handleClone(body: CloneRequest): Promise<Response> {
 		// Create worktree if it doesn't exist
 		const worktreeExists = await Bun.file(`${worktree}/.git`).exists();
 		if (!worktreeExists) {
-			const wt = await runGitSandboxed(["worktree", "add", worktree, sha], bareDir, baseDir);
+			const wt = await runGitIsolated(["worktree", "add", worktree, sha], bareDir, baseDir);
 			if (wt.exitCode !== 0) {
 				return Response.json(
 					{ ok: false, error: `git worktree add failed: ${wt.stderr.slice(0, 300)}` },
@@ -344,7 +220,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			const glob = args.glob as string | undefined;
 			const cmd = ["rg", "--line-number", pattern];
 			if (glob) cmd.push("--glob", glob);
-			const result = await runToolSandboxed(cmd, worktree);
+			const result = await runToolIsolated(cmd, worktree);
 			if (result.exitCode !== 0) {
 				return Response.json(
 					{ ok: false, error: `rg failed (exit ${result.exitCode}):\n${result.stderr}` },
@@ -359,7 +235,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			const cmd = ["find", ".", "-name", `*${pattern}*`];
 			if (type === "f") cmd.push("-type", "f");
 			else if (type === "d") cmd.push("-type", "d");
-			const result = await runToolSandboxed(cmd, worktree);
+			const result = await runToolIsolated(cmd, worktree);
 			if (result.exitCode !== 0) {
 				return Response.json(
 					{ ok: false, error: `find failed (exit ${result.exitCode}):\n${result.stderr}` },
@@ -374,7 +250,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			if (!fullPath) {
 				return Response.json({ ok: false, error: `path traversal not allowed: ${path}` }, { status: 400 });
 			}
-			const result = await runToolSandboxed(["ls", "-la", fullPath], worktree);
+			const result = await runToolIsolated(["ls", "-la", fullPath], worktree);
 			if (result.exitCode !== 0) {
 				return Response.json(
 					{ ok: false, error: `ls failed (exit ${result.exitCode}):\n${result.stderr}` },
@@ -389,7 +265,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			if (!fullPath) {
 				return Response.json({ ok: false, error: `path traversal not allowed: ${path}` }, { status: 400 });
 			}
-			const result = await runToolSandboxed(["cat", fullPath], worktree);
+			const result = await runToolIsolated(["cat", fullPath], worktree);
 			if (result.exitCode !== 0) {
 				return Response.json(
 					{ ok: false, error: `read failed (exit ${result.exitCode}):\n${result.stderr}` },
