@@ -198,6 +198,8 @@ sandbox/
 
 ### Running the Sandbox
 
+**Prerequisite:** [Install gVisor](https://gvisor.dev/docs/user_guide/install/) and register it with Docker/Podman.
+
 ```bash
 # Using just (recommended)
 just sandbox-up        # Start container
@@ -207,10 +209,6 @@ just sandbox-logs      # View logs
 # Or with docker-compose
 docker-compose up -d
 ```
-
-For production with gVisor:
-1. [Install gVisor](https://gvisor.dev/docs/user_guide/install/)
-2. Uncomment `runtime: runsc` in `docker-compose.yml`
 
 ### HTTP API
 
