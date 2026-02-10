@@ -212,26 +212,6 @@ For production with gVisor:
 1. [Install gVisor](https://gvisor.dev/docs/user_guide/install/)
 2. Uncomment `runtime: runsc` in `docker-compose.yml`
 
-### Using the SandboxClient
-
-```typescript
-import { SandboxClient } from "./sandbox";
-
-const client = new SandboxClient({
-  baseUrl: "http://localhost:8080",
-  secret: process.env.SANDBOX_SECRET,  // Optional
-});
-
-// Clone a repository
-const { slug, sha } = await client.clone("https://github.com/owner/repo", "main");
-
-// Execute tools
-const output = await client.executeTool(slug, sha, "rg", { pattern: "TODO" });
-
-// Clean up
-await client.reset();
-```
-
 ### HTTP API
 
 | Endpoint | Method | Body | Description |

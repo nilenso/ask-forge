@@ -1,16 +1,14 @@
 /**
  * Sandbox module — isolated git and tool execution.
  *
+ * This module is for internal use. External users should interact with
+ * the sandbox via its HTTP API (see README.md) or use the main ask-forge
+ * `connect()` API which handles sandboxing transparently.
+ *
  * Components:
- *   - SandboxClient: HTTP client for the sandbox worker
+ *   - client.ts: Internal HTTP client for the sandbox worker
  *   - worker.ts: HTTP server (runs in container)
  *   - isolation/: Security primitives (bwrap, seccomp)
- *
- * Usage:
- *   import { SandboxClient } from "./sandbox";
- *   const client = new SandboxClient({ baseUrl: "http://localhost:8080" });
- *   const { slug, sha } = await client.clone("https://github.com/owner/repo");
- *   const output = await client.executeTool(slug, sha, "rg", { pattern: "TODO" });
  */
 
 export { SandboxClient, type SandboxClientConfig, type CloneResult } from "./client";
