@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
+import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "../config";
 import { connect, nullLogger } from "../index";
 import { generateReport } from "./generate-report";
 
@@ -275,8 +276,15 @@ async function runEval(inputPath: string): Promise<void> {
 	for (const [, { repository, commit_id, questions }] of questionsByRepo) {
 		let session: Awaited<ReturnType<typeof connect>> | null = null;
 
+		const forgeConfig = {
+			provider: MODEL_PROVIDER,
+			model: MODEL_NAME,
+			systemPrompt: SYSTEM_PROMPT,
+			maxIterations: MAX_TOOL_ITERATIONS,
+		};
+
 		try {
-			session = await connect(repository, { commitish: commit_id }, nullLogger);
+			session = await connect(repository, forgeConfig, { commitish: commit_id }, nullLogger);
 		} catch (error) {
 			console.error(
 				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,

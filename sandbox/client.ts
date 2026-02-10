@@ -6,19 +6,13 @@
  */
 
 export interface SandboxClientConfig {
-	/** Base URL of the sandbox worker. Default: "http://sandbox:8080" */
+	/** Base URL of the sandbox worker. */
 	baseUrl: string;
-	/** Request timeout in ms. Default: 120_000 */
+	/** Request timeout in ms. */
 	timeoutMs: number;
 	/** Shared secret for authenticating with the sandbox worker. */
-	secret: string;
+	secret?: string;
 }
-
-const DEFAULT_CONFIG: SandboxClientConfig = {
-	baseUrl: process.env.SANDBOX_URL || "http://sandbox:8080",
-	timeoutMs: 120_000,
-	secret: process.env.SANDBOX_SECRET || "",
-};
 
 export interface CloneResult {
 	slug: string;
@@ -29,8 +23,8 @@ export interface CloneResult {
 export class SandboxClient {
 	private config: SandboxClientConfig;
 
-	constructor(config: Partial<SandboxClientConfig> = {}) {
-		this.config = { ...DEFAULT_CONFIG, ...config };
+	constructor(config: SandboxClientConfig) {
+		this.config = config;
 	}
 
 	private authHeaders(): Record<string, string> {

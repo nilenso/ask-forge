@@ -1,7 +1,6 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { GIT_ENV } from "./config";
 
 /**
  * Lock map to prevent race conditions when cloning the same repo in parallel.
@@ -49,7 +48,6 @@ async function commitishExistsLocally(repoPath: string, commitish: string): Prom
 		cwd: repoPath,
 		stdout: "pipe",
 		stderr: "pipe",
-		env: GIT_ENV,
 	});
 	const output = (await new Response(proc.stdout).text()).trim();
 	const exitCode = await proc.exited;
@@ -149,7 +147,6 @@ export async function cleanupWorktree(repo: Repo): Promise<boolean> {
 			cwd: repo.cachePath,
 			stdout: "pipe",
 			stderr: "pipe",
-			env: GIT_ENV,
 		});
 		const exitCode = await proc.exited;
 		return exitCode === 0;
@@ -192,7 +189,6 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 					cwd: cachePath,
 					stdout: "inherit",
 					stderr: "inherit",
-					env: GIT_ENV,
 				});
 				await proc.exited;
 			}
@@ -206,7 +202,6 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
-				env: GIT_ENV,
 			});
 			const exitCode = await proc.exited;
 			if (exitCode !== 0) {
@@ -219,7 +214,6 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 		cwd: cachePath,
 		stdout: "pipe",
 		stderr: "pipe",
-		env: GIT_ENV,
 	});
 	const sha = (await new Response(revParseProc.stdout).text()).trim();
 	const revParseExit = await revParseProc.exited;
@@ -245,7 +239,6 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 		cwd: cachePath,
 		stdout: "inherit",
 		stderr: "inherit",
-		env: GIT_ENV,
 	});
 	const worktreeExit = await worktreeProc.exited;
 	if (worktreeExit !== 0) {

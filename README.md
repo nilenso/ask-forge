@@ -38,10 +38,18 @@ And create `.npmrc`:
 ## Usage
 
 ```typescript
-import { connect } from "@nilenso/ask-forge";
+import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+
+// Configure the library
+const config: ForgeConfig = {
+  provider: "openrouter",
+  model: "anthropic/claude-sonnet-4.5",
+  systemPrompt: "You are a code analysis assistant.",
+  maxIterations: 20,
+};
 
 // Connect to a public repository
-const session = await connect("https://github.com/owner/repo");
+const session = await connect("https://github.com/owner/repo", config);
 
 // Ask a question
 const result = await session.ask("What frameworks does this project use?");
@@ -51,23 +59,58 @@ console.log(result.response);
 session.close();
 ```
 
-### Connect Options
+### Configuration
+
+The `ForgeConfig` object is required and controls the AI model and behavior:
 
 ```typescript
-import { connect, type ConnectOptions } from "@nilenso/ask-forge";
+import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+
+const config: ForgeConfig = {
+  // Required: Model provider (openrouter, anthropic, google, etc.)
+  provider: "openrouter",
+  
+  // Required: Model identifier
+  model: "anthropic/claude-sonnet-4.5",
+  
+  // Required: System prompt that defines assistant behavior
+  systemPrompt: `You are a code analysis assistant.
+Use the available tools to explore the codebase and answer questions.
+Be concise and ground your answers in evidence from the code.`,
+  
+  // Required: Maximum tool-use iterations before stopping
+  maxIterations: 20,
+  
+  // Optional: Sandbox configuration (see Sandboxed Execution below)
+  sandbox: {
+    baseUrl: "http://sandbox:8080",
+    timeoutMs: 120_000,
+    secret: "optional-auth-secret",
+  },
+};
+```
+
+### Connect Options
+
+The third parameter controls git-related options:
+
+```typescript
+import { connect, type ForgeConfig, type ConnectOptions } from "@nilenso/ask-forge";
+
+const config: ForgeConfig = { /* ... */ };
 
 // Connect to a specific commit, branch, or tag
-const session = await connect("https://github.com/owner/repo", {
+const session = await connect("https://github.com/owner/repo", config, {
   commitish: "v1.0.0",
 });
 
 // Connect to a private repository with a token
-const session = await connect("https://github.com/owner/repo", {
+const session = await connect("https://github.com/owner/repo", config, {
   token: process.env.GITHUB_TOKEN,
 });
 
 // Explicitly specify the forge (auto-detected for github.com and gitlab.com)
-const session = await connect("https://gitlab.example.com/owner/repo", {
+const session = await connect("https://gitlab.example.com/owner/repo", config, {
   forge: "gitlab",
   token: process.env.GITLAB_TOKEN,
 });
@@ -75,29 +118,34 @@ const session = await connect("https://gitlab.example.com/owner/repo", {
 
 ### Custom Logger
 
+The fourth parameter controls logging:
+
 ```typescript
-import { connect, consoleLogger, nullLogger, type Logger } from "@nilenso/ask-forge";
+import { connect, consoleLogger, nullLogger, type Logger, type ForgeConfig } from "@nilenso/ask-forge";
+
+const config: ForgeConfig = { /* ... */ };
 
 // Use console logger (default)
-const session = await connect(url, {}, consoleLogger);
+const session = await connect(url, config, {}, consoleLogger);
 
 // Silence all logging
-const session = await connect(url, {}, nullLogger);
+const session = await connect(url, config, {}, nullLogger);
 
 // Custom logger
 const customLogger: Logger = {
   log: (label, content) => myLogSystem.info(`${label}: ${content}`),
   error: (label, error) => myLogSystem.error(label, error),
 };
-const session = await connect(url, {}, customLogger);
+const session = await connect(url, config, {}, customLogger);
 ```
 
 ### Ask Result
 
 ```typescript
-import { connect, type AskResult } from "@nilenso/ask-forge";
+import { connect, type ForgeConfig, type AskResult } from "@nilenso/ask-forge";
 
-const session = await connect("https://github.com/owner/repo");
+const config: ForgeConfig = { /* ... */ };
+const session = await connect("https://github.com/owner/repo", config);
 const result: AskResult = await session.ask("Explain the auth flow");
 
 console.log(result.prompt);          // Original question
@@ -112,9 +160,10 @@ console.log(result.usage);           // Token usage: { inputTokens, outputTokens
 Use the `onProgress` callback to receive real-time events during inference:
 
 ```typescript
-import { connect, type AskOptions, type ProgressEvent, type OnProgress } from "@nilenso/ask-forge";
+import { connect, type ForgeConfig, type ProgressEvent, type OnProgress } from "@nilenso/ask-forge";
 
-const session = await connect("https://github.com/owner/repo");
+const config: ForgeConfig = { /* ... */ };
+const session = await connect("https://github.com/owner/repo", config);
 
 const onProgress: OnProgress = (event: ProgressEvent) => {
   switch (event.type) {
@@ -147,9 +196,10 @@ const result = await session.ask("How does authentication work?", { onProgress }
 Sessions maintain conversation history for multi-turn interactions:
 
 ```typescript
-import { connect, type Session, type Message } from "@nilenso/ask-forge";
+import { connect, type ForgeConfig, type Session, type Message } from "@nilenso/ask-forge";
 
-const session: Session = await connect("https://github.com/owner/repo");
+const config: ForgeConfig = { /* ... */ };
+const session: Session = await connect("https://github.com/owner/repo", config);
 
 // Session properties
 console.log(session.id);              // Unique session identifier
@@ -174,7 +224,30 @@ session.close();
 
 ## Sandboxed Execution
 
-For production deployments, Ask Forge can run tool execution in an isolated container with defense-in-depth security:
+For production deployments, Ask Forge can run tool execution in an isolated container. Enable sandbox mode by adding the `sandbox` field to your config:
+
+```typescript
+import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+
+const config: ForgeConfig = {
+  provider: "openrouter",
+  model: "anthropic/claude-sonnet-4.5",
+  systemPrompt: "You are a code analysis assistant.",
+  maxIterations: 20,
+  
+  // Enable sandboxed execution
+  sandbox: {
+    baseUrl: "http://sandbox:8080",  // Sandbox worker URL
+    timeoutMs: 120_000,              // Request timeout
+    secret: "optional-auth-secret",  // Optional auth token
+  },
+};
+
+// All operations (clone + tool execution) now run in the sandbox
+const session = await connect("https://github.com/owner/repo", config);
+```
+
+### Security Layers
 
 | Layer | Mechanism | Protection |
 |-------|-----------|------------|
@@ -187,7 +260,6 @@ For production deployments, Ask Forge can run tool execution in an isolated cont
 
 ```
 sandbox/
-├── index.ts           # Exports SandboxClient
 ├── client.ts          # HTTP client for the sandbox worker
 ├── worker.ts          # HTTP server (runs in container)
 ├── Containerfile
@@ -216,7 +288,7 @@ docker-compose up -d
 |----------|--------|------|-------------|
 | `/health` | GET | — | Liveness check |
 | `/clone` | POST | `{ url, commitish? }` | Clone repo and checkout commit |
-| `/tool` | POST | `{ slug, sha, name, args }` | Execute tool (rg, fd, ls, read) |
+| `/tool` | POST | `{ slug, sha, name, args }` | Execute tool (rg, fd, ls, read, git) |
 | `/reset` | POST | — | Delete all cloned repos |
 
 ### Testing the Sandbox
@@ -244,6 +316,8 @@ bun install
 bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
+The CLI uses settings from `config.ts` (model, system prompt, etc.).
+
 ### Testing
 
 ```bash
@@ -263,8 +337,3 @@ cd eval
 python test-dataset.py 5 ask-forge
 python review-server.py  # Open http://localhost:5001
 ```
-
-### Configuration
-
-- `config.ts` — Agent model and prompt settings
-- `eval/config.py` — LLM judge and Claude agent settings
