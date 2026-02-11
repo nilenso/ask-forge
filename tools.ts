@@ -82,6 +82,33 @@ export const tools: Tool[] = [
 			}),
 		}),
 	},
+	{
+		name: "git",
+		description:
+			"Run read-only git commands to explore repository history. Allowed subcommands: log, show, blame, diff, shortlog, describe, rev-parse, ls-tree, cat-file.",
+		parameters: Type.Object({
+			command: Type.Union(
+				[
+					Type.Literal("log"),
+					Type.Literal("show"),
+					Type.Literal("blame"),
+					Type.Literal("diff"),
+					Type.Literal("shortlog"),
+					Type.Literal("describe"),
+					Type.Literal("rev-parse"),
+					Type.Literal("ls-tree"),
+					Type.Literal("cat-file"),
+				],
+				{ description: "The git subcommand to run" },
+			),
+			args: Type.Optional(
+				Type.Array(Type.String(), {
+					description:
+						"Additional arguments for the git command (e.g., ['--oneline', '-n', '10'] for log, or ['HEAD~5..HEAD'] for diff)",
+				}),
+			),
+		}),
+	},
 ];
 
 async function runCommand(cmd: string[], cwd: string): Promise<string> {
@@ -198,6 +225,14 @@ async function executeRead(args: Record<string, unknown>, repoPath: string): Pro
 	}
 }
 
+async function executeGit(args: Record<string, unknown>, repoPath: string): Promise<string> {
+	const command = args.command as string;
+	const gitArgs = (args.args as string[]) || [];
+
+	const cmd = ["git", command, ...gitArgs];
+	return runCommand(cmd, repoPath);
+}
+
 export async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
 	switch (toolName) {
 		case "rg":
@@ -208,6 +243,8 @@ export async function executeTool(toolName: string, args: Record<string, unknown
 			return executeLs(args, repoPath);
 		case "read":
 			return executeRead(args, repoPath);
+		case "git":
+			return executeGit(args, repoPath);
 		default:
 			return `Unknown tool: ${toolName}`;
 	}
