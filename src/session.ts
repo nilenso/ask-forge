@@ -381,7 +381,7 @@ export class Session {
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: results[j] }],
+				content: [{ type: "text", text: results[j] ?? "" }],
 				isError: false,
 				timestamp: Date.now(),
 			});

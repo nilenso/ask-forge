@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import type { Repo } from "./forge";
-import { type Logger, nullLogger } from "./logger";
-import { Session, type SessionConfig } from "./session";
+import type { Repo } from "../src/forge";
+import { type Logger, nullLogger } from "../src/logger";
+import { Session, type SessionConfig } from "../src/session";
 
 // Mock repo for testing
 function createMockRepo(): Repo {

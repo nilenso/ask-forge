@@ -268,7 +268,7 @@ const session = await client.connect("https://github.com/owner/repo");
 ### Architecture
 
 ```
-sandbox/
+src/sandbox/
 ├── client.ts          # HTTP client for the sandbox worker
 ├── worker.ts          # HTTP server (runs in container)
 ├── Containerfile
@@ -322,10 +322,10 @@ The test suite includes 49 tests covering:
 
 ```bash
 bun install
-bun run ask.ts https://github.com/owner/repo "What frameworks does this project use?"
+bun run scripts/ask.ts https://github.com/owner/repo "What frameworks does this project use?"
 ```
 
-The CLI uses settings from `config.ts` (model, system prompt, etc.).
+The CLI uses settings from `src/config.ts` (model, system prompt, etc.).
 
 ### Testing
 
@@ -338,11 +338,8 @@ just sandbox-all-tests  # Run all sandbox tests
 
 ### Evaluation
 
-The `eval/` folder contains an evaluation system for testing code analysis agents.
+The `scripts/eval/` folder contains an evaluation system for testing code analysis agents.
 
 ```bash
-source .venv/bin/activate
-cd eval
-python test-dataset.py 5 ask-forge
-python review-server.py  # Open http://localhost:5001
+bun run scripts/eval/run-eval.ts <path-to-dataset.csv>
 ```
