@@ -27,7 +27,7 @@ npx jsr add @nilenso/ask-forge
 
 For Docker or manual setup, add to `package.json`:
 ```json
-"@nilenso/ask-forge": "npm:@jsr/nilenso__ask-forge@0.0.5"
+"@nilenso/ask-forge": "npm:@jsr/nilenso__ask-forge@0.0.7"
 ```
 
 And create `.npmrc`:
