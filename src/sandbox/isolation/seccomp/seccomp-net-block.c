@@ -10,7 +10,8 @@
  *   gcc -o seccomp-net-block seccomp-net-block.c -lseccomp
  *
  * Usage:
- *   ./seccomp-net-block <output-file>
+ *   ./seccomp-net-block <arch> <output-file>
+ *   arch: x64 or arm64
  *
  * Dependencies:
  *   - libseccomp (libseccomp-dev package on Debian/Ubuntu, libseccomp on Alpine)
@@ -30,18 +31,46 @@
 int main(int argc, char *argv[]) {
     scmp_filter_ctx ctx;
     int rc;
+    uint32_t arch;
 
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <output-file>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <arch> <output-file>\n", argv[0]);
+        fprintf(stderr, "  arch: x64 or arm64\n");
         return 1;
     }
 
-    const char *output_file = argv[1];
+    const char *arch_str = argv[1];
+    const char *output_file = argv[2];
+
+    /* Parse architecture */
+    if (strcmp(arch_str, "x64") == 0) {
+        arch = SCMP_ARCH_X86_64;
+    } else if (strcmp(arch_str, "arm64") == 0) {
+        arch = SCMP_ARCH_AARCH64;
+    } else {
+        fprintf(stderr, "Error: Unknown architecture '%s'. Use 'x64' or 'arm64'.\n", arch_str);
+        return 1;
+    }
 
     /* Create seccomp context with default action ALLOW */
     ctx = seccomp_init(SCMP_ACT_ALLOW);
     if (ctx == NULL) {
         fprintf(stderr, "Error: Failed to initialize seccomp context\n");
+        return 1;
+    }
+
+    /* Remove native arch and add target arch */
+    rc = seccomp_arch_remove(ctx, SCMP_ARCH_NATIVE);
+    if (rc < 0 && rc != -ENOENT) {
+        fprintf(stderr, "Error: Failed to remove native arch: %s\n", strerror(-rc));
+        seccomp_release(ctx);
+        return 1;
+    }
+
+    rc = seccomp_arch_add(ctx, arch);
+    if (rc < 0) {
+        fprintf(stderr, "Error: Failed to add %s arch: %s\n", arch_str, strerror(-rc));
+        seccomp_release(ctx);
         return 1;
     }
 
@@ -82,6 +111,6 @@ int main(int argc, char *argv[]) {
     close(fd);
     seccomp_release(ctx);
 
-    printf("Generated BPF filter: %s\n", output_file);
+    printf("Generated %s BPF filter: %s\n", arch_str, output_file);
     return 0;
 }

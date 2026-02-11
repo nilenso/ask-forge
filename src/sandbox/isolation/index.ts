@@ -3,13 +3,8 @@
  *
  * Provides two levels of isolation:
  *   - bwrap: filesystem and PID namespace isolation
- *   - seccomp: BPF filter to block network syscalls
+ *   - seccomp: BPF filter to block network syscalls (via bwrap --seccomp)
  */
-
-/** Path to seccomp BPF filter that blocks network sockets */
-const SECCOMP_FILTER = "/etc/seccomp/net-block.bpf";
-/** Path to apply-seccomp binary */
-const APPLY_SECCOMP = "/usr/local/bin/apply-seccomp";
 
 /**
  * Build bwrap args for git operations.
@@ -42,7 +37,9 @@ export function bwrapArgsForGit(repoBaseDir: string): string[] {
  *
  * - Filesystem: read-only root, only specific worktree visible
  * - PID: isolated
- * - Network: blocked via seccomp (applied separately)
+ * - Network: blocked via seccomp BPF filter on FD 3
+ *
+ * Caller must pass the seccomp BPF filter file as FD 3 when spawning.
  */
 export function bwrapArgsForTool(worktree: string, repoBase: string): string[] {
 	return [
@@ -59,6 +56,8 @@ export function bwrapArgsForTool(worktree: string, repoBase: string): string[] {
 		"/dev",
 		"--unshare-pid",
 		"--die-with-parent",
+		"--seccomp",
+		"3",
 		"--",
 	];
 }
@@ -70,7 +69,8 @@ export function bwrapArgsForTool(worktree: string, repoBase: string): string[] {
  * - worktree: read-only
  * - bare repo: read-only (for .git references)
  *
- * Network is blocked via seccomp.
+ * Network is blocked via seccomp BPF filter on FD 3.
+ * Caller must pass the seccomp BPF filter file as FD 3 when spawning.
  */
 export function bwrapArgsForGitTool(worktree: string, bareRepo: string, repoBase: string): string[] {
 	return [
@@ -90,32 +90,30 @@ export function bwrapArgsForGitTool(worktree: string, bareRepo: string, repoBase
 		"/dev",
 		"--unshare-pid",
 		"--die-with-parent",
+		"--seccomp",
+		"3",
 		"--",
 	];
 }
 
 /**
- * Wrap a command with seccomp to block network syscalls.
- * Blocks socket(AF_INET, ...) and socket(AF_INET6, ...).
- */
-export function withSeccomp(cmd: string[]): string[] {
-	return [APPLY_SECCOMP, SECCOMP_FILTER, ...cmd];
-}
-
-/**
  * Build full isolated command for tool execution.
  * Combines bwrap (filesystem/PID isolation) with seccomp (network blocking).
+ *
+ * Caller must pass the seccomp BPF filter file as FD 3 when spawning.
  */
 export function isolatedToolCommand(cmd: string[], worktree: string, repoBase: string): string[] {
-	return [...bwrapArgsForTool(worktree, repoBase), ...withSeccomp(cmd)];
+	return [...bwrapArgsForTool(worktree, repoBase), ...cmd];
 }
 
 /**
  * Build isolated command for read-only git operations in a worktree.
  * Mounts both worktree and bare repo read-only, blocks network.
+ *
+ * Caller must pass the seccomp BPF filter file as FD 3 when spawning.
  */
 export function isolatedGitToolCommand(cmd: string[], worktree: string, bareRepo: string, repoBase: string): string[] {
-	return [...bwrapArgsForGitTool(worktree, bareRepo, repoBase), ...withSeccomp(cmd)];
+	return [...bwrapArgsForGitTool(worktree, bareRepo, repoBase), ...cmd];
 }
 
 /**

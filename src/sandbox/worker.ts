@@ -10,8 +10,13 @@
  * Security is provided by the isolation module (see ./isolation/).
  */
 
+import { closeSync, openSync } from "node:fs";
 import { resolve } from "node:path";
 import { isolatedGitCommand, isolatedGitToolCommand, isolatedToolCommand } from "./isolation";
+
+/** Path to seccomp BPF filter that blocks network sockets (arch-specific) */
+const SECCOMP_ARCH = process.arch === "arm64" ? "arm64" : "x64";
+const SECCOMP_FILTER_PATH = `/etc/seccomp/${SECCOMP_ARCH}/net-block.bpf`;
 
 const PORT = Number(process.env.PORT) || 8080;
 const REPO_BASE = "/home/forge/repos";
@@ -42,35 +47,52 @@ async function run(
 	cwd?: string,
 	env?: Record<string, string>,
 	timeoutMs?: number,
+	seccompFilterPath?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	// If seccomp filter is specified, open it and pass as FD 3
+	let seccompFd: number | undefined;
+	let stdio: ["pipe", "pipe", "pipe"] | ["pipe", "pipe", "pipe", number] = ["pipe", "pipe", "pipe"];
+	if (seccompFilterPath) {
+		seccompFd = openSync(seccompFilterPath, "r");
+		stdio = ["pipe", "pipe", "pipe", seccompFd];
+	}
+
 	const proc = Bun.spawn(cmd, {
 		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
+		stdio,
 		env: env ?? process.env,
 	});
 
-	if (timeoutMs) {
-		const timer = setTimeout(() => {
-			try {
-				proc.kill();
-			} catch {
-				/* already exited */
+	try {
+		if (timeoutMs) {
+			const timer = setTimeout(() => {
+				try {
+					proc.kill();
+				} catch {
+					/* already exited */
+				}
+			}, timeoutMs);
+
+			const [stdout, stderr] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+			]);
+			const exitCode = await proc.exited;
+			clearTimeout(timer);
+
+			if (exitCode === 137 || exitCode === -1) {
+				return { stdout, stderr: `${stderr}\nOperation timed out after ${timeoutMs}ms`, exitCode: 124 };
 			}
-		}, timeoutMs);
+			return { stdout, stderr, exitCode };
+		}
 
 		const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-		const exitCode = await proc.exited;
-		clearTimeout(timer);
-
-		if (exitCode === 137 || exitCode === -1) {
-			return { stdout, stderr: `${stderr}\nOperation timed out after ${timeoutMs}ms`, exitCode: 124 };
+		return { stdout, stderr, exitCode: await proc.exited };
+	} finally {
+		if (seccompFd !== undefined) {
+			closeSync(seccompFd);
 		}
-		return { stdout, stderr, exitCode };
 	}
-
-	const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-	return { stdout, stderr, exitCode: await proc.exited };
 }
 
 function repoDir(id: string): string {
@@ -115,7 +137,7 @@ async function runToolIsolated(
 	cmd: string[],
 	worktree: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-	return run(isolatedToolCommand(cmd, worktree, REPO_BASE), worktree, undefined, TOOL_TIMEOUT_MS);
+	return run(isolatedToolCommand(cmd, worktree, REPO_BASE), worktree, undefined, TOOL_TIMEOUT_MS, SECCOMP_FILTER_PATH);
 }
 
 // =============================================================================
@@ -309,7 +331,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			// Git worktrees need access to bare repo for .git references
 			const bareRepo = `${repoDir(slug)}/bare`;
 			const cmd = isolatedGitToolCommand(["git", subcommand, ...gitArgs], worktree, bareRepo, REPO_BASE);
-			const result = await run(cmd, worktree, undefined, TOOL_TIMEOUT_MS);
+			const result = await run(cmd, worktree, undefined, TOOL_TIMEOUT_MS, SECCOMP_FILTER_PATH);
 			if (result.exitCode !== 0 && result.stderr) {
 				return Response.json(
 					{ ok: false, error: `git ${subcommand} failed (exit ${result.exitCode}):\n${result.stderr}` },
