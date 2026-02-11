@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, AssistantMessage, Context, Model } from "@mariozechner/pi-ai";
-import type { ProgressEvent } from "./session";
-import { processStream } from "./stream-processor";
+import type { ProgressEvent } from "../src/session";
+import { processStream } from "../src/stream-processor";
 
 // Mock model and context
 const mockModel = {} as Model<Api>;
@@ -28,12 +28,19 @@ function createMockResponse(text: string): AssistantMessage {
 	return {
 		role: "assistant",
 		content: [{ type: "text", text }],
-		usage: { input: 10, output: 5, totalTokens: 15 },
+		usage: {
+			input: 10,
+			output: 5,
+			totalTokens: 15,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
 		timestamp: Date.now(),
 		api: "test",
 		provider: "test",
 		model: "test",
-		stopReason: "end_turn",
+		stopReason: "stop",
 	} as AssistantMessage;
 }
 

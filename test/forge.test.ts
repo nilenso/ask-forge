@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupWorktree, connectRepo } from "./forge";
+import { cleanupWorktree, connectRepo } from "../src/forge";
 
 // =============================================================================
 // Test Helpers

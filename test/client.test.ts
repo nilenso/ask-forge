@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AskForgeClient } from "./index";
-import { nullLogger } from "./logger";
+import { AskForgeClient } from "../src/index";
+import { nullLogger } from "../src/logger";
 
 // =============================================================================
 // Test Helpers
@@ -122,7 +122,7 @@ describe("AskForgeClient", () => {
 
 		expect(session.id).toBeDefined();
 		expect(session.repo.url).toBe(testRepo.url);
-		expect(session.repo.commitish).toBe(testRepo.commits[1]);
+		expect(session.repo.commitish).toBe(testRepo.commits[1] ?? "");
 
 		// Verify we can read files from the worktree
 		const readme = await readFile(join(session.repo.localPath, "README.md"), "utf-8");
@@ -139,7 +139,7 @@ describe("AskForgeClient", () => {
 			commitish: "v1.0.0",
 		});
 
-		expect(session.repo.commitish).toBe(testRepo.commits[0]);
+		expect(session.repo.commitish).toBe(testRepo.commits[0] ?? "");
 
 		// v1.0.0 should NOT have utils.ts
 		const files = await readFile(join(session.repo.localPath, "src", "index.ts"), "utf-8");
@@ -163,8 +163,8 @@ describe("AskForgeClient", () => {
 		expect(session1.id).not.toBe(session2.id);
 
 		// Different commits
-		expect(session1.repo.commitish).toBe(testRepo.commits[0]);
-		expect(session2.repo.commitish).toBe(testRepo.commits[1]);
+		expect(session1.repo.commitish).toBe(testRepo.commits[0] ?? "");
+		expect(session2.repo.commitish).toBe(testRepo.commits[1] ?? "");
 
 		// Different worktrees
 		expect(session1.repo.localPath).not.toBe(session2.repo.localPath);

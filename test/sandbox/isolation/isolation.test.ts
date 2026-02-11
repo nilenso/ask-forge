@@ -11,14 +11,14 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { bwrapArgsForGit, bwrapArgsForTool } from "./index";
+import { bwrapArgsForGit, bwrapArgsForTool } from "../../../src/sandbox/isolation/index";
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
 function run(cmd: string[], cwd?: string): { stdout: string; stderr: string; exitCode: number } {
-	const result = spawnSync(cmd[0], cmd.slice(1), {
+	const result = spawnSync(cmd[0] ?? "", cmd.slice(1), {
 		cwd,
 		encoding: "utf-8",
 		timeout: 10_000,

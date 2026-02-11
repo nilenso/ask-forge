@@ -8,7 +8,7 @@
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
-import { SandboxClient } from "./client";
+import { SandboxClient } from "../../src/sandbox/client";
 
 const SANDBOX_URL = process.env.SANDBOX_URL || "http://localhost:8080";
 const TEST_REPO = "https://github.com/octocat/Hello-World";

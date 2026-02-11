@@ -4,13 +4,13 @@ test:
 
 # Run isolation layer tests (bwrap + seccomp)
 isolation-tests:
-    bun test sandbox/isolation/isolation.test.ts
+    bun test test/sandbox/isolation/isolation.test.ts
 
 # Run sandbox integration tests (requires running sandbox)
 sandbox-tests: sandbox-up
     @echo "Waiting for sandbox..."
     @sleep 2
-    bun test sandbox/sandbox.integration.test.ts || true
+    bun test test/sandbox/sandbox.integration.test.ts || true
     podman-compose down
 
 # Run all sandbox tests (isolation + integration)

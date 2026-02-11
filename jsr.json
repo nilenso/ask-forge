@@ -2,5 +2,5 @@
 	"name": "@nilenso/ask-forge",
 	"version": "0.0.8",
 	"license": "MIT",
-	"exports": "./index.ts"
+	"exports": "./src/index.ts"
 }

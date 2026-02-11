@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "./config";
-import { AskForgeClient } from "./index";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../src/config";
+import { AskForgeClient } from "../src/index";
 
 const repoUrl = process.argv[2];
 const question = process.argv[3];

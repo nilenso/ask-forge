@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../config";
-import { AskForgeClient, nullLogger } from "../index";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../../src/config";
+import { AskForgeClient, nullLogger } from "../../src/index";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
