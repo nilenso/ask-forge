@@ -230,11 +230,9 @@ describe("forge", () => {
 			).rejects.toThrow("Failed to resolve commitish");
 		});
 
-		test("throws for invalid URL", async () => {
-		});
+		test("throws for invalid URL", async () => {});
 
-		test("throws for unknown forge without explicit option", async () => {
-		});
+		test("throws for unknown forge without explicit option", async () => {});
 	});
 
 	describe("cleanupWorktree", () => {

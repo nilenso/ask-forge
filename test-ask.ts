@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "./config";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "./config";
 import { AskForgeClient } from "./index";
 
 // Test parallel connects with the same git repo but different revisions

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "../config";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../config";
 import { AskForgeClient, nullLogger } from "../index";
 import { generateReport } from "./generate-report";
 
@@ -61,7 +61,7 @@ function parseCsv(content: string): ParseResult {
 	}
 
 	// Validate header row
-	const header = records[0]!;
+	const header = records[0] as string[];
 	const missing = REQUIRED_COLUMNS.filter((col) => !header.includes(col));
 	if (missing.length > 0) {
 		return {
@@ -79,12 +79,12 @@ function parseCsv(content: string): ParseResult {
 
 	const rows: EvalRow[] = [];
 	for (let i = 1; i < records.length; i++) {
-		const fields = records[i]!;
+		const fields = records[i] as string[];
 		rows.push({
-			session_id: fields[colIndex.session_id!] ?? "",
-			repository: fields[colIndex.repository!] ?? "",
-			commit_id: fields[colIndex.commit_id!] ?? "",
-			question: fields[colIndex.question!] ?? "",
+			session_id: fields[colIndex.session_id as number] ?? "",
+			repository: fields[colIndex.repository as number] ?? "",
+			commit_id: fields[colIndex.commit_id as number] ?? "",
+			question: fields[colIndex.question as number] ?? "",
 			answer: "",
 			is_answer_relevant: "",
 			is_evidence_supported: "",
