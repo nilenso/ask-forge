@@ -1,19 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "./config";
-import { connect } from "./index";
+import { AskForgeClient } from "./index";
 
 // Test parallel connects with the same git repo but different revisions
 const repoUrl = "https://github.com/nilenso/goose";
 const revision1 = "0.5.0";
 const revision2 = "0.6.0";
 
-const config = {
+const client = new AskForgeClient({
 	provider: MODEL_PROVIDER,
 	model: MODEL_NAME,
 	systemPrompt: SYSTEM_PROMPT,
 	maxIterations: MAX_TOOL_ITERATIONS,
-};
+});
 
 console.log(`Testing parallel connects to ${repoUrl}`);
 console.log(`Revision 1: ${revision1}`);
@@ -22,8 +22,8 @@ console.log();
 
 console.log("Connecting in parallel...");
 const [session1, session2] = await Promise.all([
-	connect(repoUrl, config, { commitish: revision1 }),
-	connect(repoUrl, config, { commitish: revision2 }),
+	client.connect(repoUrl, { commitish: revision1 }),
+	client.connect(repoUrl, { commitish: revision2 }),
 ]);
 
 console.log(`\nSession 1 (${revision1}):`);

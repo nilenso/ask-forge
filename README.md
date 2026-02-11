@@ -38,18 +38,13 @@ And create `.npmrc`:
 ## Usage
 
 ```typescript
-import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+import { AskForgeClient } from "@nilenso/ask-forge";
 
-// Configure the library
-const config: ForgeConfig = {
-  provider: "openrouter",
-  model: "anthropic/claude-sonnet-4.5",
-  systemPrompt: "You are a code analysis assistant.",
-  maxIterations: 20,
-};
+// Create a client (defaults to openrouter with claude-sonnet-4.5)
+const client = new AskForgeClient();
 
-// Connect to a public repository
-const session = await connect("https://github.com/owner/repo", config);
+// Connect to a repository
+const session = await client.connect("https://github.com/owner/repo");
 
 // Ask a question
 const result = await session.ask("What frameworks does this project use?");
@@ -59,58 +54,74 @@ console.log(result.response);
 session.close();
 ```
 
-### Configuration
+### AskForgeClient
 
-The `ForgeConfig` object is required and controls the AI model and behavior:
+The `AskForgeClient` class holds your configuration and can create multiple sessions:
 
 ```typescript
-import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+import { AskForgeClient } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = {
-  // Required: Model provider (openrouter, anthropic, google, etc.)
+const client = new AskForgeClient(); // Uses defaults
+
+// Connect to multiple repositories with the same config
+const session1 = await client.connect("https://github.com/owner/repo1");
+const session2 = await client.connect("https://github.com/owner/repo2");
+
+// In sandbox mode, reset all cloned repos
+await client.resetSandbox();
+```
+
+### Configuration
+
+The `ForgeConfig` object controls the AI model and behavior:
+
+```typescript
+import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
+
+// Use defaults (openrouter + claude-sonnet-4.5)
+const client = new AskForgeClient();
+
+// Or specify a different model (provider and model must both be specified)
+const client = new AskForgeClient({
+  provider: "anthropic",
+  model: "claude-sonnet-4.5",
+});
+
+// Full configuration
+const client = new AskForgeClient({
   provider: "openrouter",
-  
-  // Required: Model identifier
   model: "anthropic/claude-sonnet-4.5",
-  
-  // Required: System prompt that defines assistant behavior
-  systemPrompt: `You are a code analysis assistant.
-Use the available tools to explore the codebase and answer questions.
-Be concise and ground your answers in evidence from the code.`,
-  
-  // Required: Maximum tool-use iterations before stopping
-  maxIterations: 20,
-  
-  // Optional: Sandbox configuration (see Sandboxed Execution below)
-  sandbox: {
+  systemPrompt: "Custom prompt...",    // Optional: has a built-in default
+  maxIterations: 10,                   // Optional: default is 20
+  sandbox: {                           // Optional: enable sandboxed execution
     baseUrl: "http://sandbox:8080",
     timeoutMs: 120_000,
     secret: "optional-auth-secret",
   },
-};
+});
 ```
 
 ### Connect Options
 
-The third parameter controls git-related options:
+The `connect()` method accepts git-related options:
 
 ```typescript
-import { connect, type ForgeConfig, type ConnectOptions } from "@nilenso/ask-forge";
+import { AskForgeClient, type ForgeConfig, type ConnectOptions } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = { /* ... */ };
+const client = new AskForgeClient(config);
 
 // Connect to a specific commit, branch, or tag
-const session = await connect("https://github.com/owner/repo", config, {
+const session = await client.connect("https://github.com/owner/repo", {
   commitish: "v1.0.0",
 });
 
 // Connect to a private repository with a token
-const session = await connect("https://github.com/owner/repo", config, {
+const session = await client.connect("https://github.com/owner/repo", {
   token: process.env.GITHUB_TOKEN,
 });
 
 // Explicitly specify the forge (auto-detected for github.com and gitlab.com)
-const session = await connect("https://gitlab.example.com/owner/repo", config, {
+const session = await client.connect("https://gitlab.example.com/owner/repo", {
   forge: "gitlab",
   token: process.env.GITLAB_TOKEN,
 });
@@ -118,34 +129,32 @@ const session = await connect("https://gitlab.example.com/owner/repo", config, {
 
 ### Custom Logger
 
-The fourth parameter controls logging:
+The second parameter to the constructor controls logging:
 
 ```typescript
-import { connect, consoleLogger, nullLogger, type Logger, type ForgeConfig } from "@nilenso/ask-forge";
-
-const config: ForgeConfig = { /* ... */ };
+import { AskForgeClient, consoleLogger, nullLogger, type Logger, type ForgeConfig } from "@nilenso/ask-forge";
 
 // Use console logger (default)
-const session = await connect(url, config, {}, consoleLogger);
+const client = new AskForgeClient(config, consoleLogger);
 
 // Silence all logging
-const session = await connect(url, config, {}, nullLogger);
+const client = new AskForgeClient(config, nullLogger);
 
 // Custom logger
 const customLogger: Logger = {
   log: (label, content) => myLogSystem.info(`${label}: ${content}`),
   error: (label, error) => myLogSystem.error(label, error),
 };
-const session = await connect(url, config, {}, customLogger);
+const client = new AskForgeClient(config, customLogger);
 ```
 
 ### Ask Result
 
 ```typescript
-import { connect, type ForgeConfig, type AskResult } from "@nilenso/ask-forge";
+import { AskForgeClient, type ForgeConfig, type AskResult } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = { /* ... */ };
-const session = await connect("https://github.com/owner/repo", config);
+const client = new AskForgeClient(config);
+const session = await client.connect("https://github.com/owner/repo");
 const result: AskResult = await session.ask("Explain the auth flow");
 
 console.log(result.prompt);          // Original question
@@ -160,10 +169,10 @@ console.log(result.usage);           // Token usage: { inputTokens, outputTokens
 Use the `onProgress` callback to receive real-time events during inference:
 
 ```typescript
-import { connect, type ForgeConfig, type ProgressEvent, type OnProgress } from "@nilenso/ask-forge";
+import { AskForgeClient, type ForgeConfig, type ProgressEvent, type OnProgress } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = { /* ... */ };
-const session = await connect("https://github.com/owner/repo", config);
+const client = new AskForgeClient(config);
+const session = await client.connect("https://github.com/owner/repo");
 
 const onProgress: OnProgress = (event: ProgressEvent) => {
   switch (event.type) {
@@ -196,10 +205,10 @@ const result = await session.ask("How does authentication work?", { onProgress }
 Sessions maintain conversation history for multi-turn interactions:
 
 ```typescript
-import { connect, type ForgeConfig, type Session, type Message } from "@nilenso/ask-forge";
+import { AskForgeClient, type ForgeConfig, type Session, type Message } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = { /* ... */ };
-const session: Session = await connect("https://github.com/owner/repo", config);
+const client = new AskForgeClient(config);
+const session: Session = await client.connect("https://github.com/owner/repo");
 
 // Session properties
 console.log(session.id);              // Unique session identifier
@@ -227,9 +236,9 @@ session.close();
 For production deployments, Ask Forge can run tool execution in an isolated container. Enable sandbox mode by adding the `sandbox` field to your config:
 
 ```typescript
-import { connect, type ForgeConfig } from "@nilenso/ask-forge";
+import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
 
-const config: ForgeConfig = {
+const client = new AskForgeClient({
   provider: "openrouter",
   model: "anthropic/claude-sonnet-4.5",
   systemPrompt: "You are a code analysis assistant.",
@@ -241,10 +250,10 @@ const config: ForgeConfig = {
     timeoutMs: 120_000,              // Request timeout
     secret: "optional-auth-secret",  // Optional auth token
   },
-};
+});
 
 // All operations (clone + tool execution) now run in the sandbox
-const session = await connect("https://github.com/owner/repo", config);
+const session = await client.connect("https://github.com/owner/repo");
 ```
 
 ### Security Layers

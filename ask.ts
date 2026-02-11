@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "./config";
-import { connect } from "./index";
+import { AskForgeClient } from "./index";
 
 const repoUrl = process.argv[2];
 const question = process.argv[3];
@@ -26,16 +26,16 @@ function logError(stage: string, error: unknown) {
 	console.error(`${"═".repeat(60)}\n`);
 }
 
-const config = {
+const client = new AskForgeClient({
 	provider: MODEL_PROVIDER,
 	model: MODEL_NAME,
 	systemPrompt: SYSTEM_PROMPT,
 	maxIterations: MAX_TOOL_ITERATIONS,
-};
+});
 
 try {
 	console.log(`Connecting to ${repoUrl}...`);
-	const session = await connect(repoUrl, config, { commitish });
+	const session = await client.connect(repoUrl, { commitish });
 	console.log(`Connected to ${session.repo.localPath}`);
 	console.log(`Session ID: ${session.id}`);
 	if (session.repo.commitish) {

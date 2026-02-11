@@ -2,7 +2,7 @@ import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
 import { MODEL_NAME, MODEL_PROVIDER, MAX_TOOL_ITERATIONS, SYSTEM_PROMPT } from "../config";
-import { connect, nullLogger } from "../index";
+import { AskForgeClient, nullLogger } from "../index";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -272,19 +272,22 @@ async function runEval(inputPath: string): Promise<void> {
 	// Run ask() + judge for each unique question, reusing sessions per repo+commit
 	const results = new Map<RowKey, { answer: string; judge: JudgeResult | null }>();
 
-	let questionIdx = 0;
-	for (const [, { repository, commit_id, questions }] of questionsByRepo) {
-		let session: Awaited<ReturnType<typeof connect>> | null = null;
-
-		const forgeConfig = {
+	const client = new AskForgeClient(
+		{
 			provider: MODEL_PROVIDER,
 			model: MODEL_NAME,
 			systemPrompt: SYSTEM_PROMPT,
 			maxIterations: MAX_TOOL_ITERATIONS,
-		};
+		},
+		nullLogger,
+	);
+
+	let questionIdx = 0;
+	for (const [, { repository, commit_id, questions }] of questionsByRepo) {
+		let session: Awaited<ReturnType<typeof client.connect>> | null = null;
 
 		try {
-			session = await connect(repository, forgeConfig, { commitish: commit_id }, nullLogger);
+			session = await client.connect(repository, { commitish: commit_id });
 		} catch (error) {
 			console.error(
 				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,
