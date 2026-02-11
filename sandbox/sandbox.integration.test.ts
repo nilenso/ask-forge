@@ -40,7 +40,7 @@ describe("sandbox normal operations", () => {
 			console.log("Skipping sandbox tests: sandbox not running on", SANDBOX_URL);
 			return;
 		}
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -113,7 +113,7 @@ describe("sandbox path traversal protection", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -176,7 +176,7 @@ describe("sandbox filesystem isolation", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -228,7 +228,7 @@ describe("sandbox network isolation", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -254,7 +254,7 @@ describe("sandbox input validation", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 	});
 
 	test("clone rejects empty URL", async () => {
@@ -316,7 +316,7 @@ describe("sandbox command injection protection", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -431,7 +431,7 @@ describe("sandbox git tool", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 
@@ -506,7 +506,7 @@ describe("sandbox resource handling", () => {
 
 	beforeAll(async () => {
 		if (!(await isSandboxRunning())) return;
-		client = new SandboxClient({ baseUrl: SANDBOX_URL });
+		client = new SandboxClient({ baseUrl: SANDBOX_URL, timeoutMs: 120_000 });
 		cloneResult = await client.clone(TEST_REPO);
 	});
 

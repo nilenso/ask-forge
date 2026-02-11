@@ -5,36 +5,14 @@
  */
 
 // =============================================================================
-// GIT CONFIGURATION
-// =============================================================================
-
-/**
- * Git environment variables to prevent interactive prompts and SSH key loading.
- * Used when spawning git processes.
- */
-export const GIT_ENV: Record<string, string> = {
-	// Disable SSH agent and key loading
-	SSH_AUTH_SOCK: "",
-	// Use a non-existent SSH key to prevent loading default keys
-	GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityFile=/dev/null",
-	// Disable terminal prompts for credentials
-	GIT_TERMINAL_PROMPT: "0",
-	// Disable askpass programs
-	GIT_ASKPASS: "",
-	SSH_ASKPASS: "",
-	// Preserve PATH for git to work
-	PATH: process.env.PATH || "",
-};
-
-// =============================================================================
 // MODEL CONFIGURATION
 // =============================================================================
 
 /** Model provider (e.g., "openrouter", "anthropic") */
-export const MODEL_PROVIDER = "openrouter";
+export const MODEL_PROVIDER = "openrouter" as const;
 
 /** Model identifier */
-export const MODEL_NAME = "anthropic/claude-sonnet-4.5";
+export const MODEL_NAME = "anthropic/claude-sonnet-4.5" as const;
 
 /** Maximum tool-use iterations (how many tool calls the agent can make before giving a final answer) */
 export const MAX_TOOL_ITERATIONS = 20;

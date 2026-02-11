@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { connect, nullLogger } from "../index";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../config";
+import { AskForgeClient, nullLogger } from "../index";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -60,7 +61,7 @@ function parseCsv(content: string): ParseResult {
 	}
 
 	// Validate header row
-	const header = records[0]!;
+	const header = records[0] as string[];
 	const missing = REQUIRED_COLUMNS.filter((col) => !header.includes(col));
 	if (missing.length > 0) {
 		return {
@@ -78,12 +79,12 @@ function parseCsv(content: string): ParseResult {
 
 	const rows: EvalRow[] = [];
 	for (let i = 1; i < records.length; i++) {
-		const fields = records[i]!;
+		const fields = records[i] as string[];
 		rows.push({
-			session_id: fields[colIndex.session_id!] ?? "",
-			repository: fields[colIndex.repository!] ?? "",
-			commit_id: fields[colIndex.commit_id!] ?? "",
-			question: fields[colIndex.question!] ?? "",
+			session_id: fields[colIndex.session_id as number] ?? "",
+			repository: fields[colIndex.repository as number] ?? "",
+			commit_id: fields[colIndex.commit_id as number] ?? "",
+			question: fields[colIndex.question as number] ?? "",
 			answer: "",
 			is_answer_relevant: "",
 			is_evidence_supported: "",
@@ -271,12 +272,22 @@ async function runEval(inputPath: string): Promise<void> {
 	// Run ask() + judge for each unique question, reusing sessions per repo+commit
 	const results = new Map<RowKey, { answer: string; judge: JudgeResult | null }>();
 
+	const client = new AskForgeClient(
+		{
+			provider: MODEL_PROVIDER,
+			model: MODEL_NAME,
+			systemPrompt: SYSTEM_PROMPT,
+			maxIterations: MAX_TOOL_ITERATIONS,
+		},
+		nullLogger,
+	);
+
 	let questionIdx = 0;
 	for (const [, { repository, commit_id, questions }] of questionsByRepo) {
-		let session: Awaited<ReturnType<typeof connect>> | null = null;
+		let session: Awaited<ReturnType<typeof client.connect>> | null = null;
 
 		try {
-			session = await connect(repository, { commitish: commit_id }, nullLogger);
+			session = await client.connect(repository, { commitish: commit_id });
 		} catch (error) {
 			console.error(
 				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,
