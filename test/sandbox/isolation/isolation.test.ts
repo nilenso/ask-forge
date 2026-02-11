@@ -22,8 +22,8 @@ const SECCOMP_ARCH = process.arch === "arm64" ? "arm64" : "x64";
 const SECCOMP_FILTER = `/etc/seccomp/${SECCOMP_ARCH}/net-block.bpf`;
 
 function run(cmd: string[], cwd?: string): { stdout: string; stderr: string; exitCode: number } {
-	const [command, ...args] = cmd;
-	const result = spawnSync(command!, args, {
+	const [command = "", ...args] = cmd;
+	const result = spawnSync(command, args, {
 		cwd,
 		encoding: "utf-8",
 		timeout: 10_000,
@@ -40,10 +40,10 @@ function run(cmd: string[], cwd?: string): { stdout: string; stderr: string; exi
  * Used for commands that include bwrap --seccomp 3.
  */
 function runWithSeccomp(cmd: string[], cwd?: string): { stdout: string; stderr: string; exitCode: number } {
-	const [command, ...args] = cmd;
+	const [command = "", ...args] = cmd;
 	const fd = openSync(SECCOMP_FILTER, "r");
 	try {
-		const result = spawnSync(command!, args, {
+		const result = spawnSync(command, args, {
 			cwd,
 			encoding: "utf-8",
 			timeout: 10_000,
