@@ -43,4 +43,4 @@ workdir
 AGENTS.local.md
 
 # Eval runs
-eval/reports/
+scripts/eval/reports/

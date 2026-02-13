@@ -8,6 +8,7 @@ import {
 	stream,
 	type Tool,
 } from "@mariozechner/pi-ai";
+import { type CompactionSettings, getCompactionSettings, maybeCompact } from "./compaction";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { processStream } from "./stream-processor";
@@ -56,6 +57,7 @@ export interface Usage {
  * Progress events emitted during Session.ask() via the onProgress callback.
  *
  * Event sequence:
+ * 0. "compaction" - Context compacted (if needed, before LLM call)
  * 1. "thinking" - Emitted at the start of each iteration
  * 2. "thinking_delta" - Model's thinking/reasoning (streaming)
  * 3. "text_delta" - Response text (streaming)
@@ -65,6 +67,15 @@ export interface Usage {
  * 7. "responding" - Final response ready (no more tool calls)
  */
 export type ProgressEvent =
+	| {
+			type: "compaction";
+			summary: string;
+			firstKeptOrdinal: number;
+			tokensBefore: number;
+			tokensAfter: number;
+			readFiles: string[];
+			modifiedFiles: string[];
+	  }
 	| { type: "thinking" }
 	| { type: "thinking_delta"; delta: string }
 	| { type: "text_delta"; delta: string }
@@ -149,6 +160,8 @@ export interface SessionConfig {
 	logger?: Logger;
 	/** Stream function for AI inference (defaults to pi-ai's stream) */
 	stream?: typeof stream;
+	/** Context compaction settings (defaults to sensible values) */
+	compaction?: Partial<CompactionSettings>;
 }
 
 /**
@@ -180,6 +193,7 @@ export class Session {
 	#context: Context;
 	#pending: Promise<AskResult> | null = null;
 	#closed = false;
+	#compactionSummary: string | undefined = undefined;
 
 	constructor(repo: Repo, config: SessionConfig) {
 		this.id = randomUUID();
@@ -266,7 +280,42 @@ export class Session {
 			startTime: Date.now(),
 		};
 
-		this.#context.messages.push({ role: "user", content: question, timestamp: Date.now() });
+		// Check for compaction before adding the new question
+		// Include the new question in the token estimate since it will be added to context
+		const newQuestionMessage: Message = { role: "user", content: question, timestamp: Date.now() };
+		const messagesWithQuestion = [...this.#context.messages, newQuestionMessage];
+
+		try {
+			const compactionResult = await maybeCompact(this.#config.model, messagesWithQuestion, this.#compactionSummary);
+
+			if (compactionResult.wasCompacted) {
+				// Replace session messages with compacted version (includes the new question)
+				this.#context.messages = compactionResult.messages;
+				this.#compactionSummary = compactionResult.summary;
+
+				console.log(
+					`[compaction] Context compacted: ${compactionResult.tokensBefore} -> ${compactionResult.tokensAfter} tokens`,
+				);
+
+				// Notify via progress callback
+				onProgress?.({
+					type: "compaction",
+					summary: compactionResult.summary ?? "",
+					firstKeptOrdinal: compactionResult.firstKeptOrdinal,
+					tokensBefore: compactionResult.tokensBefore,
+					tokensAfter: compactionResult.tokensAfter,
+					readFiles: compactionResult.readFiles,
+					modifiedFiles: compactionResult.modifiedFiles,
+				});
+			} else {
+				// No compaction needed, just add the question
+				this.#context.messages.push(newQuestionMessage);
+			}
+		} catch (compactionError) {
+			// Compaction failed - log error but continue (just add the question)
+			this.#logger.error("[compaction] Error during compaction:", compactionError);
+			this.#context.messages.push(newQuestionMessage);
+		}
 
 		for (let iteration = 0; iteration < this.#config.maxIterations; iteration++) {
 			onProgress?.({ type: "thinking" });

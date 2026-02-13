@@ -167,8 +167,8 @@ function writeCsvString(rows: EvalRow[]): string {
 // LLM Judge
 // =============================================================================
 
-const JUDGE_MODEL_PROVIDER = "openrouter";
-const JUDGE_MODEL_NAME = "anthropic/claude-sonnet-4.5";
+const JUDGE_MODEL_PROVIDER = "anthropic";
+const JUDGE_MODEL_NAME = "claude-sonnet-4-5";
 
 const JUDGE_SYSTEM_PROMPT = `You are an expert evaluator of AI-generated answers about code repositories.
 
