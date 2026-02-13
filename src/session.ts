@@ -57,6 +57,7 @@ export interface Usage {
  * Progress events emitted during Session.ask() via the onProgress callback.
  *
  * Event sequence:
+ * 0. "compaction" - Context compacted (if needed, before LLM call)
  * 1. "thinking" - Emitted at the start of each iteration
  * 2. "thinking_delta" - Model's thinking/reasoning (streaming)
  * 3. "text_delta" - Response text (streaming)
@@ -66,6 +67,15 @@ export interface Usage {
  * 7. "responding" - Final response ready (no more tool calls)
  */
 export type ProgressEvent =
+	| {
+			type: "compaction";
+			summary: string;
+			firstKeptOrdinal: number;
+			tokensBefore: number;
+			tokensAfter: number;
+			readFiles: string[];
+			modifiedFiles: string[];
+	  }
 	| { type: "thinking" }
 	| { type: "thinking_delta"; delta: string }
 	| { type: "text_delta"; delta: string }
@@ -286,6 +296,17 @@ export class Session {
 				console.log(
 					`[compaction] Context compacted: ${compactionResult.tokensBefore} -> ${compactionResult.tokensAfter} tokens`,
 				);
+
+				// Notify via progress callback
+				onProgress?.({
+					type: "compaction",
+					summary: compactionResult.summary ?? "",
+					firstKeptOrdinal: compactionResult.firstKeptOrdinal,
+					tokensBefore: compactionResult.tokensBefore,
+					tokensAfter: compactionResult.tokensAfter,
+					readFiles: compactionResult.readFiles,
+					modifiedFiles: compactionResult.modifiedFiles,
+				});
 			} else {
 				// No compaction needed, just add the question
 				this.#context.messages.push(newQuestionMessage);
