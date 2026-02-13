@@ -18,6 +18,27 @@ export const MODEL_NAME = "anthropic/claude-sonnet-4.5" as const;
 export const MAX_TOOL_ITERATIONS = 20;
 
 // =============================================================================
+// CONTEXT COMPACTION CONFIGURATION
+// =============================================================================
+
+/**
+ * Default settings for context compaction.
+ * When context grows too large, older messages are summarized to stay within limits.
+ */
+export const COMPACTION_SETTINGS = {
+	/** Whether compaction is enabled */
+	enabled: true,
+	/** Tokens to reserve for LLM response */
+	reserveTokens: 16384,
+	/** Recent tokens to keep (not summarized) */
+	keepRecentTokens: 20000,
+	/** Model context window size */
+	contextWindow: 200000,
+};
+
+export type CompactionSettings = typeof COMPACTION_SETTINGS;
+
+// =============================================================================
 // SYSTEM PROMPT
 // =============================================================================
 

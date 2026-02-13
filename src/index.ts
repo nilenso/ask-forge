@@ -1,4 +1,5 @@
 import { getModel, type KnownProvider, type Message, stream } from "@mariozechner/pi-ai";
+import type { CompactionSettings } from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
@@ -16,6 +17,7 @@ import { executeTool, tools } from "./tools";
 export type {
 	AskOptions,
 	AskResult,
+	CompactionSettings,
 	ConnectOptions,
 	Forge,
 	ForgeName,
@@ -59,6 +61,12 @@ interface ForgeConfigBase {
 	 * If omitted, operations run locally.
 	 */
 	sandbox?: SandboxClientConfig;
+	/**
+	 * Optional context compaction settings.
+	 * When context grows too large, older messages are summarized to stay within limits.
+	 * If omitted, uses sensible defaults (enabled with 200K context window).
+	 */
+	compaction?: Partial<CompactionSettings>;
 }
 
 /**
@@ -108,6 +116,7 @@ interface ResolvedConfig {
 	systemPrompt: string;
 	maxIterations: number;
 	sandbox?: SandboxClientConfig;
+	compaction?: Partial<CompactionSettings>;
 }
 
 export class AskForgeClient {
@@ -130,6 +139,7 @@ export class AskForgeClient {
 			systemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
 			maxIterations: config.maxIterations ?? 20,
 			sandbox: config.sandbox,
+			compaction: config.compaction,
 		};
 		this.#logger = logger;
 
@@ -180,6 +190,7 @@ export class AskForgeClient {
 				executeTool: sandboxExecuteTool,
 				logger: this.#logger,
 				stream,
+				compaction: config.compaction,
 			});
 		}
 
@@ -194,6 +205,7 @@ export class AskForgeClient {
 			executeTool,
 			logger: this.#logger,
 			stream,
+			compaction: config.compaction,
 		});
 	}
 
