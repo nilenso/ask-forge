@@ -8,7 +8,7 @@ import {
 	stream,
 	type Tool,
 } from "@mariozechner/pi-ai";
-import { type CompactionSettings, getCompactionSettings, maybeCompact } from "./compaction";
+import { type CompactionSettings, maybeCompact } from "./compaction";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { processStream } from "./stream-processor";
