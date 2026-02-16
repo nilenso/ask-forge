@@ -338,8 +338,42 @@ just sandbox-all-tests  # Run all sandbox tests
 
 ### Evaluation
 
-The `scripts/eval/` folder contains an evaluation system for testing code analysis agents.
+The `scripts/eval/` folder contains an evaluation system that asks questions against repositories and uses an LLM judge to score the answers on relevance, evidence support, and evidence linking.
+
+#### Dataset
+
+The eval dataset is hosted on HuggingFace: [nilenso/ask-forge-eval-dataset](https://huggingface.co/datasets/nilenso/ask-forge-eval-dataset)
+
+Download and convert it to CSV using the HuggingFace CLI:
 
 ```bash
-bun run scripts/eval/run-eval.ts <path-to-dataset.csv>
+# Install the HuggingFace CLI (if not already installed)
+pip install huggingface-hub[cli]
+
+# Download the dataset
+huggingface-cli download nilenso/ask-forge-eval-dataset --repo-type dataset --local-dir ./eval-data
+
+# Convert the parquet file to CSV
+pip install pandas pyarrow
+python3 -c "import pandas as pd; pd.read_parquet('./eval-data/data/train-00000-of-00001.parquet').to_csv('./eval-dataset.csv', index=False)"
 ```
+
+The CSV must have these columns:
+- `repository` — Git URL of the repository
+- `commit_id` — Commit SHA to checkout
+- `question` — Question to ask
+- `id` or `session_id` — Row identifier
+
+#### Running the eval
+
+```bash
+bun run scripts/eval/run-eval.ts ./eval-dataset.csv
+```
+
+Results are written to `scripts/eval/reports/` as both CSV (with per-row verdicts) and an HTML report. The judge evaluates each answer on three criteria:
+
+| Criterion | Description |
+|-----------|-------------|
+| `is_answer_relevant` | Does the answer directly address the question? |
+| `is_evidence_supported` | Are repository-specific claims backed by evidence? |
+| `is_evidence_linked` | Are code references linked with valid GitHub/GitLab URLs with line anchors? |
