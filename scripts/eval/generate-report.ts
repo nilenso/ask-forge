@@ -9,7 +9,7 @@ interface ReportStats {
 	total: number;
 	relevant: number;
 	evidenced: number;
-	clear: number;
+	linked: number;
 }
 
 /**
@@ -36,8 +36,8 @@ export async function generateReport(csvContent: string, stats: ReportStats, tim
 		"{{RELEVANT_COUNT}}": String(stats.relevant),
 		"{{EVIDENCED_PCT}}": pct(stats.evidenced),
 		"{{EVIDENCED_COUNT}}": String(stats.evidenced),
-		"{{CLEAR_PCT}}": pct(stats.clear),
-		"{{CLEAR_COUNT}}": String(stats.clear),
+		"{{LINKED_PCT}}": pct(stats.linked),
+		"{{LINKED_COUNT}}": String(stats.linked),
 		"{{CSV_JSON}}": csvJson,
 	};
 
