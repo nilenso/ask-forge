@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../../src/config";
-import { AskForgeClient, nullLogger } from "../../src/index";
+// import { completeSimple, getModel } from "@mariozechner/pi-ai";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/config";
+import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -16,17 +16,23 @@ interface EvalRow {
 	question: string;
 	is_answer_relevant: string;
 	is_evidence_supported: string;
-	is_clear_and_readable: string;
+	is_evidence_linked: string;
 	misc_feedback: string;
 	answer: string;
+	tool_call_count: string;
+	inference_time_ms: string;
+	total_links: string;
+	broken_links: string;
 }
 
-interface JudgeResult {
-	is_answer_relevant: "yes" | "no";
-	is_evidence_supported: "yes" | "no";
-	is_clear_and_readable: "yes" | "no";
-	misc_feedback: string;
-}
+// type JudgeVerdict = "yes" | "no" | "error";
+
+// interface JudgeResult {
+// 	is_answer_relevant: JudgeVerdict;
+// 	is_evidence_supported: JudgeVerdict;
+// 	is_evidence_linked: JudgeVerdict;
+// 	misc_feedback: string;
+// }
 
 // =============================================================================
 // CSV Parsing / Writing
@@ -38,7 +44,7 @@ interface JudgeResult {
  * - Escaped quotes (doubled "")
  * - Commas inside quoted fields
  */
-const REQUIRED_COLUMNS = ["session_id", "repository", "commit_id", "question"] as const;
+const REQUIRED_COLUMNS = ["repository", "commit_id", "question"] as const;
 
 const OUTPUT_COLUMNS = [
 	"session_id",
@@ -47,9 +53,13 @@ const OUTPUT_COLUMNS = [
 	"question",
 	"is_answer_relevant",
 	"is_evidence_supported",
-	"is_clear_and_readable",
+	"is_evidence_linked",
 	"misc_feedback",
 	"answer",
+	"tool_call_count",
+	"inference_time_ms",
+	"total_links",
+	"broken_links",
 ] as const;
 
 type ParseResult = { ok: true; rows: EvalRow[] } | { ok: false; error: string };
@@ -63,10 +73,18 @@ function parseCsv(content: string): ParseResult {
 	// Validate header row
 	const header = records[0] as string[];
 	const missing = REQUIRED_COLUMNS.filter((col) => !header.includes(col));
+	const hasSessionId = header.includes("session_id");
+	const hasId = header.includes("id");
 	if (missing.length > 0) {
 		return {
 			ok: false,
 			error: `Missing required columns: ${missing.join(", ")}\n\nExpected CSV header (at minimum):\n  ${REQUIRED_COLUMNS.join(",")}`,
+		};
+	}
+	if (!hasSessionId && !hasId) {
+		return {
+			ok: false,
+			error: 'Missing identifier column: expected either "session_id" or "id"',
 		};
 	}
 
@@ -81,15 +99,19 @@ function parseCsv(content: string): ParseResult {
 	for (let i = 1; i < records.length; i++) {
 		const fields = records[i] as string[];
 		rows.push({
-			session_id: fields[colIndex.session_id as number] ?? "",
-			repository: fields[colIndex.repository as number] ?? "",
-			commit_id: fields[colIndex.commit_id as number] ?? "",
-			question: fields[colIndex.question as number] ?? "",
+			session_id: hasSessionId ? (fields[colIndex["session_id"]!] ?? "") : (fields[colIndex["id"]!] ?? ""),
+			repository: fields[colIndex["repository"]!] ?? "",
+			commit_id: fields[colIndex["commit_id"]!] ?? "",
+			question: fields[colIndex["question"]!] ?? "",
 			answer: "",
 			is_answer_relevant: "",
 			is_evidence_supported: "",
-			is_clear_and_readable: "",
+			is_evidence_linked: "",
 			misc_feedback: "",
+			tool_call_count: "",
+			inference_time_ms: "",
+			total_links: "",
+			broken_links: "",
 		});
 	}
 	return { ok: true, rows };
@@ -160,67 +182,119 @@ function rowToCsv(row: EvalRow): string {
 
 function writeCsvString(rows: EvalRow[]): string {
 	const header = OUTPUT_COLUMNS.join(",");
-	return `${[header, ...rows.map(rowToCsv)].join("\n")}\n`;
+	return [header, ...rows.map(rowToCsv)].join("\n") + "\n";
 }
 
 // =============================================================================
-// LLM Judge
+// LLM Judge (commented out — currently using link validation instead)
 // =============================================================================
 
-const JUDGE_MODEL_PROVIDER = "anthropic";
-const JUDGE_MODEL_NAME = "claude-sonnet-4-5";
+// const JUDGE_MODEL_PROVIDER = "anthropic";
+// const JUDGE_MODEL_NAME = "claude-sonnet-4-5";
+//
+// const JUDGE_SYSTEM_PROMPT = `You are a strict evaluator of repository Q&A answers.
+//
+// You will receive:
+// 1) A question
+// 2) An answer
+//
+// Important constraints:
+// - Evaluate ONLY from the answer text itself.
+// - Do NOT use outside knowledge or assumptions.
+// - If evidence is missing in the answer, treat it as missing.
+//
+// Return ONLY valid JSON with exactly these keys:
+// {
+//   "is_answer_relevant": "yes" | "no",
+//   "is_evidence_supported": "yes" | "no",
+//   "is_evidence_linked": "yes" | "no",
+//   "misc_feedback": "string"
+// }
+//
+// Rubric:
+// - is_answer_relevant = "yes" only if the answer directly addresses the question and has no major contradiction.
+// - is_evidence_supported = "yes" only if all repository-specific claims are explicitly supported by evidence in the answer. If any material claim lacks support, return "no".
+// - is_evidence_linked = "yes" only if EVERY code reference in the answer is linked with a valid GitHub/GitLab URL pointing to a specific file and line in the repository under evaluation.
+//   Code references include files, functions, classes, methods, variables/constants, types, modules, and snippets.
+//   Accepted examples:
+//   - https://github.com/<org>/<repo>/blob/<commit_or_branch>/path/to/file.ts#L42
+//   - https://gitlab.com/<group>/<repo>/-/blob/<commit_or_branch>/path/to/file.ts#L42
+//   - ranges like #L42-L55
+//   Not acceptable:
+//   - plain text paths like src/a.ts:42
+//   - relative links
+//   - links without line anchors
+//   - links to other repositories
+//   If the answer contains zero code references, return "yes".`;
+//
+// type JudgeVerdict = "yes" | "no" | "error";
+//
+// interface JudgeResult {
+// 	is_answer_relevant: JudgeVerdict;
+// 	is_evidence_supported: JudgeVerdict;
+// 	is_evidence_linked: JudgeVerdict;
+// 	misc_feedback: string;
+// }
+//
+// async function judge(question: string, answer: string): Promise<JudgeResult> {
+// 	const model = getModel(JUDGE_MODEL_PROVIDER, JUDGE_MODEL_NAME);
+//
+// 	const userMessage = `## Question
+// ${question}
+//
+// ## Answer
+// ${answer}`;
+//
+// 	const response = await completeSimple(model, {
+// 		systemPrompt: JUDGE_SYSTEM_PROMPT,
+// 		messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
+// 	});
+//
+// 	const text = response.content
+// 		.filter((b) => b.type === "text")
+// 		.map((b) => (b as { type: "text"; text: string }).text)
+// 		.join("");
+//
+// 	// Strip markdown code fences if present
+// 	const cleaned = text
+// 		.replace(/^```(?:json)?\s*\n?/m, "")
+// 		.replace(/\n?```\s*$/m, "")
+// 		.trim();
+//
+// 	const parsed = JSON.parse(cleaned) as JudgeResult;
+//
+// 	// Normalize yes/no values
+// 	const normalize = (field: string, v: string | undefined): JudgeVerdict => {
+// 		if (v == null) {
+// 			console.error(`Judge error: field "${field}" is missing from response`);
+// 			return "error";
+// 		}
+// 		const lower = v.toLowerCase();
+// 		if (lower.startsWith("yes")) return "yes";
+// 		if (lower.startsWith("no")) return "no";
+// 		console.error(`Judge error: field "${field}" has unrecognized value: "${v}"`);
+// 		return "error";
+// 	};
+//
+// 	return {
+// 		is_answer_relevant: normalize("is_answer_relevant", parsed.is_answer_relevant),
+// 		is_evidence_supported: normalize("is_evidence_supported", parsed.is_evidence_supported),
+// 		is_evidence_linked: normalize("is_evidence_linked", parsed.is_evidence_linked),
+// 		misc_feedback: typeof parsed.misc_feedback === "string" ? parsed.misc_feedback : "",
+// 	};
+// }
 
-const JUDGE_SYSTEM_PROMPT = `You are an expert evaluator of AI-generated answers about code repositories.
+// =============================================================================
+// Dataset Loading
+// =============================================================================
 
-You will be given:
-1. A question that was asked about a code repository
-2. The AI-generated answer to that question
-
-Evaluate the answer on three criteria and respond ONLY with valid JSON (no markdown fences, no extra text):
-
-{
-  "is_answer_relevant": "yes" or "no" — Is the answer correct and relevant to the question?
-  "is_evidence_supported": "yes" or "no" — Are the claims in the answer supported by evidence? Evidence would ideally be present in the codebase (file paths, function names, code snippets). If the question is generic and not specific to the codebase, evidence from the codebase is not required.
-  "is_clear_and_readable": "yes" or "no" — Is the answer clear, readable, and does it present a coherent narrative that is easy to follow?
-  "misc_feedback": Very concise bullet points (one per line, starting with "- ") covering your reasoning for each judgment and any other observations. Keep it skimmable — no full sentences, no fluff.
-}`;
-
-async function judge(question: string, answer: string): Promise<JudgeResult> {
-	const model = getModel(JUDGE_MODEL_PROVIDER, JUDGE_MODEL_NAME);
-
-	const userMessage = `## Question
-${question}
-
-## Answer
-${answer}`;
-
-	const response = await completeSimple(model, {
-		systemPrompt: JUDGE_SYSTEM_PROMPT,
-		messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
-	});
-
-	const text = response.content
-		.filter((b) => b.type === "text")
-		.map((b) => (b as { type: "text"; text: string }).text)
-		.join("");
-
-	// Strip markdown code fences if present
-	const cleaned = text
-		.replace(/^```(?:json)?\s*\n?/m, "")
-		.replace(/\n?```\s*$/m, "")
-		.trim();
-
-	const parsed = JSON.parse(cleaned) as JudgeResult;
-
-	// Normalize yes/no values
-	const normalize = (v: string): "yes" | "no" => (v.toLowerCase().startsWith("yes") ? "yes" : "no");
-
-	return {
-		is_answer_relevant: normalize(parsed.is_answer_relevant),
-		is_evidence_supported: normalize(parsed.is_evidence_supported),
-		is_clear_and_readable: normalize(parsed.is_clear_and_readable),
-		misc_feedback: parsed.misc_feedback,
-	};
+async function loadRowsFromCsv(path: string): Promise<EvalRow[]> {
+	const csvContent = await readFile(path, "utf-8");
+	const parsed = parseCsv(csvContent);
+	if (!parsed.ok) {
+		throw new Error(parsed.error);
+	}
+	return parsed.rows;
 }
 
 // =============================================================================
@@ -233,16 +307,15 @@ async function runEval(inputPath: string): Promise<void> {
 	await mkdir(reportsDir, { recursive: true });
 	const outputPath = `${reportsDir}eval_${timestamp}.csv`;
 
-	console.log(`Reading dataset from: ${inputPath}`);
-	const csvContent = await readFile(inputPath, "utf-8");
-	const parsed = parseCsv(csvContent);
-
-	if (!parsed.ok) {
-		console.error(`Error: ${parsed.error}`);
+	let rows: EvalRow[];
+	try {
+		rows = await loadRowsFromCsv(inputPath);
+	} catch (error) {
+		console.error(`Error loading dataset: ${error instanceof Error ? error.message : String(error)}`);
 		process.exit(1);
 	}
 
-	const rows = parsed.rows;
+	console.log(`Reading dataset from: ${inputPath}`);
 	console.log(`Found ${rows.length} rows to evaluate\n`);
 
 	// Deduplicate: group rows by (repository, commit_id, question) so we call ask() once per unique combo
@@ -258,7 +331,11 @@ async function runEval(inputPath: string): Promise<void> {
 		const repoKey = makeRepoKey(row);
 		let group = questionsByRepo.get(repoKey);
 		if (!group) {
-			group = { repository: row.repository, commit_id: row.commit_id, questions: new Map() };
+			group = {
+				repository: row.repository,
+				commit_id: row.commit_id,
+				questions: new Map(),
+			};
 			questionsByRepo.set(repoKey, group);
 		}
 		const rowKey = makeKey(row);
@@ -269,14 +346,15 @@ async function runEval(inputPath: string): Promise<void> {
 
 	const totalQuestions = [...questionsByRepo.values()].reduce((sum, g) => sum + g.questions.size, 0);
 
-	// Run ask() + judge for each unique question, reusing sessions per repo+commit
-	const results = new Map<RowKey, { answer: string; judge: JudgeResult | null }>();
+	const results = new Map<
+		RowKey,
+		{ answer: string; toolCallCount: number; inferenceTimeMs: number; totalLinks: number; brokenLinks: number }
+	>();
 
 	const client = new AskForgeClient(
 		{
 			provider: MODEL_PROVIDER,
 			model: MODEL_NAME,
-			systemPrompt: SYSTEM_PROMPT,
 			maxIterations: MAX_TOOL_ITERATIONS,
 		},
 		nullLogger,
@@ -293,7 +371,7 @@ async function runEval(inputPath: string): Promise<void> {
 				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			for (const [rowKey] of questions) {
-				results.set(rowKey, { answer: "", judge: null });
+				results.set(rowKey, { answer: "", toolCallCount: 0, inferenceTimeMs: 0, totalLinks: 0, brokenLinks: 0 });
 			}
 			continue;
 		}
@@ -305,32 +383,24 @@ async function runEval(inputPath: string): Promise<void> {
 			);
 			console.log(`  Repo: ${repository} @ ${commit_id.slice(0, 12)}`);
 
-			// Ask
-			let answer = "";
 			try {
 				session.replaceMessages([]);
 				const askResult = await session.ask(question);
-				answer = askResult.response;
 				const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
-				console.log(`  ✓ Got response (${answer.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s)`);
+				console.log(
+					`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
+				);
+				results.set(rowKey, {
+					answer: askResult.response,
+					toolCallCount: askResult.toolCalls.length,
+					inferenceTimeMs: askResult.inferenceTimeMs,
+					totalLinks: askResult.totalLinks,
+					brokenLinks: askResult.invalidLinks.length,
+				});
 			} catch (error) {
 				console.error(`  ✗ Ask error: ${error instanceof Error ? error.message : String(error)}`);
-				results.set(rowKey, { answer: "", judge: null });
-				continue;
+				results.set(rowKey, { answer: "", toolCallCount: 0, inferenceTimeMs: 0, totalLinks: 0, brokenLinks: 0 });
 			}
-
-			// Judge
-			let judgeResult: JudgeResult | null = null;
-			try {
-				judgeResult = await judge(question, answer);
-				console.log(
-					`  ✓ Judge: relevant=${judgeResult.is_answer_relevant} evidence=${judgeResult.is_evidence_supported} clear=${judgeResult.is_clear_and_readable}`,
-				);
-			} catch (error) {
-				console.error(`  ✗ Judge error: ${error instanceof Error ? error.message : String(error)}`);
-			}
-
-			results.set(rowKey, { answer, judge: judgeResult });
 		}
 
 		session.close();
@@ -344,10 +414,14 @@ async function runEval(inputPath: string): Promise<void> {
 		return {
 			...row,
 			answer: result?.answer ?? "",
-			is_answer_relevant: result?.judge?.is_answer_relevant ?? "",
-			is_evidence_supported: result?.judge?.is_evidence_supported ?? "",
-			is_clear_and_readable: result?.judge?.is_clear_and_readable ?? "",
-			misc_feedback: result?.judge?.misc_feedback ?? "",
+			is_answer_relevant: "",
+			is_evidence_supported: "",
+			is_evidence_linked: "",
+			misc_feedback: "",
+			tool_call_count: String(result?.toolCallCount ?? 0),
+			inference_time_ms: String(result?.inferenceTimeMs ?? 0),
+			total_links: String(result?.totalLinks ?? 0),
+			broken_links: String(result?.brokenLinks ?? 0),
 		};
 	});
 
@@ -359,17 +433,27 @@ async function runEval(inputPath: string): Promise<void> {
 	const total = resultRows.length;
 	const relevant = resultRows.filter((r) => r.is_answer_relevant === "yes").length;
 	const evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
-	const clear = resultRows.filter((r) => r.is_clear_and_readable === "yes").length;
+	const linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
+	const sumTotalLinks = resultRows.reduce((s, r) => s + Number(r.total_links), 0);
+	const sumBrokenLinks = resultRows.reduce((s, r) => s + Number(r.broken_links), 0);
 
 	console.log("\n--- Summary ---");
 	console.log(`Total rows:          ${total}`);
-	console.log(`Answer relevant:     ${relevant}/${total} (${((relevant / total) * 100).toFixed(1)}%)`);
-	console.log(`Evidence supported:  ${evidenced}/${total} (${((evidenced / total) * 100).toFixed(1)}%)`);
-	console.log(`Clear & readable:    ${clear}/${total} (${((clear / total) * 100).toFixed(1)}%)`);
+	console.log(`Total links:         ${sumTotalLinks}`);
+	console.log(`Broken links:        ${sumBrokenLinks}`);
 
 	// Generate HTML report with same timestamp
+	// Use first row's repo to build a representative system prompt for the report
+	const sampleRow = rows[0];
+	const systemPrompt = sampleRow ? buildDefaultSystemPrompt(sampleRow.repository, sampleRow.commit_id) : "(no rows)";
+
 	const reportPath = `${reportsDir}eval-${timestamp}-report.html`;
-	const reportHtml = await generateReport(output, { total, relevant, evidenced, clear }, timestamp);
+	const reportHtml = await generateReport(
+		output,
+		{ total, relevant, evidenced, linked, totalLinks: sumTotalLinks, brokenLinks: sumBrokenLinks },
+		timestamp,
+		systemPrompt,
+	);
 	await writeFile(reportPath, reportHtml, "utf-8");
 	console.log(`\n✓ Report written to: ${reportPath}`);
 }

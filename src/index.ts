@@ -2,10 +2,12 @@ import { getModel, type KnownProvider, type Message, stream } from "@mariozechne
 import type { CompactionSettings } from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
+import { buildDefaultSystemPrompt } from "./prompt";
 import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
 import {
 	type AskOptions,
 	type AskResult,
+	type InvalidLink,
 	type OnProgress,
 	type ProgressEvent,
 	Session,
@@ -21,6 +23,7 @@ export type {
 	ConnectOptions,
 	Forge,
 	ForgeName,
+	InvalidLink,
 	KnownProvider,
 	Logger,
 	Message,
@@ -31,23 +34,7 @@ export type {
 	Session,
 	ToolCallRecord,
 };
-export { consoleLogger, nullLogger };
-
-/** Default system prompt for code analysis */
-const DEFAULT_SYSTEM_PROMPT = `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
-Use the available tools to explore the codebase and answer the user's question.
-
-Tool usage guidelines:
-- IMPORTANT: When you need to make multiple tool calls, issue them ALL in a single response. Do NOT make one tool call at a time. For example, if you need to read 3 files, call read 3 times in one response rather than reading one file, waiting, then reading the next.
-- Similarly, if you need to search for multiple patterns or list multiple directories, batch all those calls together.
-- The 'read' tool returns up to 2000 lines by default. If you see "[X more lines...]" at the end, use the offset parameter to read additional sections if needed.
-- For large files, consider using 'rg' first to find relevant line numbers, then 'read' with offset/limit to get context around those lines.
-
-Response guidelines:
-- Be as concise as possible without sacrificing completeness.
-- Use structured format: headings, bullet points, or numbered lists.
-- Any claims should be grounded in the codebase and must contain evidence to support them (e.g., file paths, functions, or line ranges)
-- Call out when you don't know the answer. Don't speculate.`;
+export { buildDefaultSystemPrompt, consoleLogger, nullLogger };
 
 /** Base configuration fields */
 interface ForgeConfigBase {
@@ -113,7 +100,8 @@ export type ForgeConfig = ForgeConfigBase &
 interface ResolvedConfig {
 	provider: KnownProvider;
 	model: string;
-	systemPrompt: string;
+	/** Custom system prompt override. When undefined, a default prompt with repo links is built at connect() time. */
+	systemPrompt: string | undefined;
 	maxIterations: number;
 	sandbox?: SandboxClientConfig;
 	compaction?: Partial<CompactionSettings>;
@@ -136,7 +124,7 @@ export class AskForgeClient {
 		this.config = {
 			provider: config.provider ?? "openrouter",
 			model: config.model ?? "anthropic/claude-sonnet-4.5",
-			systemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+			systemPrompt: config.systemPrompt,
 			maxIterations: config.maxIterations ?? 20,
 			sandbox: config.sandbox,
 			compaction: config.compaction,
@@ -182,9 +170,11 @@ export class AskForgeClient {
 				return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
 			};
 
+			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+
 			return new Session(repo, {
 				model,
-				systemPrompt: config.systemPrompt,
+				systemPrompt,
 				tools,
 				maxIterations: config.maxIterations,
 				executeTool: sandboxExecuteTool,
@@ -197,9 +187,11 @@ export class AskForgeClient {
 		// Local mode: clone and execute tools on local filesystem
 		const repo = await connectRepo(repoUrl, options);
 
+		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+
 		return new Session(repo, {
 			model,
-			systemPrompt: config.systemPrompt,
+			systemPrompt,
 			tools,
 			maxIterations: config.maxIterations,
 			executeTool,
