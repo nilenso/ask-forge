@@ -33,8 +33,19 @@ export type {
 };
 export { consoleLogger, nullLogger };
 
-/** Default system prompt for code analysis */
-const DEFAULT_SYSTEM_PROMPT = `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
+/**
+ * Build the default system prompt, interpolating the repository's browse URL
+ * so the model can emit clickable source links.
+ *
+ * @param repoUrl - e.g. "https://github.com/owner/repo"
+ * @param commitSha - full or short SHA for a permalink-stable blob base
+ */
+function buildDefaultSystemPrompt(repoUrl: string, commitSha: string): string {
+	// Normalise: strip trailing slash and .git suffix
+	const base = repoUrl.replace(/\/+$/, "").replace(/\.git$/, "");
+	const blobBase = `${base}/blob/${commitSha}`;
+
+	return `You are a code analysis assistant. You have access to a repository cloned at the current working directory.
 Use the available tools to explore the codebase and answer the user's question.
 
 Tool usage guidelines:
@@ -46,8 +57,17 @@ Tool usage guidelines:
 Response guidelines:
 - Be as concise as possible without sacrificing completeness.
 - Use structured format: headings, bullet points, or numbered lists.
-- Any claims should be grounded in the codebase and must contain evidence to support them (e.g., file paths, functions, or line ranges)
-- Call out when you don't know the answer. Don't speculate.`;
+- CRITICAL: Every claim in your response MUST be grounded in evidence from the codebase. If you cannot point to a specific file, function, or line that supports a statement, do not make that statement. There should be zero unsupported claims.
+- Every piece of evidence MUST be a clickable markdown link into the repository. Never mention a file path, function, or line number as plain text — always link it.
+- Link specificity must match the claim:
+  - Configuration value or constant → exact line: [\`SOME_CONST\`](${blobBase}/path/to/file.ts#L42)
+  - Function / class behaviour → name anchor with line range: [\`functionName\`](${blobBase}/path/to/file.ts#L10-L35)
+  - Architectural / structural claims → file link: [\`path/to/file.ts\`](${blobBase}/path/to/file.ts)
+  - Directory-level claims → tree link: [\`src/utils/\`](${base}/tree/${commitSha}/src/utils)
+- The blob base URL for this repository is: ${blobBase}
+- CRITICAL: Use ONLY exact file paths as returned by tool results (rg, fd, ls, read). Never reconstruct, abbreviate, or guess a file path. Copy-paste the path directly from tool output.
+- If you don't know the answer or cannot find supporting evidence in the codebase, say so explicitly. Never speculate or fabricate claims.`;
+}
 
 /** Base configuration fields */
 interface ForgeConfigBase {
@@ -113,7 +133,8 @@ export type ForgeConfig = ForgeConfigBase &
 interface ResolvedConfig {
 	provider: KnownProvider;
 	model: string;
-	systemPrompt: string;
+	/** Custom system prompt override. When undefined, a default prompt with repo links is built at connect() time. */
+	systemPrompt: string | undefined;
 	maxIterations: number;
 	sandbox?: SandboxClientConfig;
 	compaction?: Partial<CompactionSettings>;
@@ -136,7 +157,7 @@ export class AskForgeClient {
 		this.config = {
 			provider: config.provider ?? "openrouter",
 			model: config.model ?? "anthropic/claude-sonnet-4.5",
-			systemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+			systemPrompt: config.systemPrompt,
 			maxIterations: config.maxIterations ?? 20,
 			sandbox: config.sandbox,
 			compaction: config.compaction,
@@ -182,9 +203,11 @@ export class AskForgeClient {
 				return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
 			};
 
+			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+
 			return new Session(repo, {
 				model,
-				systemPrompt: config.systemPrompt,
+				systemPrompt,
 				tools,
 				maxIterations: config.maxIterations,
 				executeTool: sandboxExecuteTool,
@@ -197,9 +220,11 @@ export class AskForgeClient {
 		// Local mode: clone and execute tools on local filesystem
 		const repo = await connectRepo(repoUrl, options);
 
+		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+
 		return new Session(repo, {
 			model,
-			systemPrompt: config.systemPrompt,
+			systemPrompt,
 			tools,
 			maxIterations: config.maxIterations,
 			executeTool,

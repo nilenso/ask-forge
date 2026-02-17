@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../src/config";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../src/config";
 import { AskForgeClient } from "../src/index";
 
 const repoUrl = process.argv[2];
@@ -29,7 +29,6 @@ function logError(stage: string, error: unknown) {
 const client = new AskForgeClient({
 	provider: MODEL_PROVIDER,
 	model: MODEL_NAME,
-	systemPrompt: SYSTEM_PROMPT,
 	maxIterations: MAX_TOOL_ITERATIONS,
 });
 
