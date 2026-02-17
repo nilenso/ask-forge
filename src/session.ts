@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { accessSync } from "node:fs";
+import { join } from "node:path";
 import {
 	type Api,
 	type AssistantMessage,
@@ -37,6 +39,18 @@ export interface AskResult {
 	usage: Usage;
 	/** Total time taken for inference in milliseconds */
 	inferenceTimeMs: number;
+	/** Total number of repo-pointing links found in the response */
+	totalLinks: number;
+	/** Links in the response whose repo-relative paths could not be found on disk */
+	invalidLinks: InvalidLink[];
+}
+
+/** A link in the response that points to a non-existent file path */
+export interface InvalidLink {
+	/** The URL from the markdown link */
+	url: string;
+	/** The repo-relative path extracted from the URL */
+	repoPath: string;
 }
 
 /** Token usage statistics for an ask operation */
@@ -119,6 +133,63 @@ function accumulateUsage(accumulated: Usage, response: AssistantMessage): void {
 	}
 }
 
+/** Parsed link from a markdown response */
+interface ParsedLink {
+	/** Full markdown link text e.g. [text](url) */
+	fullMatch: string;
+	/** The URL portion */
+	url: string;
+	/** Repo-relative file path extracted from the URL, or null if not a blob/tree link */
+	repoPath: string | null;
+}
+
+/**
+ * Extract repo-relative paths from markdown links that point into a blob/tree URL.
+ * Matches patterns like: /blob/{sha}/path/to/file.ts or /tree/{sha}/path/to/dir
+ */
+function parseMarkdownLinks(text: string): ParsedLink[] {
+	const linkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
+	const results: ParsedLink[] = [];
+	for (const match of text.matchAll(linkRegex)) {
+		const url = match[2];
+		if (!url) continue;
+		// Match /blob/<sha>/path or /tree/<sha>/path, strip optional #fragment
+		const blobMatch = url.match(/\/(?:blob|tree)\/[a-f0-9]+\/(.+?)(?:#.*)?$/);
+		results.push({
+			fullMatch: match[0],
+			url,
+			repoPath: blobMatch?.[1] ?? null,
+		});
+	}
+	return results;
+}
+
+/** Result of validating links in a response */
+interface LinkValidationResult {
+	/** Total number of links pointing into the repo (blob/tree URLs) */
+	totalRepoLinks: number;
+	/** Links whose repo-relative paths do not exist on disk */
+	broken: ParsedLink[];
+}
+
+/**
+ * Validate that all repo-relative paths in markdown links exist on disk.
+ * Returns total repo link count and the list of broken links.
+ */
+function validateLinks(responseText: string, repoLocalPath: string): LinkValidationResult {
+	const links = parseMarkdownLinks(responseText);
+	const repoLinks = links.filter((l): l is ParsedLink & { repoPath: string } => l.repoPath !== null);
+	const broken: ParsedLink[] = [];
+	for (const link of repoLinks) {
+		try {
+			accessSync(join(repoLocalPath, link.repoPath));
+		} catch {
+			broken.push(link);
+		}
+	}
+	return { totalRepoLinks: repoLinks.length, broken };
+}
+
 /** Context for building results throughout an ask operation */
 interface AskContext {
 	question: string;
@@ -127,13 +198,19 @@ interface AskContext {
 	startTime: number;
 }
 
-function buildResult(ctx: AskContext, response: string): AskResult {
+function buildResult(
+	ctx: AskContext,
+	response: string,
+	linkStats: { totalLinks: number; invalidLinks: InvalidLink[] } = { totalLinks: 0, invalidLinks: [] },
+): AskResult {
 	return {
 		prompt: ctx.question,
 		toolCalls: ctx.toolCalls,
 		response,
 		usage: ctx.usage,
 		inferenceTimeMs: Date.now() - ctx.startTime,
+		totalLinks: linkStats.totalLinks,
+		invalidLinks: linkStats.invalidLinks,
 	};
 }
 
@@ -397,8 +474,17 @@ export class Session {
 			return buildResult(ctx, "[ERROR: Empty response from API - check API key and credits]");
 		}
 
+		// Validate links in the response
+		const { totalRepoLinks, broken } = validateLinks(responseText, this.repo.localPath);
+		const invalidLinks: InvalidLink[] = broken
+			.filter((l): l is ParsedLink & { repoPath: string } => l.repoPath !== null)
+			.map((l) => ({ url: l.url, repoPath: l.repoPath }));
+		if (invalidLinks.length > 0) {
+			this.#logger.error(`Found ${invalidLinks.length} invalid link(s) in response:`, invalidLinks);
+		}
+
 		this.#logger.log("RESPONSE", "");
-		return buildResult(ctx, responseText);
+		return buildResult(ctx, responseText, { totalLinks: totalRepoLinks, invalidLinks });
 	}
 
 	async #executeToolCalls(

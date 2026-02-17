@@ -212,6 +212,9 @@ async function executeRead(args: Record<string, unknown>, repoPath: string): Pro
 		const selectedLines = lines.slice(0, DEFAULT_READ_LINE_LIMIT);
 		let result = selectedLines.join("\n");
 
+		// Echo the resolved relative path so the model can copy it for links
+		result = `[File: ${filePath}]\n\n${result}`;
+
 		// Add metadata if file is truncated
 		if (totalLines > DEFAULT_READ_LINE_LIMIT) {
 			result = `[Lines 1-${DEFAULT_READ_LINE_LIMIT} of ${totalLines} total]\n\n${result}`;
