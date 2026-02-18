@@ -40,7 +40,7 @@ And create `.npmrc`:
 ```typescript
 import { AskForgeClient } from "@nilenso/ask-forge";
 
-// Create a client (defaults to openrouter with claude-sonnet-4.5)
+// Create a client (defaults to openrouter with claude-sonnet-4.6)
 const client = new AskForgeClient();
 
 // Connect to a repository
@@ -78,19 +78,19 @@ The `ForgeConfig` object controls the AI model and behavior:
 ```typescript
 import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
 
-// Use defaults (openrouter + claude-sonnet-4.5)
+// Use defaults (openrouter + claude-sonnet-4.6)
 const client = new AskForgeClient();
 
 // Or specify a different model (provider and model must both be specified)
 const client = new AskForgeClient({
   provider: "anthropic",
-  model: "claude-sonnet-4.5",
+  model: "claude-sonnet-4.6",
 });
 
 // Full configuration
 const client = new AskForgeClient({
   provider: "openrouter",
-  model: "anthropic/claude-sonnet-4.5",
+  model: "anthropic/claude-sonnet-4.6",
   systemPrompt: "Custom prompt...",    // Optional: has a built-in default
   maxIterations: 10,                   // Optional: default is 20
   sandbox: {                           // Optional: enable sandboxed execution
@@ -240,7 +240,7 @@ import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
 
 const client = new AskForgeClient({
   provider: "openrouter",
-  model: "anthropic/claude-sonnet-4.5",
+  model: "anthropic/claude-sonnet-4.6",
   systemPrompt: "You are a code analysis assistant.",
   maxIterations: 20,
   
