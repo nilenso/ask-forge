@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -170,6 +172,15 @@ function escapeCsvField(value: string): string {
 
 function rowToCsv(row: EvalRow): string {
 	return OUTPUT_COLUMNS.map((col) => escapeCsvField(row[col])).join(",");
+}
+
+export async function loadRowsFromCsv(path: string): Promise<EvalRow[]> {
+	const csvContent = await readFile(path, "utf-8");
+	const parsed = parseCsv(csvContent);
+	if (!parsed.ok) {
+		throw new Error(parsed.error);
+	}
+	return parsed.rows;
 }
 
 export function writeCsvString(rows: EvalRow[]): string {

@@ -1,10 +1,10 @@
 import "dotenv/config";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
 import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/config";
 import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
-import { type EvalRow, parseCsv, writeCsvString } from "./csv";
+import { type EvalRow, loadRowsFromCsv, writeCsvString } from "./csv";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -70,19 +70,6 @@ ${answer}`;
 		is_evidence_linked: normalize("is_evidence_linked", parsed.is_evidence_linked),
 		misc_feedback: typeof parsed.misc_feedback === "string" ? parsed.misc_feedback : "",
 	};
-}
-
-// =============================================================================
-// Dataset Loading
-// =============================================================================
-
-async function loadRowsFromCsv(path: string): Promise<EvalRow[]> {
-	const csvContent = await readFile(path, "utf-8");
-	const parsed = parseCsv(csvContent);
-	if (!parsed.ok) {
-		throw new Error(parsed.error);
-	}
-	return parsed.rows;
 }
 
 // =============================================================================
