@@ -10,8 +10,7 @@ interface ReportStats {
 	relevant: number;
 	evidenced: number;
 	linked: number;
-	totalLinks: number;
-	brokenLinks: number;
+	brokenLinkRatio: string;
 }
 
 /**
@@ -48,8 +47,7 @@ export async function generateReport(
 		"{{EVIDENCED_COUNT}}": String(stats.evidenced),
 		"{{LINKED_PCT}}": pct(stats.linked, stats.total),
 		"{{LINKED_COUNT}}": String(stats.linked),
-		"{{TOTAL_LINKS}}": String(stats.totalLinks),
-		"{{BROKEN_LINKS}}": String(stats.brokenLinks),
+		"{{BROKEN_LINK_RATIO}}": stats.brokenLinkRatio,
 		"{{CSV_JSON}}": csvJson,
 		"{{SYSTEM_PROMPT_JSON}}": systemPromptJson,
 	};

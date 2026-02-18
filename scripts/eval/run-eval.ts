@@ -20,10 +20,10 @@ interface EvalRow {
 	is_evidence_linked: string;
 	misc_feedback: string;
 	answer: string;
-	tool_call_count: string;
+	broken_link_ratio: string;
+	tool_calls: string;
+	files_read: string;
 	inference_time_ms: string;
-	total_links: string;
-	broken_links: string;
 }
 
 // =============================================================================
@@ -48,10 +48,10 @@ const OUTPUT_COLUMNS = [
 	"is_evidence_linked",
 	"misc_feedback",
 	"answer",
-	"tool_call_count",
+	"broken_link_ratio",
+	"tool_calls",
+	"files_read",
 	"inference_time_ms",
-	"total_links",
-	"broken_links",
 ] as const;
 
 type ParseResult = { ok: true; rows: EvalRow[] } | { ok: false; error: string };
@@ -100,10 +100,10 @@ function parseCsv(content: string): ParseResult {
 			is_evidence_supported: "",
 			is_evidence_linked: "",
 			misc_feedback: "",
-			tool_call_count: "",
+			broken_link_ratio: "",
+			tool_calls: "",
+			files_read: "",
 			inference_time_ms: "",
-			total_links: "",
-			broken_links: "",
 		});
 	}
 	return { ok: true, rows };
@@ -306,7 +306,13 @@ async function runEval(inputPath: string): Promise<void> {
 
 	const results = new Map<
 		RowKey,
-		{ answer: string; toolCallCount: number; inferenceTimeMs: number; totalLinks: number; brokenLinks: number }
+		{
+			answer: string;
+			toolCalls: string;
+			filesRead: string;
+			inferenceTimeMs: number;
+			brokenLinkRatio: string;
+		}
 	>();
 
 	const client = new AskForgeClient(
@@ -329,7 +335,7 @@ async function runEval(inputPath: string): Promise<void> {
 				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			for (const [rowKey] of questions) {
-				results.set(rowKey, { answer: "", toolCallCount: 0, inferenceTimeMs: 0, totalLinks: 0, brokenLinks: 0 });
+				results.set(rowKey, { answer: "", toolCalls: "", filesRead: "", inferenceTimeMs: 0, brokenLinkRatio: "" });
 			}
 			continue;
 		}
@@ -348,16 +354,37 @@ async function runEval(inputPath: string): Promise<void> {
 				console.log(
 					`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
 				);
+
+				// Format tool calls as a bulleted markdown list
+				const toolCallsStr = askResult.toolCalls
+					.map((tc) => `- **${tc.name}**(${JSON.stringify(tc.arguments)})`)
+					.join("\n");
+
+				// Extract file names from read tool calls
+				const filesReadStr = askResult.toolCalls
+					.filter((tc) => tc.name === "read")
+					.map((tc) => {
+						const filePath = String(tc.arguments.path ?? tc.arguments.file ?? "");
+						const fileName = filePath.split("/").pop() || filePath;
+						return `- ${fileName}`;
+					})
+					.join("\n");
+
+				// Broken links as ratio string
+				const total = askResult.totalLinks;
+				const broken = askResult.invalidLinks.length;
+				const brokenLinkRatio = total > 0 ? `${broken}/${total}` : "0/0";
+
 				results.set(rowKey, {
 					answer: askResult.response,
-					toolCallCount: askResult.toolCalls.length,
+					toolCalls: toolCallsStr,
+					filesRead: filesReadStr,
 					inferenceTimeMs: askResult.inferenceTimeMs,
-					totalLinks: askResult.totalLinks,
-					brokenLinks: askResult.invalidLinks.length,
+					brokenLinkRatio,
 				});
 			} catch (error) {
 				console.error(`  ✗ Ask error: ${error instanceof Error ? error.message : String(error)}`);
-				results.set(rowKey, { answer: "", toolCallCount: 0, inferenceTimeMs: 0, totalLinks: 0, brokenLinks: 0 });
+				results.set(rowKey, { answer: "", toolCalls: "", filesRead: "", inferenceTimeMs: 0, brokenLinkRatio: "" });
 			}
 		}
 
@@ -376,10 +403,10 @@ async function runEval(inputPath: string): Promise<void> {
 			is_evidence_supported: "",
 			is_evidence_linked: "",
 			misc_feedback: "",
-			tool_call_count: String(result?.toolCallCount ?? 0),
+			broken_link_ratio: result?.brokenLinkRatio ?? "",
+			tool_calls: result?.toolCalls ?? "",
+			files_read: result?.filesRead ?? "",
 			inference_time_ms: String(result?.inferenceTimeMs ?? 0),
-			total_links: String(result?.totalLinks ?? 0),
-			broken_links: String(result?.brokenLinks ?? 0),
 		};
 	});
 
@@ -392,13 +419,21 @@ async function runEval(inputPath: string): Promise<void> {
 	const relevant = resultRows.filter((r) => r.is_answer_relevant === "yes").length;
 	const evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
 	const linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
-	const sumTotalLinks = resultRows.reduce((s, r) => s + Number(r.total_links), 0);
-	const sumBrokenLinks = resultRows.reduce((s, r) => s + Number(r.broken_links), 0);
+
+	// Aggregate broken link ratios
+	let sumTotalLinks = 0;
+	let sumBrokenLinks = 0;
+	for (const r of resultRows) {
+		const parts = r.broken_link_ratio.split("/");
+		if (parts.length === 2) {
+			sumBrokenLinks += Number(parts[0]);
+			sumTotalLinks += Number(parts[1]);
+		}
+	}
 
 	console.log("\n--- Summary ---");
 	console.log(`Total rows:          ${total}`);
-	console.log(`Total links:         ${sumTotalLinks}`);
-	console.log(`Broken links:        ${sumBrokenLinks}`);
+	console.log(`Broken links:        ${sumBrokenLinks}/${sumTotalLinks}`);
 
 	// Generate HTML report with same timestamp
 	// Use first row's repo to build a representative system prompt for the report
@@ -408,7 +443,13 @@ async function runEval(inputPath: string): Promise<void> {
 	const reportPath = `${reportsDir}eval-${timestamp}-report.html`;
 	const reportHtml = await generateReport(
 		output,
-		{ total, relevant, evidenced, linked, totalLinks: sumTotalLinks, brokenLinks: sumBrokenLinks },
+		{
+			total,
+			relevant,
+			evidenced,
+			linked,
+			brokenLinkRatio: sumTotalLinks > 0 ? `${sumBrokenLinks}/${sumTotalLinks}` : "0/0",
+		},
 		timestamp,
 		systemPrompt,
 	);

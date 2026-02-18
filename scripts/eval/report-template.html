@@ -459,15 +459,9 @@
       <div class="stat-bar"><div class="stat-bar-fill" style="width: {{LINKED_PCT}}%"></div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Total Links</div>
-      <div class="stat-value-row">
-        <span class="stat-pct">{{TOTAL_LINKS}}</span>
-      </div>
-    </div>
-    <div class="stat-card">
       <div class="stat-label">Broken Links</div>
       <div class="stat-value-row">
-        <span class="stat-pct">{{BROKEN_LINKS}}</span>
+        <span class="stat-pct">{{BROKEN_LINK_RATIO}}</span>
       </div>
     </div>
   </div>
@@ -508,7 +502,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const EXPAND_SVG = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6m0 0v6m0-6L13 11M9 21H3m0 0v-6m0 6l8-8"/></svg>';
-const MARKDOWN_COLUMNS = new Set(['answer', 'question', 'misc_feedback']);
+const MARKDOWN_COLUMNS = new Set(['answer', 'question', 'misc_feedback', 'tool_calls', 'files_read']);
 let currentPopupRawText = '';
 
 const CSV_DATA = JSON.parse(document.getElementById('csv-data').textContent);
