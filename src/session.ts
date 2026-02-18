@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { accessSync } from "node:fs";
-import { join } from "node:path";
 import {
 	type Api,
 	type AssistantMessage,
@@ -13,6 +11,7 @@ import {
 import { type CompactionSettings, maybeCompact } from "./compaction";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
+import { type ParsedLink, validateLinks } from "./response-validation";
 import { processStream } from "./stream-processor";
 
 // =============================================================================
@@ -131,63 +130,6 @@ function accumulateUsage(accumulated: Usage, response: AssistantMessage): void {
 		accumulated.cacheReadTokens += response.usage.cacheRead ?? 0;
 		accumulated.cacheWriteTokens += response.usage.cacheWrite ?? 0;
 	}
-}
-
-/** Parsed link from a markdown response */
-interface ParsedLink {
-	/** Full markdown link text e.g. [text](url) */
-	fullMatch: string;
-	/** The URL portion */
-	url: string;
-	/** Repo-relative file path extracted from the URL, or null if not a blob/tree link */
-	repoPath: string | null;
-}
-
-/**
- * Extract repo-relative paths from markdown links that point into a blob/tree URL.
- * Matches patterns like: /blob/{sha}/path/to/file.ts or /tree/{sha}/path/to/dir
- */
-function parseMarkdownLinks(text: string): ParsedLink[] {
-	const linkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
-	const results: ParsedLink[] = [];
-	for (const match of text.matchAll(linkRegex)) {
-		const url = match[2];
-		if (!url) continue;
-		// Match /blob/<sha>/path or /tree/<sha>/path, strip optional #fragment
-		const blobMatch = url.match(/\/(?:blob|tree)\/[a-f0-9]+\/(.+?)(?:#.*)?$/);
-		results.push({
-			fullMatch: match[0],
-			url,
-			repoPath: blobMatch?.[1] ?? null,
-		});
-	}
-	return results;
-}
-
-/** Result of validating links in a response */
-interface LinkValidationResult {
-	/** Total number of links pointing into the repo (blob/tree URLs) */
-	totalRepoLinks: number;
-	/** Links whose repo-relative paths do not exist on disk */
-	broken: ParsedLink[];
-}
-
-/**
- * Validate that all repo-relative paths in markdown links exist on disk.
- * Returns total repo link count and the list of broken links.
- */
-function validateLinks(responseText: string, repoLocalPath: string): LinkValidationResult {
-	const links = parseMarkdownLinks(responseText);
-	const repoLinks = links.filter((l): l is ParsedLink & { repoPath: string } => l.repoPath !== null);
-	const broken: ParsedLink[] = [];
-	for (const link of repoLinks) {
-		try {
-			accessSync(join(repoLocalPath, link.repoPath));
-		} catch {
-			broken.push(link);
-		}
-	}
-	return { totalRepoLinks: repoLinks.length, broken };
 }
 
 /** Context for building results throughout an ask operation */
