@@ -1,5 +1,5 @@
 import { getModel, type KnownProvider, type Message, stream } from "@mariozechner/pi-ai";
-import type { CompactionSettings } from "./config";
+import { type CompactionSettings, MODEL_NAME, MODEL_PROVIDER } from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { buildDefaultSystemPrompt } from "./prompt";
@@ -60,7 +60,7 @@ interface ForgeConfigBase {
  * Configuration for the ask-forge library.
  *
  * Provider and model must either both be specified or both omitted.
- * If omitted, defaults to openrouter with claude-sonnet-4.5.
+ * If omitted, defaults to openrouter with claude-sonnet-4.6.
  */
 export type ForgeConfig = ForgeConfigBase &
 	(
@@ -87,7 +87,7 @@ export type ForgeConfig = ForgeConfigBase &
  * ```ts
  * const client = new AskForgeClient({
  *   provider: "openrouter",
- *   model: "anthropic/claude-sonnet-4.5",
+ *   model: "anthropic/claude-sonnet-4.6",
  *   systemPrompt: "You are a code analysis assistant.",
  *   maxIterations: 20,
  * });
@@ -117,13 +117,13 @@ export class AskForgeClient {
 	/**
 	 * Create a new AskForgeClient.
 	 *
-	 * @param config - Library configuration (defaults to openrouter with claude-sonnet-4.5)
+	 * @param config - Library configuration (defaults to openrouter with claude-sonnet-4.6)
 	 * @param logger - Logger instance (defaults to consoleLogger)
 	 */
 	constructor(config: ForgeConfig = {}, logger: Logger = consoleLogger) {
 		this.config = {
-			provider: config.provider ?? "openrouter",
-			model: config.model ?? "anthropic/claude-sonnet-4.5",
+			provider: config.provider ?? MODEL_PROVIDER,
+			model: config.model ?? MODEL_NAME,
 			systemPrompt: config.systemPrompt,
 			maxIterations: config.maxIterations ?? 20,
 			sandbox: config.sandbox,
