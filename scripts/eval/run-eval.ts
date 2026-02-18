@@ -93,45 +93,6 @@ async function runEval(inputPath: string): Promise<void> {
 	console.log(`Reading dataset from: ${inputPath}`);
 	console.log(`Found ${rows.length} rows to evaluate\n`);
 
-	// Deduplicate: group rows by (repository, commit_id, question) so we call ask() once per unique combo
-	type RowKey = string;
-	const makeKey = (r: EvalRow): RowKey => `${r.repository}::${r.commit_id}::${r.question}`;
-
-	// Group unique questions by (repo, commit) so we can reuse a single session per repo+commit
-	type RepoKey = string;
-	const makeRepoKey = (r: { repository: string; commit_id: string }): RepoKey => `${r.repository}::${r.commit_id}`;
-
-	const questionsByRepo = new Map<RepoKey, { repository: string; commit_id: string; questions: Map<RowKey, string> }>();
-	for (const row of rows) {
-		const repoKey = makeRepoKey(row);
-		let group = questionsByRepo.get(repoKey);
-		if (!group) {
-			group = {
-				repository: row.repository,
-				commit_id: row.commit_id,
-				questions: new Map(),
-			};
-			questionsByRepo.set(repoKey, group);
-		}
-		const rowKey = makeKey(row);
-		if (!group.questions.has(rowKey)) {
-			group.questions.set(rowKey, row.question);
-		}
-	}
-
-	const totalQuestions = [...questionsByRepo.values()].reduce((sum, g) => sum + g.questions.size, 0);
-
-	const results = new Map<
-		RowKey,
-		{
-			answer: string;
-			toolCalls: string;
-			filesRead: string;
-			inferenceTimeMs: number;
-			brokenLinkRatio: string;
-		}
-	>();
-
 	const client = new AskForgeClient(
 		{
 			provider: MODEL_PROVIDER,
@@ -141,91 +102,74 @@ async function runEval(inputPath: string): Promise<void> {
 		nullLogger,
 	);
 
-	let questionIdx = 0;
-	for (const [, { repository, commit_id, questions }] of questionsByRepo) {
-		let session: Awaited<ReturnType<typeof client.connect>> | null = null;
+	const resultRows: EvalRow[] = [];
+	let sumTotalLinks = 0;
+	let sumBrokenLinks = 0;
 
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i]!;
+		const { repository, commit_id, question } = row;
+		console.log(`\n[${i + 1}/${rows.length}] Asking: "${question.slice(0, 80)}${question.length > 80 ? "..." : ""}"`);
+		console.log(`  Repo: ${repository} @ ${commit_id.slice(0, 12)}`);
+
+		let session: Awaited<ReturnType<typeof client.connect>> | null = null;
 		try {
 			session = await client.connect(repository, { commitish: commit_id });
-		} catch (error) {
-			console.error(
-				`  ✗ Connect error for ${repository} @ ${commit_id.slice(0, 12)}: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			for (const [rowKey] of questions) {
-				results.set(rowKey, { answer: "", toolCalls: "", filesRead: "", inferenceTimeMs: 0, brokenLinkRatio: "" });
-			}
-			continue;
-		}
-
-		for (const [rowKey, question] of questions) {
-			questionIdx++;
+			const askResult = await session.ask(question);
+			const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
 			console.log(
-				`\n[${questionIdx}/${totalQuestions}] Asking: "${question.slice(0, 80)}${question.length > 80 ? "..." : ""}"`,
+				`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
 			);
-			console.log(`  Repo: ${repository} @ ${commit_id.slice(0, 12)}`);
 
-			try {
-				session.replaceMessages([]);
-				const askResult = await session.ask(question);
-				const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
-				console.log(
-					`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
-				);
+			// Format tool calls as a bulleted plain-text list
+			const toolCallsStr = askResult.toolCalls.map((tc) => `- ${tc.name}: ${JSON.stringify(tc.arguments)}`).join("\n");
 
-				// Format tool calls as a bulleted markdown list
-				const toolCallsStr = askResult.toolCalls
-					.map((tc) => `- **${tc.name}**(${JSON.stringify(tc.arguments)})`)
-					.join("\n");
+			// Extract file names from read tool calls
+			const filesReadStr = askResult.toolCalls
+				.filter((tc) => tc.name === "read")
+				.map((tc) => {
+					const filePath = String(tc.arguments.path ?? tc.arguments.file ?? "");
+					const fileName = filePath.split("/").pop() || filePath;
+					return `- ${fileName}`;
+				})
+				.join("\n");
 
-				// Extract file names from read tool calls
-				const filesReadStr = askResult.toolCalls
-					.filter((tc) => tc.name === "read")
-					.map((tc) => {
-						const filePath = String(tc.arguments.path ?? tc.arguments.file ?? "");
-						const fileName = filePath.split("/").pop() || filePath;
-						return `- ${fileName}`;
-					})
-					.join("\n");
+			// Broken links as ratio string
+			const totalLinks = askResult.totalLinks;
+			const brokenCount = askResult.invalidLinks.length;
+			sumTotalLinks += totalLinks;
+			sumBrokenLinks += brokenCount;
 
-				// Broken links as ratio string
-				const total = askResult.totalLinks;
-				const broken = askResult.invalidLinks.length;
-				const brokenLinkRatio = total > 0 ? `${broken}/${total}` : "0/0";
-
-				results.set(rowKey, {
-					answer: askResult.response,
-					toolCalls: toolCallsStr,
-					filesRead: filesReadStr,
-					inferenceTimeMs: askResult.inferenceTimeMs,
-					brokenLinkRatio,
-				});
-			} catch (error) {
-				console.error(`  ✗ Ask error: ${error instanceof Error ? error.message : String(error)}`);
-				results.set(rowKey, { answer: "", toolCalls: "", filesRead: "", inferenceTimeMs: 0, brokenLinkRatio: "" });
-			}
+			resultRows.push({
+				...row,
+				answer: askResult.response,
+				is_answer_relevant: "",
+				is_evidence_supported: "",
+				is_evidence_linked: "",
+				misc_feedback: "",
+				broken_link_ratio: `${brokenCount}/${totalLinks}`,
+				tool_calls: toolCallsStr,
+				files_read: filesReadStr,
+				inference_time_ms: String(askResult.inferenceTimeMs),
+			});
+		} catch (error) {
+			console.error(`  ✗ Error: ${error instanceof Error ? error.message : String(error)}`);
+			resultRows.push({
+				...row,
+				answer: "",
+				is_answer_relevant: "",
+				is_evidence_supported: "",
+				is_evidence_linked: "",
+				misc_feedback: "",
+				broken_link_ratio: "0/0",
+				tool_calls: "",
+				files_read: "",
+				inference_time_ms: "0",
+			});
+		} finally {
+			session?.close();
 		}
-
-		session.close();
 	}
-
-	// Write results back to rows
-	const resultRows: EvalRow[] = rows.map((row) => {
-		const key = makeKey(row);
-		const result = results.get(key);
-
-		return {
-			...row,
-			answer: result?.answer ?? "",
-			is_answer_relevant: "",
-			is_evidence_supported: "",
-			is_evidence_linked: "",
-			misc_feedback: "",
-			broken_link_ratio: result?.brokenLinkRatio ?? "",
-			tool_calls: result?.toolCalls ?? "",
-			files_read: result?.filesRead ?? "",
-			inference_time_ms: String(result?.inferenceTimeMs ?? 0),
-		};
-	});
 
 	const output = writeCsvString(resultRows);
 	await writeFile(outputPath, output, "utf-8");
@@ -236,17 +180,6 @@ async function runEval(inputPath: string): Promise<void> {
 	const relevant = resultRows.filter((r) => r.is_answer_relevant === "yes").length;
 	const evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
 	const linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
-
-	// Aggregate broken link ratios
-	let sumTotalLinks = 0;
-	let sumBrokenLinks = 0;
-	for (const r of resultRows) {
-		const parts = r.broken_link_ratio.split("/");
-		if (parts.length === 2) {
-			sumBrokenLinks += Number(parts[0]);
-			sumTotalLinks += Number(parts[1]);
-		}
-	}
 
 	console.log("\n--- Summary ---");
 	console.log(`Total rows:          ${total}`);
@@ -265,7 +198,7 @@ async function runEval(inputPath: string): Promise<void> {
 			relevant,
 			evidenced,
 			linked,
-			brokenLinkRatio: sumTotalLinks > 0 ? `${sumBrokenLinks}/${sumTotalLinks}` : "0/0",
+			brokenLinkRatio: `${sumBrokenLinks}/${sumTotalLinks}`,
 		},
 		timestamp,
 		systemPrompt,

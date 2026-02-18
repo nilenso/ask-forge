@@ -502,7 +502,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const EXPAND_SVG = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6m0 0v6m0-6L13 11M9 21H3m0 0v-6m0 6l8-8"/></svg>';
-const MARKDOWN_COLUMNS = new Set(['answer', 'question', 'misc_feedback', 'tool_calls', 'files_read']);
+const MARKDOWN_COLUMNS = new Set(['answer', 'question', 'misc_feedback']);
 let currentPopupRawText = '';
 
 const CSV_DATA = JSON.parse(document.getElementById('csv-data').textContent);
