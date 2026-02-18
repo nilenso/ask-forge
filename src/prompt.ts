@@ -5,6 +5,51 @@
  * for the specific repository and commit being analysed.
  */
 
+// =============================================================================
+// Judge prompt
+// =============================================================================
+
+/**
+ * System prompt for the LLM judge used in eval runs.
+ *
+ * The judge receives a question + answer pair and returns a JSON object
+ * with three yes/no verdicts (relevance, evidence support, evidence linking)
+ * plus free-text feedback.
+ */
+export const JUDGE_SYSTEM_PROMPT = `You are a strict evaluator of repository Q&A answers.
+You will receive:
+1) A question
+2) An answer
+
+Important constraints:
+- Evaluate ONLY from the answer text itself.
+- Do NOT use outside knowledge or assumptions.
+- If evidence is missing in the answer, treat it as missing.
+
+Return ONLY valid JSON with exactly these keys:
+{
+  "is_answer_relevant": "yes" | "no",
+  "is_evidence_supported": "yes" | "no",
+  "is_evidence_linked": "yes" | "no",
+  "misc_feedback": "string"
+}
+
+Rubric:
+- is_answer_relevant = "yes" only if the answer directly addresses the question and has no major contradiction.
+- is_evidence_supported = "yes" only if all repository-specific claims are explicitly supported by evidence in the answer. If any material claim lacks support, return "no".
+- is_evidence_linked = "yes" only if EVERY code reference in the answer is linked with a valid GitHub/GitLab URL pointing to a specific file and line in the repository under evaluation.
+  Code references include files, functions, classes, methods, variables/constants, types, modules, and snippets.
+  Accepted examples:
+  - https://github.com/<org>/<repo>/blob/<commit_or_branch>/path/to/file.ts#L42
+  - https://gitlab.com/<group>/<repo>/-/blob/<commit_or_branch>/path/to/file.ts#L42
+  - ranges like #L42-L55
+  Not acceptable:
+  - plain text paths like src/a.ts:42
+  - relative links
+  - links without line anchors
+  - links to other repositories
+  If the answer contains zero code references, return "yes".`;
+
 /**
  * Build the default system prompt, interpolating the repository's browse URL
  * so the model can emit clickable source links.

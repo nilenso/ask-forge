@@ -1,10 +1,9 @@
 import "dotenv/config";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, SYSTEM_PROMPT } from "../../src/config";
-import { AskForgeClient, nullLogger } from "../../src/index";
 import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/config";
 import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
+import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
 import { generateReport } from "./generate-report";
 
 // =============================================================================
@@ -26,15 +25,6 @@ interface EvalRow {
 	total_links: string;
 	broken_links: string;
 }
-
-// type JudgeVerdict = "yes" | "no" | "error";
-
-// interface JudgeResult {
-// 	is_answer_relevant: JudgeVerdict;
-// 	is_evidence_supported: JudgeVerdict;
-// 	is_evidence_linked: JudgeVerdict;
-// 	misc_feedback: string;
-// }
 
 // =============================================================================
 // CSV Parsing / Writing
@@ -192,90 +182,7 @@ function writeCsvString(rows: EvalRow[]): string {
 // =============================================================================
 
 const JUDGE_MODEL_PROVIDER = "anthropic";
-const JUDGE_MODEL_NAME = "claude-sonnet-4-6";
-const JUDGE_SYSTEM_PROMPT = `You are a strict evaluator of repository Q&A answers.
-You will be given:
-1. A question that was asked about a code repository
-2. The AI-generated answer to that question
-
-Evaluate the answer on three criteria and respond ONLY with valid JSON (no markdown fences, no extra text):
-
-{
-  "is_answer_relevant": "yes" or "no" — Is the answer correct and relevant to the question?
-  "is_evidence_supported": "yes" or "no" — Are the claims in the answer supported by evidence? Evidence would ideally be present in the codebase (file paths, function names, code snippets). If the question is generic and not specific to the codebase, evidence from the codebase is not required.
-  "is_clear_and_readable": "yes" or "no" — Is the answer clear, readable, and does it present a coherent narrative that is easy to follow?
-  "misc_feedback": Very concise bullet points (one per line, starting with "- ") covering your reasoning for each judgment and any other observations. Keep it skimmable — no full sentences, no fluff.
-}`;
-
-async function judge(question: string, answer: string): Promise<JudgeResult> {
-	const model = getModel(JUDGE_MODEL_PROVIDER, JUDGE_MODEL_NAME);
-
-	const userMessage = `## Question
-${question}
-
-## Answer
-${answer}`;
-
-	const response = await completeSimple(model, {
-		systemPrompt: JUDGE_SYSTEM_PROMPT,
-		messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
-	});
-
-	const text = response.content
-		.filter((b) => b.type === "text")
-		.map((b) => (b as { type: "text"; text: string }).text)
-		.join("");
-
-	// Strip markdown code fences if present
-	const cleaned = text
-		.replace(/^```(?:json)?\s*\n?/m, "")
-		.replace(/\n?```\s*$/m, "")
-		.trim();
-
-	const parsed = JSON.parse(cleaned) as JudgeResult;
-
-	// Normalize yes/no values
-	const normalize = (v: string): "yes" | "no" => (v.toLowerCase().startsWith("yes") ? "yes" : "no");
-
-	return {
-		is_answer_relevant: normalize(parsed.is_answer_relevant),
-		is_evidence_supported: normalize(parsed.is_evidence_supported),
-		is_clear_and_readable: normalize(parsed.is_clear_and_readable),
-		misc_feedback: parsed.misc_feedback,
-	};
-=======
-You will receive:
-1) A question
-2) An answer
-
-Important constraints:
-- Evaluate ONLY from the answer text itself.
-- Do NOT use outside knowledge or assumptions.
-- If evidence is missing in the answer, treat it as missing.
-
-Return ONLY valid JSON with exactly these keys:
-{
-  "is_answer_relevant": "yes" | "no",
-  "is_evidence_supported": "yes" | "no",
-  "is_evidence_linked": "yes" | "no",
-  "misc_feedback": "string"
-}
-
-Rubric:
-- is_answer_relevant = "yes" only if the answer directly addresses the question and has no major contradiction.
-- is_evidence_supported = "yes" only if all repository-specific claims are explicitly supported by evidence in the answer. If any material claim lacks support, return "no".
-- is_evidence_linked = "yes" only if EVERY code reference in the answer is linked with a valid GitHub/GitLab URL pointing to a specific file and line in the repository under evaluation.
-  Code references include files, functions, classes, methods, variables/constants, types, modules, and snippets.
-  Accepted examples:
-  - https://github.com/<org>/<repo>/blob/<commit_or_branch>/path/to/file.ts#L42
-  - https://gitlab.com/<group>/<repo>/-/blob/<commit_or_branch>/path/to/file.ts#L42
-  - ranges like #L42-L55
-  Not acceptable:
-  - plain text paths like src/a.ts:42
-  - relative links
-  - links without line anchors
-  - links to other repositories
-  If the answer contains zero code references, return "yes".`;
+const JUDGE_MODEL_NAME = "claude-sonnet-4-5";
 
 type JudgeVerdict = "yes" | "no" | "error";
 
