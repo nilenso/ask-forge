@@ -28,7 +28,7 @@ Important constraints:
 
 Return ONLY valid JSON with exactly these keys:
 {
-  "is_answer_relevant": "yes" | "no",
+  "is_answer_complete": "yes" | "no",
   "is_evidence_supported": "yes" | "no",
   "is_evidence_linked": "yes" | "no",
   "is_reasoning_sound": "yes" | "no",
@@ -36,7 +36,11 @@ Return ONLY valid JSON with exactly these keys:
 }
 
 Rubric:
-- is_answer_relevant = "yes" only if the answer directly addresses the question and has no major contradiction.
+- is_answer_complete = "yes" only if the answer addresses every distinct aspect of the question. Return "no" if any of the following are true:
+  - The question has multiple parts and any part is skipped or only superficially addressed.
+  - The question asks "when", "why", or "how" but the answer only explains "what" — describing a thing is not the same as advising on its use.
+  - The answer hedges or deflects ("it depends", "refer to the docs") without providing the specific information asked for.
+  - A concrete scenario was posed and the answer gives a general explanation instead of tracing that specific scenario.
 - is_evidence_supported = "yes" only if all repository-specific claims are explicitly supported by evidence in the answer. If any material claim lacks support, return "no".
 - is_evidence_linked = "yes" only if EVERY code reference in the answer is linked with a valid GitHub/GitLab URL pointing to a specific file and line in the repository under evaluation.
   Code references include files, functions, classes, methods, variables/constants, types, modules, and snippets.

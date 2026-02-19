@@ -9,7 +9,7 @@ export interface EvalRow {
 	repository: string;
 	commit_id: string;
 	question: string;
-	is_answer_relevant: string;
+	is_answer_complete: string;
 	is_evidence_supported: string;
 	is_evidence_linked: string;
 	is_reasoning_sound: string;
@@ -32,7 +32,7 @@ const OUTPUT_COLUMNS = [
 	"repository",
 	"commit_id",
 	"question",
-	"is_answer_relevant",
+	"is_answer_complete",
 	"is_evidence_supported",
 	"is_evidence_linked",
 	"is_reasoning_sound",
@@ -96,7 +96,7 @@ export function parseCsv(content: string): ParseResult {
 			commit_id: fields[colIndex["commit_id"]!] ?? "",
 			question: fields[colIndex["question"]!] ?? "",
 			answer: "",
-			is_answer_relevant: "",
+			is_answer_complete: "",
 			is_evidence_supported: "",
 			is_evidence_linked: "",
 			is_reasoning_sound: "",

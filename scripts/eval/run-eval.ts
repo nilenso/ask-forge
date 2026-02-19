@@ -25,7 +25,7 @@ const JUDGE_MODEL_NAME = "claude-sonnet-4-6";
 type JudgeVerdict = "yes" | "no" | "error";
 
 interface JudgeResult {
-  is_answer_relevant: JudgeVerdict;
+  is_answer_complete: JudgeVerdict;
   is_evidence_supported: JudgeVerdict;
   is_evidence_linked: JudgeVerdict;
   is_reasoning_sound: JudgeVerdict;
@@ -76,9 +76,9 @@ ${answer}`;
   };
 
   return {
-    is_answer_relevant: normalize(
-      "is_answer_relevant",
-      parsed.is_answer_relevant,
+    is_answer_complete: normalize(
+      "is_answer_complete",
+      parsed.is_answer_complete,
     ),
     is_evidence_supported: normalize(
       "is_evidence_supported",
@@ -177,7 +177,7 @@ async function runEval(inputPath: string): Promise<void> {
 
       // Run LLM judge
       let judgeResult: JudgeResult = {
-        is_answer_relevant: "error",
+        is_answer_complete: "error",
         is_evidence_supported: "error",
         is_evidence_linked: "error",
         is_reasoning_sound: "error",
@@ -186,7 +186,7 @@ async function runEval(inputPath: string): Promise<void> {
       try {
         judgeResult = await judge(question, askResult.response);
         console.log(
-          `  ⚖ Judge: relevant=${judgeResult.is_answer_relevant}, supported=${judgeResult.is_evidence_supported}, linked=${judgeResult.is_evidence_linked}, sound=${judgeResult.is_reasoning_sound}`,
+          `  ⚖ Judge: complete=${judgeResult.is_answer_complete}, supported=${judgeResult.is_evidence_supported}, linked=${judgeResult.is_evidence_linked}, sound=${judgeResult.is_reasoning_sound}`,
         );
       } catch (err) {
         console.error(
@@ -197,7 +197,7 @@ async function runEval(inputPath: string): Promise<void> {
       resultRows.push({
         ...row,
         answer: askResult.response,
-        is_answer_relevant: judgeResult.is_answer_relevant,
+        is_answer_complete: judgeResult.is_answer_complete,
         is_evidence_supported: judgeResult.is_evidence_supported,
         is_evidence_linked: judgeResult.is_evidence_linked,
         is_reasoning_sound: judgeResult.is_reasoning_sound,
@@ -214,7 +214,7 @@ async function runEval(inputPath: string): Promise<void> {
       resultRows.push({
         ...row,
         answer: "",
-        is_answer_relevant: "",
+        is_answer_complete: "",
         is_evidence_supported: "",
         is_evidence_linked: "",
         is_reasoning_sound: "",
@@ -235,8 +235,8 @@ async function runEval(inputPath: string): Promise<void> {
 
   // Print summary
   const total = resultRows.length;
-  const relevant = resultRows.filter(
-    (r) => r.is_answer_relevant === "yes",
+  const complete = resultRows.filter(
+    (r) => r.is_answer_complete === "yes",
   ).length;
   const evidenced = resultRows.filter(
     (r) => r.is_evidence_supported === "yes",
@@ -264,7 +264,7 @@ async function runEval(inputPath: string): Promise<void> {
     output,
     {
       total,
-      relevant,
+      complete,
       evidenced,
       linked,
       soundReasoning,
