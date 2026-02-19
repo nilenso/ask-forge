@@ -12,7 +12,7 @@
 export const MODEL_PROVIDER = "openrouter" as const;
 
 /** Model identifier */
-export const MODEL_NAME = "anthropic/claude-sonnet-4.6" as const;
+export const MODEL_NAME = "anthropic/claude-sonnet-4.5" as const;
 
 /** Maximum tool-use iterations (how many tool calls the agent can make before giving a final answer) */
 export const MAX_TOOL_ITERATIONS = 20;
