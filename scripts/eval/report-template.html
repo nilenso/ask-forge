@@ -412,6 +412,13 @@
     white-space: normal;
   }
 
+  /* ─── Table links ─── */
+  td a {
+    color: var(--indigo-600);
+    text-decoration: none;
+  }
+  td a:hover { text-decoration: underline; }
+
   /* ─── Scrollbar ─── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -457,6 +464,14 @@
         <span class="stat-fraction">{{LINKED_COUNT}} / {{TOTAL}}</span>
       </div>
       <div class="stat-bar"><div class="stat-bar-fill" style="width: {{LINKED_PCT}}%"></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Reasoning Sound</div>
+      <div class="stat-value-row">
+        <span class="stat-pct">{{SOUND_PCT}}%</span>
+        <span class="stat-fraction">{{SOUND_COUNT}} / {{TOTAL}}</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: {{SOUND_PCT}}%"></div></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Broken Links</div>
@@ -586,11 +601,17 @@ function renderTable() {
     bodyHTML += '<tr><td class="row-num">' + (r + 1) + '</td>';
     for (let c = 0; c < headers.length; c++) {
       const raw = rows[r]?.[c] ?? '';
-      const val = esc(raw);
       const isMulti = raw.includes('\n') || raw.length > 120;
       const cls = isMulti ? 'multi-line' : 'single-line';
       const expandBtn = isMulti ? '<button class="expand-btn" data-row="' + r + '" data-col="' + c + '" title="Expand cell">' + EXPAND_SVG + '</button>' : '';
-      bodyHTML += '<td class="' + cls + '"><div class="cell"><span class="cell-text">' + val + '</span>' + expandBtn + '</div></td>';
+      let cellContent;
+      if (headers[c] === 'repository' && raw.startsWith('http')) {
+        const label = raw.replace(/\.git$/, '').replace(/^https?:\/\/[^/]+\//, '');
+        cellContent = '<a href="' + esc(raw) + '" target="_blank" rel="noopener" title="' + esc(raw) + '">' + esc(label) + '</a>';
+      } else {
+        cellContent = esc(raw);
+      }
+      bodyHTML += '<td class="' + cls + '"><div class="cell"><span class="cell-text">' + cellContent + '</span>' + expandBtn + '</div></td>';
     }
     bodyHTML += '</tr>';
   }

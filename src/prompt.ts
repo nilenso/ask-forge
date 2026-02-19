@@ -13,8 +13,8 @@
  * System prompt for the LLM judge used in eval runs.
  *
  * The judge receives a question + answer pair and returns a JSON object
- * with three yes/no verdicts (relevance, evidence support, evidence linking)
- * plus free-text feedback.
+ * with four yes/no verdicts (relevance, evidence support, evidence linking,
+ * reasoning soundness) plus free-text feedback.
  */
 export const JUDGE_SYSTEM_PROMPT = `You are a strict evaluator of repository Q&A answers.
 You will receive:
@@ -31,6 +31,7 @@ Return ONLY valid JSON with exactly these keys:
   "is_answer_relevant": "yes" | "no",
   "is_evidence_supported": "yes" | "no",
   "is_evidence_linked": "yes" | "no",
+  "is_reasoning_sound": "yes" | "no",
   "misc_feedback": "string"
 }
 
@@ -48,7 +49,20 @@ Rubric:
   - relative links
   - links without line anchors
   - links to other repositories
-  If the answer contains zero code references, return "yes".`;
+  If the answer contains zero code references, return "yes".
+- is_reasoning_sound = "yes" only if every causal claim, step-by-step explanation,
+  and conclusion in the answer is internally consistent and follows logically from
+  the evidence the answer itself presents.
+  Return "no" if any of the following are true:
+  - A conclusion contradicts the quoted or linked evidence (e.g. the code shown
+    disproves the claim made about it).
+  - A causal chain has a missing or broken step (e.g. "A therefore C" with no
+    explanation of B).
+  - The answer cites evidence for scenario X to support a claim about scenario Y,
+    where the two scenarios are meaningfully different.
+  - Two statements in the answer contradict each other.
+  Do NOT penalise omissions or incomplete coverage here — only internal
+  inconsistency between what is stated and what the cited evidence supports.`;
 
 /**
  * Build the default system prompt, interpolating the repository's browse URL

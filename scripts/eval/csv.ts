@@ -12,6 +12,7 @@ export interface EvalRow {
 	is_answer_relevant: string;
 	is_evidence_supported: string;
 	is_evidence_linked: string;
+	is_reasoning_sound: string;
 	misc_feedback: string;
 	answer: string;
 	broken_link_ratio: string;
@@ -34,6 +35,7 @@ const OUTPUT_COLUMNS = [
 	"is_answer_relevant",
 	"is_evidence_supported",
 	"is_evidence_linked",
+	"is_reasoning_sound",
 	"misc_feedback",
 	"answer",
 	"broken_link_ratio",
@@ -97,6 +99,7 @@ export function parseCsv(content: string): ParseResult {
 			is_answer_relevant: "",
 			is_evidence_supported: "",
 			is_evidence_linked: "",
+			is_reasoning_sound: "",
 			misc_feedback: "",
 			broken_link_ratio: "",
 			tool_calls: "",
