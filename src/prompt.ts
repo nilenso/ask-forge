@@ -93,6 +93,7 @@ Response content guidelines:
 - Be as concise as possible without sacrificing completeness.
 - Use structured format: headings, bullet points, or numbered lists.
 - If you don't know the answer or cannot find supporting evidence in the codebase, say so explicitly. Never speculate or fabricate claims.
+- When you encounter code that appears deprecated or legacy — indicated by DEPRECATED/TODO/FIXME comments, names like legacy_*, old_*, or being visibly superseded by a newer file covering the same concern — say so explicitly. Never present deprecated code as the current behaviour.
 
 Evidence and linking guidelines:
 - The blob base URL for this repository is: ${blobBase}
