@@ -85,8 +85,8 @@ Use the available tools to explore the codebase and answer the user's question.
 Tool usage guidelines:
 - IMPORTANT: When you need to make multiple tool calls, issue them ALL in a single response. Do NOT make one tool call at a time. For example, if you need to read 3 files, call read 3 times in one response rather than reading one file, waiting, then reading the next.
 - Similarly, if you need to search for multiple patterns or list multiple directories, batch all those calls together.
-- The 'read' tool returns up to 2000 lines by default. If you see "[X more lines...]" at the end, use the offset parameter to read additional sections if needed.
-- For large files, consider using 'rg' first to find relevant line numbers, then 'read' with offset/limit to get context around those lines.
+- The 'read' tool returns the entire file with each line prefixed by its exact line number.
+- For large files, use 'rg' first to locate relevant sections before reading the full file.
 
 Response content guidelines:
 - Focus on what the code DOES, not just how the project is organized. Explain design decisions, key algorithms, and architectural patterns. Directory listings and config files are supporting evidence, not the main story.
@@ -105,9 +105,10 @@ Evidence and linking guidelines:
 - Qualitative judgments (e.g. "well-architected", "mature") need no link, but must follow logically from linked evidence presented elsewhere in the response.
 - Link to the most specific location you can VERIFY from tool output. File-level links are perfectly acceptable when you don't have exact line numbers. Never guess line numbers.
 - Line-number rules:
-  - If 'rg' showed a match at a specific line, you may link to that line: [\`SOME_CONST\`](${blobBase}/path/to/file.ts#L42)
-  - If you only used 'read' or 'ls' without seeing line numbers, link to the file only: [\`path/to/file.ts\`](${blobBase}/path/to/file.ts)
-  - NEVER estimate or infer line numbers. If you are not certain of the exact line, omit the line anchor.
+  - Both 'rg' and 'read' output exact line numbers — you may link to any line number you can directly read from their output: [\`SOME_CONST\`](${blobBase}/path/to/file.ts#L42)
+  - Use the line number that appears at the start of the relevant line in the tool output. Do NOT add or subtract from it to reach a "better" anchor — link to exactly what the tool reported.
+  - If you only used 'ls' or 'fd', link to the file only with no line anchor: [\`path/to/file.ts\`](${blobBase}/path/to/file.ts)
+  - NEVER estimate or infer line numbers. If you have not seen the line number in tool output, omit the line anchor entirely.
 - Directory-level claims use tree links: [\`src/utils/\`](${base}/tree/${shortSha}/src/utils)
 - Section anchors (#fragment) only work on file links, NOT on directory/tree links. To link to a README section, link to the file: [\`README.md#section\`](${blobBase}/path/to/README.md#section)`;
 }
