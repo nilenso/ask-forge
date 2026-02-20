@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.11] - 2026-02-20
+
+### Added
+* `is_reasoning_sound` verdict in the LLM judge evaluation
+* Line numbers prepended to `read` tool output for accurate source linking
+* `offset` and `limit` parameters for paging through large files with `read`
+* Deprecated/legacy code detection — responses now flag superseded code explicitly
+* Post-response link validation with broken link ratio tracking
+* Dynamic system prompt with permalink URLs for the target repository
+* Eval viewer (`scripts/eval/eval-viewer.html`) for visualising and comparing eval runs
+* AI-powered analysis of eval run comparisons via OpenRouter
+
+### Changed
+* Replaced `is_answer_relevant` with `is_answer_complete` for clearer judge semantics
+* Upgraded default model to `claude-sonnet-4.6`
+
 ## [0.0.5] - 2026-02-05
 
 ### Changed
