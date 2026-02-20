@@ -1,16 +1,8 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import {
-  MAX_TOOL_ITERATIONS,
-  MODEL_NAME,
-  MODEL_PROVIDER,
-} from "../../src/config";
-import {
-  AskForgeClient,
-  buildDefaultSystemPrompt,
-  nullLogger,
-} from "../../src/index";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/config";
+import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
 import { type EvalRow, loadRowsFromCsv, writeCsvString } from "./csv";
 import { generateReport } from "./generate-report";
@@ -25,76 +17,61 @@ const JUDGE_MODEL_NAME = "anthropic/claude-sonnet-4.6";
 type JudgeVerdict = "yes" | "no" | "error";
 
 interface JudgeResult {
-  is_answer_complete: JudgeVerdict;
-  is_evidence_supported: JudgeVerdict;
-  is_evidence_linked: JudgeVerdict;
-  is_reasoning_sound: JudgeVerdict;
-  misc_feedback: string;
+	is_answer_complete: JudgeVerdict;
+	is_evidence_supported: JudgeVerdict;
+	is_evidence_linked: JudgeVerdict;
+	is_reasoning_sound: JudgeVerdict;
+	misc_feedback: string;
 }
 
 async function judge(question: string, answer: string): Promise<JudgeResult> {
-  // biome-ignore lint/suspicious/noExplicitAny: model ID not yet in SDK types
-  const model = getModel(JUDGE_MODEL_PROVIDER, JUDGE_MODEL_NAME as any);
+	// biome-ignore lint/suspicious/noExplicitAny: model ID not yet in SDK types
+	const model = getModel(JUDGE_MODEL_PROVIDER, JUDGE_MODEL_NAME as any);
 
-  const userMessage = `## Question
+	const userMessage = `## Question
 ${question}
 
 ## Answer
 ${answer}`;
 
-  const response = await completeSimple(model, {
-    systemPrompt: JUDGE_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
-  });
+	const response = await completeSimple(model, {
+		systemPrompt: JUDGE_SYSTEM_PROMPT,
+		messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
+	});
 
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("");
+	const text = response.content
+		.filter((b) => b.type === "text")
+		.map((b) => (b as { type: "text"; text: string }).text)
+		.join("");
 
-  // Strip markdown code fences if present
-  const cleaned = text
-    .replace(/^```(?:json)?\s*\n?/m, "")
-    .replace(/\n?```\s*$/m, "")
-    .trim();
+	// Strip markdown code fences if present
+	const cleaned = text
+		.replace(/^```(?:json)?\s*\n?/m, "")
+		.replace(/\n?```\s*$/m, "")
+		.trim();
 
-  const parsed = JSON.parse(cleaned) as JudgeResult;
+	const parsed = JSON.parse(cleaned) as JudgeResult;
 
-  // Normalize yes/no values
-  const normalize = (field: string, v: string | undefined): JudgeVerdict => {
-    if (v == null) {
-      console.error(`Judge error: field "${field}" is missing from response`);
-      return "error";
-    }
-    const lower = v.toLowerCase();
-    if (lower.startsWith("yes")) return "yes";
-    if (lower.startsWith("no")) return "no";
-    console.error(
-      `Judge error: field "${field}" has unrecognized value: "${v}"`,
-    );
-    return "error";
-  };
+	// Normalize yes/no values
+	const normalize = (field: string, v: string | undefined): JudgeVerdict => {
+		if (v == null) {
+			console.error(`Judge error: field "${field}" is missing from response`);
+			return "error";
+		}
+		const lower = v.toLowerCase();
+		if (lower.startsWith("yes")) return "yes";
+		if (lower.startsWith("no")) return "no";
+		console.error(`Judge error: field "${field}" has unrecognized value: "${v}"`);
+		return "error";
+	};
 
-  return {
-    is_answer_complete: normalize(
-      "is_answer_complete",
-      parsed.is_answer_complete,
-    ),
-    is_evidence_supported: normalize(
-      "is_evidence_supported",
-      parsed.is_evidence_supported,
-    ),
-    is_evidence_linked: normalize(
-      "is_evidence_linked",
-      parsed.is_evidence_linked,
-    ),
-    is_reasoning_sound: normalize(
-      "is_reasoning_sound",
-      parsed.is_reasoning_sound,
-    ),
-    misc_feedback:
-      typeof parsed.misc_feedback === "string" ? parsed.misc_feedback : "",
-  };
+	return {
+		is_answer_complete: normalize("is_answer_complete", parsed.is_answer_complete),
+		is_evidence_supported: normalize("is_evidence_supported", parsed.is_evidence_supported),
+		is_evidence_linked: normalize("is_evidence_linked", parsed.is_evidence_linked),
+		is_reasoning_sound: normalize("is_reasoning_sound", parsed.is_reasoning_sound),
+		misc_feedback: typeof parsed.misc_feedback === "string" ? parsed.misc_feedback : "",
+	};
 }
 
 // =============================================================================
@@ -102,186 +79,177 @@ ${answer}`;
 // =============================================================================
 
 async function runEval(inputPath: string): Promise<void> {
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace("T", "_")
-    .replace("Z", "");
-  const reportsDir = new URL("reports/", import.meta.url).pathname;
-  await mkdir(reportsDir, { recursive: true });
-  const outputPath = `${reportsDir}eval_${timestamp}.csv`;
+	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
+	const reportsDir = new URL("reports/", import.meta.url).pathname;
+	await mkdir(reportsDir, { recursive: true });
+	const outputPath = `${reportsDir}eval_${timestamp}.csv`;
 
-  let rows: EvalRow[];
-  try {
-    rows = await loadRowsFromCsv(inputPath);
-  } catch (error) {
-    console.error(
-      `Error loading dataset: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    process.exit(1);
-  }
+	let rows: EvalRow[];
+	try {
+		rows = await loadRowsFromCsv(inputPath);
+	} catch (error) {
+		console.error(`Error loading dataset: ${error instanceof Error ? error.message : String(error)}`);
+		process.exit(1);
+	}
 
-  console.log(`Reading dataset from: ${inputPath}`);
-  console.log(`Found ${rows.length} rows to evaluate\n`);
+	console.log(`Reading dataset from: ${inputPath}`);
+	console.log(`Found ${rows.length} rows to evaluate\n`);
 
-  const client = new AskForgeClient(
-    {
-      provider: MODEL_PROVIDER,
-      model: MODEL_NAME,
-      maxIterations: MAX_TOOL_ITERATIONS,
-    },
-    nullLogger,
-  );
+	const client = new AskForgeClient(
+		{
+			provider: MODEL_PROVIDER,
+			model: MODEL_NAME,
+			maxIterations: MAX_TOOL_ITERATIONS,
+		},
+		nullLogger,
+	);
 
-  const resultRows: EvalRow[] = [];
-  let sumTotalLinks = 0;
-  let sumBrokenLinks = 0;
+	const askModelLabel = `${MODEL_PROVIDER}/${MODEL_NAME}`;
+	const judgeModelLabel = `${JUDGE_MODEL_PROVIDER}/${JUDGE_MODEL_NAME}`;
+	const judgePromptText = JUDGE_SYSTEM_PROMPT;
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    const { repository, commit_id, question } = row;
-    console.log(
-      `\n[${i + 1}/${rows.length}] Asking: "${question.slice(0, 80)}${question.length > 80 ? "..." : ""}"`,
-    );
-    console.log(`  Repo: ${repository} @ ${commit_id.slice(0, 12)}`);
+	const resultRows: EvalRow[] = [];
+	let sumTotalLinks = 0;
+	let sumBrokenLinks = 0;
 
-    let session: Awaited<ReturnType<typeof client.connect>> | null = null;
-    try {
-      session = await client.connect(repository, { commitish: commit_id });
-      const askResult = await session.ask(question);
-      const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
-      console.log(
-        `  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
-      );
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i];
+		if (!row) continue;
+		const { repository, commit_id, question } = row;
+		console.log(`\n[${i + 1}/${rows.length}] Asking: "${question.slice(0, 80)}${question.length > 80 ? "..." : ""}"`);
+		console.log(`  Repo: ${repository} @ ${commit_id.slice(0, 12)}`);
 
-      // Format tool calls as a bulleted plain-text list
-      const toolCallsStr = askResult.toolCalls
-        .map((tc) => `- ${tc.name}: ${JSON.stringify(tc.arguments)}`)
-        .join("\n");
+		const askSystemPrompt = buildDefaultSystemPrompt(repository, commit_id);
 
-      // Extract file names from read tool calls
-      const filesReadStr = askResult.toolCalls
-        .filter((tc) => tc.name === "read")
-        .map((tc) => {
-          const filePath = String(tc.arguments.path ?? tc.arguments.file ?? "");
-          const fileName = filePath.split("/").pop() || filePath;
-          return `- ${fileName}`;
-        })
-        .join("\n");
+		let session: Awaited<ReturnType<typeof client.connect>> | null = null;
+		try {
+			session = await client.connect(repository, { commitish: commit_id });
+			const askResult = await session.ask(question);
+			const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
+			console.log(
+				`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
+			);
 
-      // Broken links as ratio string
-      const totalLinks = askResult.totalLinks;
-      const brokenCount = askResult.invalidLinks.length;
-      sumTotalLinks += totalLinks;
-      sumBrokenLinks += brokenCount;
+			// Format tool calls as a bulleted plain-text list
+			const toolCallsStr = askResult.toolCalls.map((tc) => `- ${tc.name}: ${JSON.stringify(tc.arguments)}`).join("\n");
 
-      // Run LLM judge
-      let judgeResult: JudgeResult = {
-        is_answer_complete: "error",
-        is_evidence_supported: "error",
-        is_evidence_linked: "error",
-        is_reasoning_sound: "error",
-        misc_feedback: "",
-      };
-      try {
-        judgeResult = await judge(question, askResult.response);
-        console.log(
-          `  ⚖ Judge: complete=${judgeResult.is_answer_complete}, supported=${judgeResult.is_evidence_supported}, linked=${judgeResult.is_evidence_linked}, sound=${judgeResult.is_reasoning_sound}`,
-        );
-      } catch (err) {
-        console.error(
-          `  ⚖ Judge error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+			// Extract file names from read tool calls
+			const filesReadStr = askResult.toolCalls
+				.filter((tc) => tc.name === "read")
+				.map((tc) => {
+					const filePath = String(tc.arguments.path ?? tc.arguments.file ?? "");
+					const fileName = filePath.split("/").pop() || filePath;
+					return `- ${fileName}`;
+				})
+				.join("\n");
 
-      resultRows.push({
-        ...row,
-        answer: askResult.response,
-        is_answer_complete: judgeResult.is_answer_complete,
-        is_evidence_supported: judgeResult.is_evidence_supported,
-        is_evidence_linked: judgeResult.is_evidence_linked,
-        is_reasoning_sound: judgeResult.is_reasoning_sound,
-        misc_feedback: judgeResult.misc_feedback,
-        broken_link_ratio: `${brokenCount}/${totalLinks}`,
-        tool_calls: toolCallsStr,
-        files_read: filesReadStr,
-        inference_time_ms: String(askResult.inferenceTimeMs),
-      });
-    } catch (error) {
-      console.error(
-        `  ✗ Error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      resultRows.push({
-        ...row,
-        answer: "",
-        is_answer_complete: "",
-        is_evidence_supported: "",
-        is_evidence_linked: "",
-        is_reasoning_sound: "",
-        misc_feedback: "",
-        broken_link_ratio: "0/0",
-        tool_calls: "",
-        files_read: "",
-        inference_time_ms: "0",
-      });
-    } finally {
-      session?.close();
-    }
-  }
+			// Broken links as ratio string
+			const totalLinks = askResult.totalLinks;
+			const brokenCount = askResult.invalidLinks.length;
+			sumTotalLinks += totalLinks;
+			sumBrokenLinks += brokenCount;
 
-  const output = writeCsvString(resultRows);
-  await writeFile(outputPath, output, "utf-8");
-  console.log(`\n✓ Results written to: ${outputPath}`);
+			// Run LLM judge
+			let judgeResult: JudgeResult = {
+				is_answer_complete: "error",
+				is_evidence_supported: "error",
+				is_evidence_linked: "error",
+				is_reasoning_sound: "error",
+				misc_feedback: "",
+			};
+			try {
+				judgeResult = await judge(question, askResult.response);
+				console.log(
+					`  ⚖ Judge: complete=${judgeResult.is_answer_complete}, supported=${judgeResult.is_evidence_supported}, linked=${judgeResult.is_evidence_linked}, sound=${judgeResult.is_reasoning_sound}`,
+				);
+			} catch (err) {
+				console.error(`  ⚖ Judge error: ${err instanceof Error ? err.message : String(err)}`);
+			}
 
-  // Print summary
-  const total = resultRows.length;
-  const complete = resultRows.filter(
-    (r) => r.is_answer_complete === "yes",
-  ).length;
-  const evidenced = resultRows.filter(
-    (r) => r.is_evidence_supported === "yes",
-  ).length;
-  const linked = resultRows.filter(
-    (r) => r.is_evidence_linked === "yes",
-  ).length;
-  const soundReasoning = resultRows.filter(
-    (r) => r.is_reasoning_sound === "yes",
-  ).length;
+			resultRows.push({
+				...row,
+				answer: askResult.response,
+				is_answer_complete: judgeResult.is_answer_complete,
+				is_evidence_supported: judgeResult.is_evidence_supported,
+				is_evidence_linked: judgeResult.is_evidence_linked,
+				is_reasoning_sound: judgeResult.is_reasoning_sound,
+				misc_feedback: judgeResult.misc_feedback,
+				broken_link_ratio: `${brokenCount}/${totalLinks}`,
+				tool_calls: toolCallsStr,
+				files_read: filesReadStr,
+				inference_time_ms: String(askResult.inferenceTimeMs),
+				ask_model: askModelLabel,
+				judge_model: judgeModelLabel,
+				ask_system_prompt: askSystemPrompt,
+				judge_prompt: judgePromptText,
+			});
+		} catch (error) {
+			console.error(`  ✗ Error: ${error instanceof Error ? error.message : String(error)}`);
+			resultRows.push({
+				...row,
+				answer: "",
+				is_answer_complete: "",
+				is_evidence_supported: "",
+				is_evidence_linked: "",
+				is_reasoning_sound: "",
+				misc_feedback: "",
+				broken_link_ratio: "0/0",
+				tool_calls: "",
+				files_read: "",
+				inference_time_ms: "0",
+				ask_model: askModelLabel,
+				judge_model: judgeModelLabel,
+				ask_system_prompt: askSystemPrompt,
+				judge_prompt: judgePromptText,
+			});
+		} finally {
+			session?.close();
+		}
+	}
 
-  console.log("\n--- Summary ---");
-  console.log(`Total rows:          ${total}`);
-  console.log(`Broken links:        ${sumBrokenLinks}/${sumTotalLinks}`);
+	const output = writeCsvString(resultRows);
+	await writeFile(outputPath, output, "utf-8");
+	console.log(`\n✓ Results written to: ${outputPath}`);
 
-  // Generate HTML report with same timestamp
-  // Use first row's repo to build a representative system prompt for the report
-  const sampleRow = rows[0];
-  const systemPrompt = sampleRow
-    ? buildDefaultSystemPrompt(sampleRow.repository, sampleRow.commit_id)
-    : "(no rows)";
+	// Print summary
+	const total = resultRows.length;
+	const complete = resultRows.filter((r) => r.is_answer_complete === "yes").length;
+	const evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
+	const linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
+	const soundReasoning = resultRows.filter((r) => r.is_reasoning_sound === "yes").length;
 
-  const reportPath = `${reportsDir}eval-${timestamp}-report.html`;
-  const reportHtml = await generateReport(
-    output,
-    {
-      total,
-      complete,
-      evidenced,
-      linked,
-      soundReasoning,
-      brokenLinkRatio: `${sumBrokenLinks}/${sumTotalLinks}`,
-    },
-    timestamp,
-    systemPrompt,
-  );
-  await writeFile(reportPath, reportHtml, "utf-8");
-  console.log(`\n✓ Report written to: ${reportPath}`);
+	console.log("\n--- Summary ---");
+	console.log(`Total rows:          ${total}`);
+	console.log(`Broken links:        ${sumBrokenLinks}/${sumTotalLinks}`);
+
+	// Generate HTML report with same timestamp
+	// Use first row's repo to build a representative system prompt for the report
+	const sampleRow = rows[0];
+	const systemPrompt = sampleRow ? buildDefaultSystemPrompt(sampleRow.repository, sampleRow.commit_id) : "(no rows)";
+
+	const reportPath = `${reportsDir}eval-${timestamp}-report.html`;
+	const reportHtml = await generateReport(
+		output,
+		{
+			total,
+			complete,
+			evidenced,
+			linked,
+			soundReasoning,
+			brokenLinkRatio: `${sumBrokenLinks}/${sumTotalLinks}`,
+		},
+		timestamp,
+		systemPrompt,
+	);
+	await writeFile(reportPath, reportHtml, "utf-8");
+	console.log(`\n✓ Report written to: ${reportPath}`);
 }
 
 // CLI entry point
 const inputPath = process.argv[2];
 if (!inputPath) {
-  console.error("Usage: bun run eval/run-eval.ts <path-to-dataset.csv>");
-  process.exit(1);
+	console.error("Usage: bun run eval/run-eval.ts <path-to-dataset.csv>");
+	process.exit(1);
 }
 
 await runEval(inputPath);
