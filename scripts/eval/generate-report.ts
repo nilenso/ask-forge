@@ -7,9 +7,10 @@ import { readFile } from "node:fs/promises";
 
 interface ReportStats {
 	total: number;
-	relevant: number;
+	complete: number;
 	evidenced: number;
 	linked: number;
+	soundReasoning: number;
 	brokenLinkRatio: string;
 }
 
@@ -41,12 +42,14 @@ export async function generateReport(
 	const replacements: Record<string, string> = {
 		"{{TIMESTAMP}}": timestamp,
 		"{{TOTAL}}": String(stats.total),
-		"{{RELEVANT_PCT}}": pct(stats.relevant, stats.total),
-		"{{RELEVANT_COUNT}}": String(stats.relevant),
+		"{{COMPLETE_PCT}}": pct(stats.complete, stats.total),
+		"{{COMPLETE_COUNT}}": String(stats.complete),
 		"{{EVIDENCED_PCT}}": pct(stats.evidenced, stats.total),
 		"{{EVIDENCED_COUNT}}": String(stats.evidenced),
 		"{{LINKED_PCT}}": pct(stats.linked, stats.total),
 		"{{LINKED_COUNT}}": String(stats.linked),
+		"{{SOUND_PCT}}": pct(stats.soundReasoning, stats.total),
+		"{{SOUND_COUNT}}": String(stats.soundReasoning),
 		"{{BROKEN_LINK_RATIO}}": stats.brokenLinkRatio,
 		"{{CSV_JSON}}": csvJson,
 		"{{SYSTEM_PROMPT_JSON}}": systemPromptJson,

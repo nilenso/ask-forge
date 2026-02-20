@@ -1,0 +1,2482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evaluation Review Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // Apply saved theme before first paint to prevent flash
+  if (localStorage.getItem('theme') === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+</script>
+<style>
+  :root {
+    --white: #ffffff;
+    --gray-25: #fcfcfd;
+    --gray-50: #f9fafb;
+    --gray-100: #f2f4f7;
+    --gray-200: #eaecf0;
+    --gray-300: #d0d5dd;
+    --gray-400: #98a2b3;
+    --gray-500: #667085;
+    --gray-600: #475467;
+    --gray-700: #344054;
+    --gray-800: #1d2939;
+    --gray-900: #101828;
+    --indigo-25: #f5f8ff;
+    --indigo-50: #eef4ff;
+    --indigo-100: #e0eaff;
+    --indigo-500: #6172f3;
+    --indigo-600: #444ce7;
+    --indigo-700: #3538cd;
+    --green-50: #ecfdf3;
+    --green-100: #d1fadf;
+    --green-500: #12b76a;
+    --green-700: #027a48;
+    --red-50: #fef3f2;
+    --red-100: #fee4e2;
+    --red-500: #f04438;
+    --red-700: #b42318;
+    --amber-50: #fffaeb;
+    --amber-100: #fef0c7;
+    --amber-500: #f59e0b;
+    --amber-700: #b54708;
+    --blue-50: #eff8ff;
+    --blue-500: #2e90fa;
+    --blue-700: #175cd3;
+    --orange-50: #fff6ed;
+    --orange-500: #ef6820;
+
+    --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+    --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.1), 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-md: 0 4px 8px -2px rgba(16, 24, 40, 0.1), 0 2px 4px -2px rgba(16, 24, 40, 0.06);
+    --shadow-lg: 0 12px 16px -4px rgba(16, 24, 40, 0.08), 0 4px 6px -2px rgba(16, 24, 40, 0.03);
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+  }
+
+  /* ─── Dark Mode ─── */
+  [data-theme="dark"] {
+    --white: #1a1f2e;
+    --gray-25: #1c2237;
+    --gray-50: #12151f;
+    --gray-100: #21273a;
+    --gray-200: #2c3349;
+    --gray-300: #3a445e;
+    --gray-400: #5c6b84;
+    --gray-500: #7a8aa4;
+    --gray-600: #94a3bb;
+    --gray-700: #b0bdd2;
+    --gray-800: #cdd6e4;
+    --gray-900: #e2e8f4;
+
+    --indigo-25: #161c3a;
+    --indigo-50: #1d2450;
+    --indigo-100: #252f68;
+    --indigo-500: #818cf8;
+    --indigo-600: #a5b4fc;
+    --indigo-700: #c7d2fe;
+
+    --green-50: #0c2b1e;
+    --green-100: #13402d;
+    --green-500: #10b981;
+    --green-700: #6ee7b7;
+
+    --red-50: #2c1414;
+    --red-100: #3d1c1c;
+    --red-500: #ef4444;
+    --red-700: #fca5a5;
+
+    --amber-50: #2a1d06;
+    --amber-100: #3b2a08;
+    --amber-500: #f59e0b;
+    --amber-700: #fcd34d;
+
+    --blue-50: #0d1f3c;
+    --blue-500: #3b82f6;
+    --blue-700: #93c5fd;
+
+    --orange-50: #2a1505;
+    --orange-500: #fb923c;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 16px -4px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Form controls need explicit colour in dark mode — browsers don't inherit it */
+  [data-theme="dark"] .filter-input,
+  [data-theme="dark"] .filter-select {
+    color: var(--gray-900);
+    background: var(--gray-100);
+  }
+  [data-theme="dark"] .filter-input::placeholder { color: var(--gray-500); }
+  [data-theme="dark"] .left-panel { box-shadow: 8px 0 14px -14px rgba(0, 0, 0, 0.75); }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--gray-50);
+    color: var(--gray-900);
+    height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ─── Upload Screen ─── */
+  .upload-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 24px;
+    position: relative;
+  }
+  .upload-container {
+    max-width: 640px;
+    width: 100%;
+  }
+  .upload-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+  }
+  .upload-subtitle {
+    font-size: 14px;
+    color: var(--gray-500);
+    margin-bottom: 28px;
+  }
+  .upload-zones {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .drop-zone {
+    border: 2px dashed var(--gray-300);
+    border-radius: var(--radius-xl);
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--white);
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--indigo-500);
+    background: var(--indigo-25);
+  }
+  .drop-zone.loaded {
+    border-color: var(--green-500);
+    border-style: solid;
+    background: var(--green-50);
+  }
+  .drop-zone-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 4px;
+  }
+  .drop-zone-hint {
+    font-size: 13px;
+    color: var(--gray-400);
+  }
+  .drop-zone-file {
+    font-size: 13px;
+    color: var(--green-700);
+    font-weight: 500;
+    margin-top: 4px;
+  }
+  .drop-zone input[type="file"] { display: none; }
+
+  .upload-actions {
+    margin-top: 24px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .btn-primary {
+    background: var(--indigo-600);
+    color: var(--white);
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .btn-primary:hover { background: var(--indigo-700); }
+  .btn-primary:disabled {
+    background: var(--gray-200);
+    color: var(--gray-400);
+    cursor: not-allowed;
+  }
+
+  .upload-error {
+    margin-top: 12px;
+    padding: 10px 16px;
+    background: var(--red-50);
+    border: 1px solid var(--red-100);
+    border-radius: var(--radius-md);
+    color: var(--red-700);
+    font-size: 13px;
+    display: none;
+  }
+
+  /* ─── App Shell ─── */
+  .app-shell { display: none; height: 100vh; flex-direction: column; }
+  .app-shell.visible { display: flex; }
+
+  /* ─── Header ─── */
+  .app-header {
+    padding: 16px 24px;
+    background: var(--white);
+    flex-shrink: 0;
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .header-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: -0.3px;
+  }
+  .header-subtitle {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--gray-500);
+    margin-top: 2px;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-ghost {
+    background: none;
+    border: 1px solid var(--gray-200);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-ghost:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-300);
+  }
+  .btn-icon {
+    background: none;
+    border: 1px solid var(--gray-200);
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--gray-500);
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .btn-icon:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-300);
+    color: var(--gray-700);
+  }
+  .btn-icon svg { display: block; }
+
+  /* ─── Model Info Bar ─── */
+  .model-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .model-bar:empty { display: none; }
+  .model-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--indigo-50);
+    color: var(--indigo-700);
+    border: 1px solid var(--indigo-100);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .model-chip-label {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: var(--indigo-600);
+    margin-right: 2px;
+  }
+
+  /* ─── Summary Stats ─── */
+  .stats-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--gray-100);
+    color: var(--gray-700);
+  }
+  .stat-pill.green { background: var(--green-50); color: var(--green-700); }
+  .stat-pill.red { background: var(--red-50); color: var(--red-700); }
+  .stat-pill.amber { background: var(--amber-50); color: var(--amber-700); }
+  .stat-pill.blue { background: var(--blue-50); color: var(--blue-700); }
+  .stat-pill.orange { background: var(--orange-50); color: var(--orange-500); }
+  .stat-pill-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Split Pane ─── */
+  .split-pane {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    overflow: hidden;
+  }
+
+  /* ─── Left Panel (Card List) ─── */
+  .left-panel {
+    border-right: 1px solid var(--gray-200);
+    box-shadow: 8px 0 14px -14px rgba(16, 24, 40, 0.35);
+    display: flex;
+    flex-direction: column;
+    background: var(--white);
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
+  .filter-bar {
+    padding: 10px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .filter-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-input {
+    min-width: 240px;
+    padding: 7px 12px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .filter-input:focus { border-color: var(--indigo-500); }
+  .filter-select {
+    padding: 7px 10px;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--white);
+    outline: none;
+    cursor: pointer;
+    min-width: 130px;
+  }
+  .filter-count {
+    font-size: 12px;
+    color: var(--gray-400);
+    padding: 0 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .card-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    background: var(--gray-50);
+  }
+
+  /* ─── Row Card ─── */
+  .row-card {
+    padding: 12px 14px;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    margin-bottom: 8px;
+    border: 1px solid var(--gray-200);
+    background: var(--gray-25);
+    box-shadow: var(--shadow-xs);
+  }
+  .row-card:hover {
+    background: var(--white);
+    border-color: var(--gray-300);
+  }
+  .row-card.selected {
+    background: var(--indigo-25);
+    border-color: var(--indigo-500);
+  }
+  .row-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .row-card-id {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-400);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .row-card-repo {
+    font-size: 11px;
+    color: var(--gray-500);
+    background: var(--gray-100);
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  .row-card-status {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .row-card-question {
+    font-size: 13px;
+    color: var(--gray-700);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .row-card-bottom {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--gray-400);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Traffic Light Dots ─── */
+  .verdict-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .verdict-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gray-200);
+  }
+  .verdict-dot.yes { background: var(--green-500); }
+  .verdict-dot.no { background: var(--red-500); }
+  .verdict-dot[title]::after { content: ''; }
+
+  .broken-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--red-50);
+    color: var(--red-700);
+  }
+  .broken-badge.ok {
+    background: var(--green-50);
+    color: var(--green-700);
+  }
+
+  /* ─── Change Indicator ─── */
+  .change-indicator {
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .change-indicator.improved { background: var(--green-100); color: var(--green-700); }
+  .change-indicator.regressed { background: var(--red-100); color: var(--red-700); }
+  .change-indicator.unchanged { background: var(--gray-100); color: var(--gray-400); }
+  .change-indicator.added { background: var(--blue-50); color: var(--blue-700); }
+  .change-indicator.removed { background: var(--orange-50); color: var(--orange-500); }
+
+  /* ─── Right Panel (Detail) ─── */
+  .right-panel {
+    overflow-y: auto;
+    background: var(--gray-50);
+    border-left: 1px solid var(--gray-100);
+  }
+  .detail-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--gray-400);
+    font-size: 14px;
+  }
+  .detail-content {
+    padding: 24px 32px;
+    max-width: 100%;
+  }
+
+  /* ─── Detail: Single run ─── */
+  .detail-question {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: -0.3px;
+    margin-bottom: 16px;
+    line-height: 1.4;
+  }
+  .detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: var(--gray-100);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--gray-600);
+  }
+  .meta-chip code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+  }
+
+  .detail-verdicts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .verdict-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--gray-200);
+    background: var(--white);
+    color: var(--gray-600);
+  }
+  .verdict-badge .vb-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gray-300);
+  }
+  .verdict-badge.yes .vb-dot { background: var(--green-500); }
+  .verdict-badge.no .vb-dot { background: var(--red-500); }
+  .verdict-badge.yes { border-color: var(--green-100); background: var(--green-50); color: var(--green-700); }
+  .verdict-badge.no { border-color: var(--red-100); background: var(--red-50); color: var(--red-700); }
+
+  .detail-answer {
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-xs);
+  }
+
+  .detail-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-400);
+    margin-bottom: 8px;
+    margin-top: 20px;
+  }
+  .detail-section-title:first-child { margin-top: 0; }
+
+  .detail-collapsible {
+    margin-top: 16px;
+  }
+  .detail-collapsible summary {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-500);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+    padding: 8px 0;
+  }
+  .detail-collapsible summary::-webkit-details-marker { display: none; }
+  .detail-collapsible summary::before {
+    content: '▶';
+    font-size: 9px;
+    transition: transform 0.15s ease;
+    color: var(--gray-400);
+  }
+  .detail-collapsible[open] summary::before { transform: rotate(90deg); }
+  .detail-collapsible-body {
+    padding: 8px 0 8px 16px;
+    font-size: 13px;
+    color: var(--gray-600);
+    white-space: pre-wrap;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1.6;
+  }
+  .detail-collapsible.bordered {
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    padding: 0 14px;
+    margin-top: 10px;
+    margin-bottom: 16px;
+  }
+  .detail-collapsible.bordered summary {
+    padding: 10px 0;
+  }
+  .detail-collapsible.bordered .detail-collapsible-body,
+  .detail-collapsible.bordered .detail-collapsible-md {
+    border-top: 1px solid var(--gray-100);
+    padding: 10px 0 12px;
+  }
+  .detail-collapsible-md {
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--gray-600);
+  }
+
+  /* ─── Analyse with AI ─── */
+  .analyse-section {
+    margin: 12px 0 16px;
+  }
+  .analyse-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+    background: var(--indigo-600);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .analyse-btn:hover { background: var(--indigo-700); }
+  .analyse-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .analyse-btn.loading { animation: analyse-pulse 1.5s ease-in-out infinite; }
+  @keyframes analyse-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  .analyse-key-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .analyse-key-input {
+    flex: 1;
+    max-width: 360px;
+    padding: 7px 12px;
+    font-size: 13px;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-md);
+    background: var(--white);
+    color: var(--gray-700);
+  }
+  .analyse-error {
+    margin-top: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--red-700);
+    background: var(--red-50);
+    border-radius: var(--radius-md);
+  }
+  .analyse-result { margin-top: 12px; }
+  .reanalyse-link {
+    font-size: 11px;
+    color: var(--indigo-500);
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  .reanalyse-link:hover { text-decoration: underline; }
+
+  /* ─── Detail: Comparison side-by-side ─── */
+  .comparison-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .comparison-col {
+    min-width: 0;
+  }
+  .comparison-col-header {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-400);
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--gray-200);
+  }
+  .comparison-col-header.previous { border-bottom-color: var(--amber-500); }
+  .comparison-col-header.current { border-bottom-color: var(--indigo-500); }
+  .comparison-model-spacer {
+    height: 26px;
+    margin-bottom: 10px;
+  }
+  .comparison-verdict-row {
+    margin-bottom: 12px;
+  }
+
+  .structural-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+  }
+  .struct-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--gray-100);
+    color: var(--gray-600);
+  }
+  .struct-chip.better { background: var(--green-50); color: var(--green-700); }
+  .struct-chip.worse { background: var(--red-50); color: var(--red-700); }
+
+  .not-present {
+    padding: 32px;
+    text-align: center;
+    color: var(--gray-400);
+    font-style: italic;
+    font-size: 14px;
+    background: var(--gray-50);
+    border: 1px dashed var(--gray-200);
+    border-radius: var(--radius-lg);
+  }
+
+  /* ─── Markdown Rendering ─── */
+  .md-content { font-size: 14px; line-height: 1.7; color: var(--gray-700); word-break: break-word; }
+  .md-content h1, .md-content h2, .md-content h3 { margin-top: 20px; margin-bottom: 8px; color: var(--gray-800); }
+  .md-content h1 { font-size: 18px; }
+  .md-content h2 { font-size: 16px; }
+  .md-content h3 { font-size: 14px; }
+  .md-content p { margin: 8px 0; }
+  .md-content ul, .md-content ol { margin: 8px 0; padding-left: 24px; }
+  .md-content li { margin: 4px 0; }
+  .md-content code {
+    background: var(--gray-100); padding: 2px 5px; border-radius: 4px;
+    font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .md-content pre {
+    background: var(--gray-50); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md); padding: 12px 16px;
+    overflow-x: auto; margin: 8px 0;
+  }
+  .md-content pre code { background: none; padding: 0; font-size: 12px; }
+  .md-content a { color: var(--indigo-600); text-decoration: none; }
+  .md-content a:hover { text-decoration: underline; }
+  .md-content blockquote {
+    border-left: 3px solid var(--gray-200); padding-left: 16px;
+    color: var(--gray-500); margin: 8px 0;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gray-300); }
+</style>
+</head>
+<body>
+
+<!-- ═══ Upload Screen ═══ -->
+<div class="upload-screen" id="uploadScreen">
+  <button class="btn-icon" id="themeToggleUpload" title="Toggle light/dark mode" style="position:absolute;top:16px;right:20px" onclick="toggleTheme()"></button>
+  <div class="upload-container">
+    <h1 class="upload-title">Eval Viewer</h1>
+    <p class="upload-subtitle">Upload one or two eval run CSVs to visualise and compare results.</p>
+    <div class="upload-zones">
+      <div class="drop-zone" id="dropZoneA">
+        <div class="drop-zone-label">Current Run</div>
+        <div class="drop-zone-hint">Drop a CSV file here or click to browse</div>
+        <div class="drop-zone-file" id="fileNameA"></div>
+        <input type="file" id="fileInputA" accept=".csv">
+      </div>
+      <div class="drop-zone" id="dropZoneB">
+        <div class="drop-zone-label">Previous Run (optional)</div>
+        <div class="drop-zone-hint">Drop a CSV file here or click to browse</div>
+        <div class="drop-zone-file" id="fileNameB"></div>
+        <input type="file" id="fileInputB" accept=".csv">
+      </div>
+    </div>
+    <div class="upload-error" id="uploadError"></div>
+    <div class="upload-actions">
+      <button class="btn-primary" id="viewBtn" disabled>View Report</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ App Shell ═══ -->
+<div class="app-shell" id="appShell">
+  <div class="app-header">
+    <div class="header-top">
+      <h2 class="header-title" id="headerTitle">Evaluation Review Workspace</h2>
+      <div class="header-subtitle" id="headerSubtitle"></div>
+      <div class="header-actions">
+        <button class="btn-icon" id="themeToggleApp" title="Toggle light/dark mode" onclick="toggleTheme()"></button>
+      </div>
+    </div>
+    <div class="stats-bar" id="statsBar"></div>
+    <div class="filter-bar" id="filterBar"></div>
+  </div>
+  <div class="split-pane">
+    <div class="left-panel">
+      <div class="card-list" id="cardList"></div>
+    </div>
+    <div class="right-panel" id="rightPanel">
+      <div class="detail-empty">Select a row to view details</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Data Layer
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @typedef {{
+ *   sessionId: string,
+ *   repository: string,
+ *   commitId: string,
+ *   question: string,
+ *   answer: string,
+ *   isAnswerComplete: string,
+ *   isEvidenceSupported: string,
+ *   isEvidenceLinked: string,
+ *   isReasoningSound: string,
+ *   miscFeedback: string,
+ *   brokenLinkRatio: string,
+ *   toolCalls: string,
+ *   filesRead: string,
+ *   inferenceTimeMs: string,
+ * }} EvalRow
+ *
+ * @typedef {{ rows: EvalRow[], name: string, askModel: string, judgeModel: string }} EvalRun
+ *
+ * @typedef {{
+ *   key: string,
+ *   question: string,
+ *   repository: string,
+ *   commitId: string,
+ *   runA: EvalRow | null,
+ *   runB: EvalRow | null,
+ *   status: 'improved' | 'regressed' | 'unchanged' | 'added' | 'removed',
+ * }} ComparisonRow
+ *
+ * @typedef {{
+ *   label: string,
+ *   emoji: string,
+ *   valueA: number,
+ *   valueB: number,
+ *   delta: number,
+ *   direction: 'better' | 'worse' | 'neutral',
+ * }} StructuralMetric
+ */
+
+// ─── CSV Parsing ─────────────────────────────────────────────────────────
+
+/** Parse CSV text into array of records (each an array of field strings). */
+function parseCsvRecords(content) {
+  const records = [];
+  let current = '';
+  let inQuotes = false;
+  let fields = [];
+
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < content.length && content[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(current);
+        current = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && i + 1 < content.length && content[i + 1] === '\n') i++;
+        fields.push(current);
+        current = '';
+        if (fields.some(f => f.length > 0)) records.push(fields);
+        fields = [];
+      } else {
+        current += ch;
+      }
+    }
+  }
+  fields.push(current);
+  if (fields.some(f => f.length > 0)) records.push(fields);
+  return records;
+}
+
+/**
+ * Column name aliases — maps various CSV column names to our canonical field names.
+ * This handles schema variations across eval run versions.
+ */
+const COLUMN_ALIASES = {
+  session_id: 'sessionId',
+  id: 'sessionId',
+  repository: 'repository',
+  commit_id: 'commitId',
+  question: 'question',
+  answer: 'answer',
+  is_answer_relevant: 'isAnswerComplete',
+  is_answer_complete: 'isAnswerComplete',
+  is_evidence_supported: 'isEvidenceSupported',
+  is_evidence_linked: 'isEvidenceLinked',
+  is_reasoning_sound: 'isReasoningSound',
+  misc_feedback: 'miscFeedback',
+  broken_link_ratio: 'brokenLinkRatio',
+  broken_links: 'brokenLinkRatio',
+  tool_calls: 'toolCalls',
+  tool_call_count: 'toolCalls',
+  files_read: 'filesRead',
+  inference_time_ms: 'inferenceTimeMs',
+  total_links: 'totalLinks',
+  ask_model: 'askModel',
+  judge_model: 'judgeModel',
+  ask_system_prompt: 'askSystemPrompt',
+  judge_prompt: 'judgePrompt',
+};
+
+function makeEmptyRow() {
+  return {
+    sessionId: '', repository: '', commitId: '', question: '', answer: '',
+    isAnswerComplete: '', isEvidenceSupported: '', isEvidenceLinked: '',
+    isReasoningSound: '',
+    miscFeedback: '', brokenLinkRatio: '', toolCalls: '', filesRead: '',
+    inferenceTimeMs: '', totalLinks: '',
+    askModel: '', judgeModel: '',
+    askSystemPrompt: '', judgePrompt: '',
+  };
+}
+
+/** Parse CSV text into an EvalRun. Returns { ok, run?, error? } */
+function parseCsv(content, fileName) {
+  const records = parseCsvRecords(content);
+  if (records.length === 0) return { ok: false, error: 'CSV file is empty' };
+
+  const header = records[0];
+  // Build map: column index → canonical field name
+  const colMap = {};
+  for (let i = 0; i < header.length; i++) {
+    const raw = header[i].trim().toLowerCase();
+    if (COLUMN_ALIASES[raw]) colMap[i] = COLUMN_ALIASES[raw];
+  }
+
+  // Validate required columns
+  const mapped = new Set(Object.values(colMap));
+  for (const req of ['sessionId', 'repository', 'question']) {
+    if (!mapped.has(req)) {
+      return { ok: false, error: `Missing required column: ${req} (looked for: ${Object.keys(COLUMN_ALIASES).filter(k => COLUMN_ALIASES[k] === req).join(', ')})` };
+    }
+  }
+
+  const rows = [];
+  for (let r = 1; r < records.length; r++) {
+    const fields = records[r];
+    const row = makeEmptyRow();
+    for (const [idxStr, fieldName] of Object.entries(colMap)) {
+      const idx = Number(idxStr);
+      row[fieldName] = fields[idx] ?? '';
+    }
+    rows.push(row);
+  }
+
+  // Extract run-level model info from the first data row.
+  // Per-row model fields can be corrupted by spreadsheet auto-fill,
+  // so we treat the first row's values as canonical for the whole run.
+  const askModel = rows.length > 0 ? (rows[0].askModel || '') : '';
+  const judgeModel = rows.length > 0 ? (rows[0].judgeModel || '') : '';
+
+  return { ok: true, run: { rows, name: fileName, askModel, judgeModel } };
+}
+
+// ─── Row Matching & Comparison ───────────────────────────────────────────
+
+function rowKey(row) {
+  return `${row.sessionId.trim()}::${row.question.trim()}`;
+}
+
+/** Parse broken link ratio "N/M" or standalone number into { broken, total } */
+function parseBrokenLinks(row) {
+  const ratio = row.brokenLinkRatio.trim();
+  if (ratio.includes('/')) {
+    const [b, t] = ratio.split('/').map(Number);
+    return { broken: b || 0, total: t || 0 };
+  }
+  const broken = Number(ratio) || 0;
+  const total = Number((row.totalLinks || '0').trim()) || 0;
+  return { broken, total };
+}
+
+function parseListOrCount(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return 0;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw.split('\n').filter(line => line.trim().startsWith('-')).length;
+}
+
+function parseToolCallCount(row) {
+  return parseListOrCount(row.toolCalls);
+}
+
+function parseFilesReadCount(row) {
+  return parseListOrCount(row.filesRead);
+}
+
+function hasVerdicts(row) {
+  return row.isAnswerComplete !== '' || row.isEvidenceSupported !== '' || row.isEvidenceLinked !== '' || row.isReasoningSound !== '';
+}
+
+/**
+ * Classify a comparison pair as improved/regressed/unchanged.
+ * Called only when both runA and runB exist.
+ */
+function classifyChange(rowA, rowB) {
+  const _dominated = 'unchanged'; // default
+
+  // Verdict changes
+  const verdictFields = ['isAnswerComplete', 'isEvidenceSupported', 'isEvidenceLinked', 'isReasoningSound'];
+  let anyImproved = false;
+  let anyRegressed = false;
+  for (const f of verdictFields) {
+    const a = rowA[f].toLowerCase().trim();
+    const b = rowB[f].toLowerCase().trim();
+    if (a.startsWith('no') && b.startsWith('yes')) anyImproved = true;
+    if (a.startsWith('yes') && b.startsWith('no')) anyRegressed = true;
+  }
+
+  // Broken links changes
+  const linksA = parseBrokenLinks(rowA);
+  const linksB = parseBrokenLinks(rowB);
+  if (linksB.broken < linksA.broken) anyImproved = true;
+  if (linksB.broken > linksA.broken) anyRegressed = true;
+
+  // Answer presence
+  if (!rowA.answer.trim() && rowB.answer.trim()) anyImproved = true;
+  if (rowA.answer.trim() && !rowB.answer.trim()) anyRegressed = true;
+
+  // Regressed takes priority (if both improved and regressed, it's a regression)
+  if (anyRegressed) return 'regressed';
+  if (anyImproved) return 'improved';
+  return 'unchanged';
+}
+
+/**
+ * Build comparison rows from two runs.
+ * runA = previous run, runB = current run.
+ * @returns {ComparisonRow[]}
+ */
+function buildComparison(runA, runB) {
+  const mapA = new Map();
+  for (const row of runA.rows) mapA.set(rowKey(row), row);
+  const mapB = new Map();
+  for (const row of runB.rows) mapB.set(rowKey(row), row);
+
+  const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+  const result = [];
+
+  for (const key of allKeys) {
+    const a = mapA.get(key) || null;
+    const b = mapB.get(key) || null;
+    const ref = b || a; // use current run as primary reference
+
+    let status;
+    if (!a) status = 'added';
+    else if (!b) status = 'removed';
+    else status = classifyChange(a, b);
+
+    result.push({
+      key,
+      question: ref.question,
+      repository: ref.repository,
+      commitId: ref.commitId,
+      runA: a,
+      runB: b,
+      status,
+    });
+  }
+
+  // Sort: regressed first, then improved, unchanged, added, removed
+  const order = { regressed: 0, improved: 1, unchanged: 2, added: 3, removed: 4 };
+  result.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+
+  return result;
+}
+
+// ─── Structural Summary ─────────────────────────────────────────────────
+
+function countWords(text) { return text.trim().split(/\s+/).filter(Boolean).length; }
+function countPattern(text, regex) { return (text.match(regex) || []).length; }
+
+/**
+ * Compute structural metrics comparing two answers.
+ * @returns {StructuralMetric[]} Only metrics where values differ.
+ */
+function _computeStructuralSummary(answerA, answerB) {
+  const metrics = [
+    {
+      label: 'Words',
+      emoji: '📝',
+      fn: countWords,
+      higherIsBetter: null, // neutral — more words isn't inherently better
+    },
+    {
+      label: 'Sections',
+      emoji: '📑',
+      fn: t => countPattern(t, /^#{1,6}\s/gm),
+      higherIsBetter: true,
+    },
+    {
+      label: 'Code blocks',
+      emoji: '💻',
+      fn: t => countPattern(t, /```/g) / 2, // opening+closing pairs
+      higherIsBetter: true,
+    },
+    {
+      label: 'Links',
+      emoji: '🔗',
+      fn: t => {
+        // Count markdown links, then bare URLs not inside markdown link syntax
+        const mdLinks = countPattern(t, /\[([^\]]+)\]\(([^)]+)\)/g);
+        const withoutMd = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '');
+        const bareUrls = countPattern(withoutMd, /https?:\/\/[^\s)>\]]+/g);
+        return mdLinks + bareUrls;
+      },
+      higherIsBetter: true,
+    },
+    {
+      label: 'List items',
+      emoji: '📋',
+      fn: t => countPattern(t, /^[\s]*[-*+]\s|^\s*\d+\.\s/gm),
+      higherIsBetter: true,
+    },
+  ];
+
+  const result = [];
+  for (const m of metrics) {
+    const valA = Math.round(m.fn(answerA || ''));
+    const valB = Math.round(m.fn(answerB || ''));
+    const delta = valB - valA;
+    if (delta === 0) continue;
+
+    let direction = 'neutral';
+    if (m.higherIsBetter === true) direction = delta > 0 ? 'better' : 'worse';
+    else if (m.higherIsBetter === false) direction = delta < 0 ? 'better' : 'worse';
+
+    result.push({ label: m.label, emoji: m.emoji, valueA: valA, valueB: valB, delta, direction });
+  }
+
+  return result;
+}
+
+/**
+ * Compute broken-link structural metric for two rows.
+ * @returns {StructuralMetric | null}
+ */
+function _computeBrokenLinkMetric(rowA, rowB) {
+  const a = parseBrokenLinks(rowA);
+  const b = parseBrokenLinks(rowB);
+  const delta = b.broken - a.broken;
+  if (delta === 0) return null;
+  return {
+    label: 'Broken links',
+    emoji: '⚠️',
+    valueA: a.broken,
+    valueB: b.broken,
+    delta,
+    direction: delta < 0 ? 'better' : 'worse',
+  };
+}
+
+// ─── Utility ─────────────────────────────────────────────────────────────
+
+/** Extract "org/repo" from a full GitHub/GitLab URL */
+function shortRepoName(url) {
+  const m = url.match(/(?:github|gitlab)\.com\/([^/]+\/[^/.]+)/);
+  return m ? m[1] : url;
+}
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatMs(ms) {
+  const n = Number(ms);
+  if (!n) return '—';
+  if (n < 1000) return `${n}ms`;
+  return `${(n / 1000).toFixed(1)}s`;
+}
+
+/** Format a tool calls string for display. Converts `- read: {"path": "README.md"}` to `- read: "README.md"` */
+function _formatToolCalls(raw) {
+  return raw.split('\n').map(line => {
+    const m = line.match(/^(\s*-\s*)(\w+):\s*(\{.+\})\s*$/);
+    if (!m) return line;
+    const [, prefix, name, jsonStr] = m;
+    try {
+      const args = JSON.parse(jsonStr);
+      const values = Object.values(args).map(v => JSON.stringify(v));
+      return `${prefix}${name}: ${values.join(' ')}`;
+    } catch { return line; }
+  }).join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// App State
+// ═══════════════════════════════════════════════════════════════════════════
+
+const state = {
+  /** @type {EvalRun | null} */ runA: null,  // current run (or single run)
+  /** @type {EvalRun | null} */ runB: null,  // previous run (optional)
+  /** @type {ComparisonRow[] | null} */ comparison: null,
+  /** @type {string | null} */ selectedKey: null,
+  filters: {
+    search: '',
+    repo: '',       // '' = all
+    verdict: '',    // '' = all, 'pass', 'fail', 'none'
+    status: '',     // '' = all, 'improved', 'regressed', 'unchanged', 'added', 'removed'
+  },
+  sort: '',         // '' = default, 'broken', 'tool-calls', 'files-read', 'latency'
+  sortOrder: 'desc', // 'asc' or 'desc'
+  // Pending file data before "View Report" clicked
+  /** @type {{ content: string, name: string } | null} */ pendingA: null,
+  /** @type {{ content: string, name: string } | null} */ pendingB: null,
+};
+
+const $ = id => document.getElementById(id);
+
+function isComparisonMode() { return state.runA !== null && state.runB !== null; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Upload Screen
+// ═══════════════════════════════════════════════════════════════════════════
+
+function setupUpload() {
+  setupDropZone('dropZoneA', 'fileInputA', 'fileNameA', 'A');
+  setupDropZone('dropZoneB', 'fileInputB', 'fileNameB', 'B');
+
+  $('viewBtn').addEventListener('click', () => {
+    const errorEl = $('uploadError');
+    errorEl.style.display = 'none';
+
+    if (!state.pendingA) {
+      errorEl.textContent = 'Please upload at least the Current Run CSV.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    // Parse current run
+    const resultA = parseCsv(state.pendingA.content, state.pendingA.name);
+    if (!resultA.ok) {
+      errorEl.textContent = `Current Run CSV error: ${resultA.error}`;
+      errorEl.style.display = 'block';
+      return;
+    }
+    state.runA = resultA.run;
+
+    // Parse previous run if provided
+    if (state.pendingB) {
+      const resultB = parseCsv(state.pendingB.content, state.pendingB.name);
+      if (!resultB.ok) {
+        errorEl.textContent = `Previous Run CSV error: ${resultB.error}`;
+        errorEl.style.display = 'block';
+        return;
+      }
+      state.runB = resultB.run;
+      state.comparison = buildComparison(state.runB, state.runA);
+    } else {
+      state.runB = null;
+      state.comparison = null;
+    }
+
+    state.selectedKey = null;
+    state.filters = { search: '', repo: '', verdict: '', status: '' };
+    showApp();
+  });
+}
+
+function setupDropZone(zoneId, inputId, nameId, slot) {
+  const zone = $(zoneId);
+  const input = $(inputId);
+  const nameEl = $(nameId);
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) readUploadedFile(file, zone, nameEl, slot);
+  });
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    if (file) readUploadedFile(file, zone, nameEl, slot);
+  });
+}
+
+function readUploadedFile(file, zone, nameEl, slot) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = { content: reader.result, name: file.name };
+    if (slot === 'A') state.pendingA = data;
+    else state.pendingB = data;
+    zone.classList.add('loaded');
+    nameEl.textContent = `✓ ${file.name}`;
+    $('viewBtn').disabled = !state.pendingA;
+  };
+  reader.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// App Rendering
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showApp() {
+  $('uploadScreen').style.display = 'none';
+  $('appShell').classList.add('visible');
+  renderHeader();
+  renderFilters();
+  renderCardList();
+  renderDetail();
+}
+
+function renderHeader() {
+  const cmp = isComparisonMode();
+  $('headerTitle').textContent = 'Evaluation Review Workspace';
+  if (cmp) {
+    $('headerSubtitle').textContent = `Current: ${state.runA.name} · Baseline: ${state.runB.name}`;
+  } else {
+    $('headerSubtitle').textContent = `Current: ${state.runA.name}`;
+  }
+  renderStats();
+}
+
+/** Render model chips for a single row — call inline in response panes */
+function renderModelChips(row) {
+  const askModel = row.askModel?.trim() || '';
+  const judgeModel = row.judgeModel?.trim() || '';
+  if (!askModel && !judgeModel) return '';
+  let html = '<div class="model-bar">';
+  if (askModel) html += `<span class="model-chip"><span class="model-chip-label">Ask</span>${esc(askModel)}</span>`;
+  if (judgeModel) html += `<span class="model-chip"><span class="model-chip-label">Judge</span>${esc(judgeModel)}</span>`;
+  html += '</div>';
+  return html;
+}
+
+/** Safe markdown render — falls back to escaped text if marked.js hasn't loaded */
+function renderMarkdown(text) {
+  if (typeof marked !== 'undefined' && marked.parse) {
+    return marked.parse(text);
+  }
+  return `<pre>${esc(text)}</pre>`;
+}
+
+function renderStats() {
+  const bar = $('statsBar');
+  if (isComparisonMode()) {
+    renderComparisonStats(bar);
+    return;
+  }
+
+  // Single run stats
+  const run = state.runA;
+  const rows = run.rows;
+  const total = rows.length;
+
+  // Broken links
+  let totalBroken = 0, totalLinks = 0;
+  for (const r of rows) {
+    const bl = parseBrokenLinks(r);
+    totalBroken += bl.broken;
+    totalLinks += bl.total;
+  }
+
+  // Avg inference time
+  let sumMs = 0, countMs = 0;
+  for (const r of rows) {
+    const ms = Number(r.inferenceTimeMs);
+    if (ms > 0) { sumMs += ms; countMs++; }
+  }
+  const avgMs = countMs > 0 ? Math.round(sumMs / countMs) : 0;
+
+  let html = `<span class="stat-pill"><span class="stat-pill-value">${total}</span> questions</span>`;
+  html += `<span class="stat-pill ${totalBroken > 0 ? 'red' : 'green'}"><span class="stat-pill-value">${totalBroken}/${totalLinks}</span> broken links</span>`;
+  if (avgMs) html += `<span class="stat-pill"><span class="stat-pill-value">${formatMs(avgMs)}</span> avg inference</span>`;
+
+  // Verdict stats (only if any row has verdicts)
+  const withVerdicts = rows.filter(hasVerdicts);
+  if (withVerdicts.length > 0) {
+    const pct = (field) => {
+      const yes = withVerdicts.filter(r => r[field].toLowerCase().startsWith('yes')).length;
+      return Math.round((yes / withVerdicts.length) * 100);
+    };
+    const cmpPct = pct('isAnswerComplete');
+    const evPct = pct('isEvidenceSupported');
+    const lnPct = pct('isEvidenceLinked');
+    const snPct = pct('isReasoningSound');
+    html += `<span class="stat-pill ${cmpPct >= 80 ? 'green' : cmpPct >= 50 ? 'amber' : 'red'}"><span class="stat-pill-value">${cmpPct}%</span> complete</span>`;
+    html += `<span class="stat-pill ${evPct >= 80 ? 'green' : evPct >= 50 ? 'amber' : 'red'}"><span class="stat-pill-value">${evPct}%</span> evidenced</span>`;
+    html += `<span class="stat-pill ${lnPct >= 80 ? 'green' : lnPct >= 50 ? 'amber' : 'red'}"><span class="stat-pill-value">${lnPct}%</span> linked</span>`;
+    html += `<span class="stat-pill ${snPct >= 80 ? 'green' : snPct >= 50 ? 'amber' : 'red'}"><span class="stat-pill-value">${snPct}%</span> good reasoning</span>`;
+  }
+
+  bar.innerHTML = html;
+}
+
+function renderComparisonStats(bar) {
+  const comp = state.comparison;
+  const total = comp.length;
+  const counts = { improved: 0, regressed: 0, unchanged: 0, added: 0, removed: 0 };
+  for (const cr of comp) counts[cr.status]++;
+
+  let html = `<span class="stat-pill"><span class="stat-pill-value">${total}</span> rows compared</span>`;
+  if (counts.regressed > 0) html += `<span class="stat-pill red"><span class="stat-pill-value">${counts.regressed}</span> regressed</span>`;
+  if (counts.improved > 0) html += `<span class="stat-pill green"><span class="stat-pill-value">${counts.improved}</span> improved</span>`;
+  // Keep comparison summary focused on quality movement only (improved/regressed).
+
+  // Completeness change (count items that went from incomplete→complete or complete→incomplete)
+  const withBothVerdicts = comp.filter(cr => cr.runA && cr.runB && hasVerdicts(cr.runA) && hasVerdicts(cr.runB));
+  if (withBothVerdicts.length > 0) {
+    const completeA = withBothVerdicts.filter(cr => cr.runA.isAnswerComplete.toLowerCase().startsWith('yes')).length;
+    const completeB = withBothVerdicts.filter(cr => cr.runB.isAnswerComplete.toLowerCase().startsWith('yes')).length;
+    const completeDelta = completeB - completeA;
+    if (completeDelta !== 0) {
+      const cls = completeDelta > 0 ? 'green' : 'red';
+      const sign = completeDelta > 0 ? '+' : '';
+      html += `<span class="stat-pill ${cls}"><span class="stat-pill-value">${sign}${completeDelta}</span> completeness</span>`;
+    }
+  }
+
+  // Avg latency change
+  let sumMsA = 0, countMsA = 0, sumMsB = 0, countMsB = 0;
+  for (const cr of comp) {
+    if (cr.runA) { const ms = Number(cr.runA.inferenceTimeMs); if (ms > 0) { sumMsA += ms; countMsA++; } }
+    if (cr.runB) { const ms = Number(cr.runB.inferenceTimeMs); if (ms > 0) { sumMsB += ms; countMsB++; } }
+  }
+  if (countMsA > 0 && countMsB > 0) {
+    const avgA = Math.round(sumMsA / countMsA);
+    const avgB = Math.round(sumMsB / countMsB);
+    const latencyDelta = avgB - avgA;
+    if (latencyDelta !== 0) {
+      const cls = latencyDelta < 0 ? 'green' : 'red';
+      const sign = latencyDelta > 0 ? '+' : '';
+      html += `<span class="stat-pill ${cls}">⏱ <span class="stat-pill-value">${sign}${formatMs(latencyDelta)}</span> avg latency</span>`;
+    }
+  }
+
+  // Avg tool calls change
+  const tcCount = (row) => {
+    const raw = String(row.toolCalls || '').trim();
+    if (!raw) return 0;
+    return raw.split('\n').filter(l => l.trim().startsWith('-')).length;
+  };
+  let sumTcA = 0, countTcA = 0, sumTcB = 0, countTcB = 0;
+  for (const cr of comp) {
+    if (cr.runA) { sumTcA += tcCount(cr.runA); countTcA++; }
+    if (cr.runB) { sumTcB += tcCount(cr.runB); countTcB++; }
+  }
+  if (countTcA > 0 && countTcB > 0) {
+    const avgTcA = sumTcA / countTcA;
+    const avgTcB = sumTcB / countTcB;
+    const tcDelta = Math.round((avgTcB - avgTcA) * 10) / 10;
+    if (tcDelta !== 0) {
+      const cls = tcDelta < 0 ? 'green' : 'red';
+      const sign = tcDelta > 0 ? '+' : '';
+      html += `<span class="stat-pill ${cls}">🛠 <span class="stat-pill-value">${sign}${tcDelta}</span> avg tool calls</span>`;
+    }
+  }
+
+  // Broken links change
+  let brokenA = 0, brokenB = 0;
+  for (const cr of comp) {
+    if (cr.runA) { brokenA += parseBrokenLinks(cr.runA).broken; }
+    if (cr.runB) { brokenB += parseBrokenLinks(cr.runB).broken; }
+  }
+  const linkDelta = brokenB - brokenA;
+  if (linkDelta !== 0) {
+    const linkCls = linkDelta < 0 ? 'green' : 'red';
+    const linkSign = linkDelta > 0 ? '+' : '';
+    html += `<span class="stat-pill ${linkCls}">🔗 <span class="stat-pill-value">${linkSign}${linkDelta}</span> broken links</span>`;
+  }
+
+  bar.innerHTML = html;
+}
+
+function renderFilters() {
+  const bar = $('filterBar');
+  const cmp = isComparisonMode();
+
+  // Collect unique repos
+  const repos = new Set();
+  const sourceRows = cmp
+    ? state.comparison.map(cr => cr.runB || cr.runA)
+    : state.runA.rows;
+  for (const r of sourceRows) repos.add(shortRepoName(r.repository));
+  const repoOptions = [...repos].sort();
+
+  // Check if any row has verdicts
+  const anyVerdicts = sourceRows.some(hasVerdicts);
+
+  let html = '<div class="filter-row">';
+  html += `<input class="filter-input" type="text" id="filterSearch" placeholder="Search questions…" value="${esc(state.filters.search)}">`;
+
+  if (repoOptions.length > 1) {
+    html += `<select class="filter-select" id="filterRepo">`;
+    html += `<option value=""${state.filters.repo === '' ? ' selected' : ''}>Repo: all</option>`;
+    for (const r of repoOptions) {
+      const sel = state.filters.repo === r ? ' selected' : '';
+      html += `<option value="${esc(r)}"${sel}>Repo: ${esc(r)}</option>`;
+    }
+    html += `</select>`;
+  }
+
+  if (anyVerdicts) {
+    html += `<select class="filter-select" id="filterVerdict">`;
+    html += `<option value=""${state.filters.verdict === '' ? ' selected' : ''}>Verdict: all</option>`;
+    html += `<option value="pass"${state.filters.verdict === 'pass' ? ' selected' : ''}>Verdict: pass</option>`;
+    html += `<option value="fail"${state.filters.verdict === 'fail' ? ' selected' : ''}>Verdict: fail</option>`;
+    html += `<option value="none"${state.filters.verdict === 'none' ? ' selected' : ''}>Verdict: none</option>`;
+    html += `</select>`;
+  }
+
+  if (cmp) {
+    html += `<select class="filter-select" id="filterStatus">`;
+    html += `<option value=""${state.filters.status === '' ? ' selected' : ''}>Change: all</option>`;
+    html += `<option value="regressed"${state.filters.status === 'regressed' ? ' selected' : ''}>Change: regressed</option>`;
+    html += `<option value="improved"${state.filters.status === 'improved' ? ' selected' : ''}>Change: improved</option>`;
+    html += `<option value="unchanged"${state.filters.status === 'unchanged' ? ' selected' : ''}>Change: unchanged</option>`;
+    html += `<option value="added"${state.filters.status === 'added' ? ' selected' : ''}>Change: added</option>`;
+    html += `<option value="removed"${state.filters.status === 'removed' ? ' selected' : ''}>Change: removed</option>`;
+    html += `</select>`;
+  }
+
+  // Metric rank dropdown
+  html += `<select class="filter-select" id="filterSortMetric">`;
+  html += `<option value=""${state.sort === '' ? ' selected' : ''}>Metric rank: default</option>`;
+  html += `<option value="broken"${state.sort === 'broken' ? ' selected' : ''}>Metric rank: broken links</option>`;
+  html += `<option value="tool-calls"${state.sort === 'tool-calls' ? ' selected' : ''}>Metric rank: tool calls</option>`;
+  html += `<option value="files-read"${state.sort === 'files-read' ? ' selected' : ''}>Metric rank: files read</option>`;
+  html += `<option value="latency"${state.sort === 'latency' ? ' selected' : ''}>Metric rank: latency</option>`;
+  html += `</select>`;
+
+  // Order dropdown
+  html += `<select class="filter-select" id="filterSortOrder">`;
+  html += `<option value="desc"${state.sortOrder === 'desc' ? ' selected' : ''}>Order: descending</option>`;
+  html += `<option value="asc"${state.sortOrder === 'asc' ? ' selected' : ''}>Order: ascending</option>`;
+  html += `</select>`;
+
+  // Count (inline, pushed right)
+  const filtered = getFilteredItems();
+  const totalCount = cmp ? state.comparison.length : state.runA.rows.length;
+  html += `<span class="filter-count">Showing ${filtered.length} of ${totalCount}</span>`;
+
+  html += '</div>';
+
+  bar.innerHTML = html;
+
+  // Bind filter events
+  const onFilter = () => {
+    state.filters.search = $('filterSearch')?.value || '';
+    state.filters.repo = $('filterRepo')?.value || '';
+    state.filters.verdict = $('filterVerdict')?.value || '';
+    state.filters.status = $('filterStatus')?.value || '';
+    state.sort = $('filterSortMetric')?.value || '';
+    state.sortOrder = $('filterSortOrder')?.value || 'desc';
+    state.selectedKey = null;
+    renderCardList();
+    renderDetail();
+    // Update count
+    const f = getFilteredItems();
+    bar.querySelector('.filter-count').textContent = `Showing ${f.length} of ${totalCount}`;
+  };
+
+  $('filterSearch')?.addEventListener('input', onFilter);
+  $('filterRepo')?.addEventListener('change', onFilter);
+  $('filterVerdict')?.addEventListener('change', onFilter);
+  $('filterStatus')?.addEventListener('change', onFilter);
+  $('filterSortMetric')?.addEventListener('change', onFilter);
+  $('filterSortOrder')?.addEventListener('change', onFilter);
+}
+
+/** Get the list items to display (either single run rows or comparison rows), with filters applied. */
+// ─── Sort Helpers ────────────────────────────────────────────────────────
+
+/** Resolve the primary EvalRow for sorting (current run preferred). */
+function sortRow(item) {
+  if (isComparisonMode()) return item.runB || item.runA;
+  return item;
+}
+
+function sortBrokenLinks(item) {
+  return parseBrokenLinks(sortRow(item)).broken;
+}
+
+function sortToolCalls(item) {
+  const raw = String(sortRow(item).toolCalls || '').trim();
+  if (!raw) return 0;
+  return raw.split('\n').filter(l => l.trim().startsWith('-')).length;
+}
+
+function sortFilesRead(item) {
+  const raw = String(sortRow(item).filesRead || '').trim();
+  if (!raw) return 0;
+  return raw.split('\n').filter(l => l.trim().startsWith('-')).length;
+}
+
+function sortLatency(item) {
+  return Number(sortRow(item).inferenceTimeMs) || 0;
+}
+
+function applySorting(items) {
+  const s = state.sort;
+  if (!s) return items;
+
+  const asc = state.sortOrder === 'asc';
+
+  // Map sort metric to extractor
+  const extractors = {
+    broken: sortBrokenLinks,
+    'tool-calls': sortToolCalls,
+    'files-read': sortFilesRead,
+    latency: sortLatency,
+  };
+  const extractor = extractors[s];
+  if (!extractor) return items;
+
+  return [...items].sort((a, b) => {
+    const va = extractor(a);
+    const vb = extractor(b);
+    return asc ? va - vb : vb - va;
+  });
+}
+
+// ─── Filtering ───────────────────────────────────────────────────────────
+
+function getFilteredItems() {
+  const f = state.filters;
+  let result;
+
+  if (isComparisonMode()) {
+    result = state.comparison.filter(cr => {
+      if (f.search && !cr.question.toLowerCase().includes(f.search.toLowerCase())) return false;
+      if (f.repo && shortRepoName(cr.repository) !== f.repo) return false;
+      if (f.status && cr.status !== f.status) return false;
+      // Verdict filter applies to current run (runB)
+      if (f.verdict && cr.runB) {
+        const pass = isPassRow(cr.runB);
+        if (f.verdict === 'pass' && !pass) return false;
+        if (f.verdict === 'fail' && pass) return false;
+        if (f.verdict === 'none' && hasVerdicts(cr.runB)) return false;
+      }
+      return true;
+    });
+  } else {
+    // Single run mode
+    result = state.runA.rows.filter(row => {
+      if (f.search && !row.question.toLowerCase().includes(f.search.toLowerCase())) return false;
+      if (f.repo && shortRepoName(row.repository) !== f.repo) return false;
+      if (f.verdict) {
+        const hv = hasVerdicts(row);
+        if (f.verdict === 'none' && hv) return false;
+        if (f.verdict === 'pass' && !isPassRow(row)) return false;
+        if (f.verdict === 'fail' && isPassRow(row)) return false;
+      }
+      return true;
+    });
+  }
+
+  return applySorting(result);
+}
+
+function isPassRow(row) {
+  if (!hasVerdicts(row)) return true; // no verdicts = not a failure
+  const fields = ['isAnswerComplete', 'isEvidenceSupported', 'isEvidenceLinked', 'isReasoningSound'];
+  return !fields.some(f => row[f].toLowerCase().startsWith('no'));
+}
+
+function getRowKey(item) {
+  // item is either an EvalRow (single mode) or ComparisonRow (comparison mode)
+  if (item.key !== undefined) return item.key; // ComparisonRow
+  return rowKey(item); // EvalRow
+}
+
+function renderCardList() {
+  const list = $('cardList');
+  const items = getFilteredItems();
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="detail-empty" style="padding:32px">No rows match the current filters</div>';
+    return;
+  }
+
+  let html = '';
+  for (const item of items) {
+    const key = getRowKey(item);
+    const selected = key === state.selectedKey ? ' selected' : '';
+    const cmp = isComparisonMode();
+
+    // Extract fields depending on mode
+    const row = cmp ? (item.runB || item.runA) : item;
+    const question = row.question;
+    const repo = shortRepoName(row.repository);
+    const sessionId = row.sessionId;
+
+    html += `<div class="row-card${selected}" data-key="${esc(key)}">`;
+    html += `<div class="row-card-top">`;
+    html += `<span class="row-card-id">#${esc(sessionId)}</span>`;
+    html += `<span class="row-card-repo" title="${esc(row.repository)}">${esc(repo)}</span>`;
+    html += `<span class="row-card-status">`;
+    if (cmp) {
+      html += renderChangeIndicator(item.status);
+    }
+    html += `</span></div>`;
+    html += `<div class="row-card-question">${esc(question)}</div>`;
+    const latencyMs = Number(row.inferenceTimeMs) || 0;
+    const tcCount = parseToolCallCount(row);
+    const frCount = parseFilesReadCount(row);
+    html += `<div class="row-card-bottom">`;
+    if (latencyMs) html += `<span>${formatMs(latencyMs)}</span>`;
+    if (tcCount) html += `<span>${tcCount} tool call${tcCount !== 1 ? 's' : ''}</span>`;
+    if (frCount) html += `<span>${frCount} file${frCount !== 1 ? 's' : ''} read</span>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  list.innerHTML = html;
+
+  // Click handlers
+  list.querySelectorAll('.row-card').forEach(card => {
+    card.addEventListener('click', () => {
+      state.selectedKey = card.dataset.key;
+      // Update selection highlight
+      list.querySelectorAll('.row-card').forEach(c => { c.classList.remove('selected'); });
+      card.classList.add('selected');
+      renderDetail();
+    });
+  });
+
+  // Auto-select first if none selected
+  if (!state.selectedKey && items.length > 0) {
+    state.selectedKey = getRowKey(items[0]);
+    list.querySelector('.row-card')?.classList.add('selected');
+    renderDetail();
+  }
+}
+
+function _renderVerdictDots(row) {
+  if (!hasVerdicts(row)) return '';
+  const fields = [
+    { key: 'isAnswerComplete', label: 'Complete' },
+    { key: 'isEvidenceSupported', label: 'Evidenced' },
+    { key: 'isEvidenceLinked', label: 'Linked' },
+    { key: 'isReasoningSound', label: 'Good Reasoning' },
+  ];
+  let html = '<span class="verdict-dots">';
+  for (const f of fields) {
+    const v = row[f.key].toLowerCase().trim();
+    let cls = '';
+    if (v.startsWith('yes')) cls = 'yes';
+    else if (v.startsWith('no')) cls = 'no';
+    html += `<span class="verdict-dot ${cls}" title="${f.label}: ${v || 'n/a'}"></span>`;
+  }
+  html += '</span>';
+  return html;
+}
+
+function renderChangeIndicator(status) {
+  const labels = { improved: 'improved', regressed: 'regressed', unchanged: 'unchanged', added: 'added', removed: 'removed' };
+  return `<span class="change-indicator ${status}">${labels[status] || status}</span>`;
+}
+
+function renderDetail() {
+  const panel = $('rightPanel');
+  if (!state.selectedKey) {
+    panel.innerHTML = '<div class="detail-empty">Select a row to view details</div>';
+    return;
+  }
+
+  if (isComparisonMode()) {
+    renderComparisonDetail(panel);
+    return;
+  }
+
+  // Single run detail
+  const row = state.runA.rows.find(r => rowKey(r) === state.selectedKey);
+  if (!row) {
+    panel.innerHTML = '<div class="detail-empty">Row not found</div>';
+    return;
+  }
+
+  panel.innerHTML = `<div class="detail-content">${renderSingleRowDetail(row)}</div>`;
+  panel.scrollTop = 0;
+  // Open links in new tab
+  panel.querySelectorAll('.md-content a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+}
+
+function renderSingleRowDetail(row) {
+  let html = '';
+  html += `<div class="detail-question">${esc(row.question)}</div>`;
+
+  // Metadata
+  html += '<div class="detail-meta">';
+  html += `<span class="meta-chip">📁 <a href="${esc(row.repository)}" target="_blank">${esc(shortRepoName(row.repository))}</a></span>`;
+  if (row.commitId) html += `<span class="meta-chip">🔗 <a href="${esc(row.repository)}/commit/${esc(row.commitId)}" target="_blank"><code>${esc(row.commitId.slice(0, 12))}</code></a></span>`;
+  if (row.inferenceTimeMs) html += `<span class="meta-chip">⏱ ${formatMs(row.inferenceTimeMs)}</span>`;
+  const bl = parseBrokenLinks(row);
+  if (bl.total > 0) {
+    const color = bl.broken > 0 ? 'color:var(--red-700)' : 'color:var(--green-700)';
+    html += `<span class="meta-chip" style="${color}">🔗 ${bl.broken}/${bl.total} broken links</span>`;
+  }
+  if (row.toolCalls) {
+    const count = row.toolCalls.split('\n').filter(l => l.trim().startsWith('-')).length || row.toolCalls;
+    html += `<span class="meta-chip">🛠 ${typeof count === 'number' ? `${count} tool calls` : `${count} tool calls`}</span>`;
+  }
+  // Answer structural stats
+  if (row.answer.trim()) {
+    const words = countWords(row.answer);
+    const sections = countPattern(row.answer, /^#{1,6}\s/gm);
+    const mdLinks = countPattern(row.answer, /\[([^\]]+)\]\(([^)]+)\)/g);
+    const withoutMd = row.answer.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '');
+    const bareUrls = countPattern(withoutMd, /https?:\/\/[^\s)>\]]+/g);
+    const links = mdLinks + bareUrls;
+    if (words) html += `<span class="meta-chip">📝 ${words} words</span>`;
+    if (sections) html += `<span class="meta-chip">📑 ${sections} sections</span>`;
+    if (links) html += `<span class="meta-chip">🔗 ${links} links</span>`;
+  }
+  html += '</div>';
+
+  // Models (use run-level info to avoid spreadsheet auto-fill corruption)
+  html += renderModelChips(state.runA);
+
+  // Verdicts
+  if (hasVerdicts(row)) {
+    html += '<div class="detail-verdicts">';
+    html += renderVerdictBadge('Complete', row.isAnswerComplete);
+    html += renderVerdictBadge('Evidenced', row.isEvidenceSupported);
+    html += renderVerdictBadge('Linked', row.isEvidenceLinked);
+    html += renderVerdictBadge('Good Reasoning', row.isReasoningSound);
+    html += '</div>';
+  }
+
+  // Answer (collapsible, expanded by default)
+  html += `<details class="detail-collapsible bordered" open>`;
+  html += `<summary>Answer</summary>`;
+  if (row.answer.trim()) {
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.answer)}</div>`;
+  } else {
+    html += '<div class="not-present" style="margin:10px 0">No answer — likely an error during eval</div>';
+  }
+  html += `</details>`;
+
+  // Collapsed sections below response
+  html += renderCollapsibleSections(row);
+
+  // Judge feedback (collapsed, after stats)
+  if (row.miscFeedback?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Judge Feedback</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.miscFeedback)}</div></details>`;
+  }
+
+  return html;
+}
+
+/** Render collapsible bordered sections for tool calls, files read, prompts */
+function renderCollapsibleSections(row) {
+  let html = '';
+
+  if (row.toolCalls?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Tool Calls</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.toolCalls)}</div></details>`;
+  }
+
+  if (row.filesRead?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Files Read</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.filesRead)}</div></details>`;
+  }
+
+  if (row.askSystemPrompt?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Ask System Prompt</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.askSystemPrompt)}</div></details>`;
+  }
+
+  if (row.judgePrompt?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Judge Prompt</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.judgePrompt)}</div></details>`;
+  }
+
+  return html;
+}
+
+function renderVerdictBadge(label, value) {
+  const v = value.toLowerCase().trim();
+  let cls = '';
+  if (v.startsWith('yes')) cls = 'yes';
+  else if (v.startsWith('no')) cls = 'no';
+  return `<span class="verdict-badge ${cls}"><span class="vb-dot"></span>${label}</span>`;
+}
+
+function renderComparisonDetail(panel) {
+  const cr = state.comparison.find(c => c.key === state.selectedKey);
+  if (!cr) {
+    panel.innerHTML = '<div class="detail-empty">Row not found</div>';
+    return;
+  }
+
+  let html = '<div class="detail-content">';
+
+  // Question + change indicator
+  html += `<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;">`;
+  html += renderChangeIndicator(cr.status);
+  html += `<div class="detail-question" style="margin-bottom:0">${esc(cr.question)}</div>`;
+  html += `</div>`;
+
+  // Metadata (from current run, fallback to previous)
+  const ref = cr.runB || cr.runA;
+  html += '<div class="detail-meta">';
+  html += `<span class="meta-chip">📁 <a href="${esc(ref.repository)}" target="_blank">${esc(shortRepoName(ref.repository))}</a></span>`;
+  if (ref.commitId) html += `<span class="meta-chip">🔗 <a href="${esc(ref.repository)}/commit/${esc(ref.commitId)}" target="_blank"><code>${esc(ref.commitId.slice(0, 12))}</code></a></span>`;
+  html += '</div>';
+
+  // Analyse with AI (comparison mode, both runs present)
+  if (cr.runA && cr.runB) {
+    const cacheKey = `${cr.key}|${cr.runA.sessionId}:${cr.runB.sessionId}`;
+    const cached = getAnalysisCache(cacheKey);
+    html += `<div class="analyse-section" id="analyseSection">`;
+    html += `<button class="analyse-btn" id="analyseBtn" data-key="${esc(cr.key)}" onclick="handleAnalyseClick(this.dataset.key)">🤖 Analyse with AI</button>`;
+    if (cached) {
+      html += `<details class="detail-collapsible bordered analyse-result" open>`;
+      html += `<summary>AI Analysis <a class="reanalyse-link" data-key="${esc(cr.key)}" onclick="event.stopPropagation(); reanalyse(this.dataset.key)">(re-analyse)</a></summary>`;
+      html += `<div class="detail-collapsible-md md-content">${renderMarkdown(cached)}</div>`;
+      html += `</details>`;
+    }
+    html += `</div>`;
+  }
+
+  // Side-by-side answers
+  html += '<div class="comparison-columns">';
+
+  // Previous run (runA)
+  html += '<div class="comparison-col">';
+  html += `<div class="comparison-col-header previous">Previous — ${esc(state.runB.name)}</div>`;
+  if (cr.runA) {
+    html += renderComparisonColContent(cr.runA, state.runB);
+  } else {
+    html += '<div class="not-present">Not present in previous run</div>';
+  }
+  html += '</div>';
+
+  // Current run (runB)
+  html += '<div class="comparison-col">';
+  html += `<div class="comparison-col-header current">Current — ${esc(state.runA.name)}</div>`;
+  if (cr.runB) {
+    html += renderComparisonColContent(cr.runB, state.runA);
+  } else {
+    html += '<div class="not-present">Not present in current run</div>';
+  }
+  html += '</div>';
+
+  html += '</div>'; // comparison-columns
+  html += '</div>'; // detail-content
+
+  panel.innerHTML = html;
+  panel.scrollTop = 0;
+  panel.querySelectorAll('.md-content a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+  syncComparisonAnswerStart(panel);
+}
+
+function estimateWrappedBadgeRowHeight(badgeWidths, containerWidth, gap, badgeHeight) {
+  if (!badgeWidths.length || !containerWidth || !badgeHeight) return 0;
+
+  let lineCount = 1;
+  let lineWidth = 0;
+  for (const width of badgeWidths) {
+    const nextWidth = lineWidth === 0 ? width : lineWidth + gap + width;
+    if (nextWidth <= containerWidth) {
+      lineWidth = nextWidth;
+      continue;
+    }
+    lineCount += 1;
+    lineWidth = width;
+  }
+
+  return lineCount * badgeHeight + (lineCount - 1) * gap;
+}
+
+function syncComparisonAnswerStart(panel) {
+  const columns = Array.from(panel.querySelectorAll('.comparison-col'));
+  if (columns.length < 2) return;
+
+  const verdictRows = columns
+    .map(col => col.querySelector('.comparison-verdict-row'))
+    .filter(Boolean);
+  if (!verdictRows.length) return;
+
+  const measuredHeights = [];
+  for (const row of verdictRows) {
+    const badges = Array.from(row.querySelectorAll('.verdict-badge'));
+    if (!badges.length) continue;
+
+    const style = getComputedStyle(row);
+    const gap = Number.parseFloat(style.columnGap || style.gap || '0') || 0;
+    const containerWidth = row.clientWidth;
+    const badgeWidths = badges.map(badge => badge.getBoundingClientRect().width);
+    const badgeHeight = Math.max(...badges.map(badge => badge.getBoundingClientRect().height), 0);
+    const estimatedHeight = estimateWrappedBadgeRowHeight(badgeWidths, containerWidth, gap, badgeHeight);
+    if (estimatedHeight > 0) measuredHeights.push(estimatedHeight);
+  }
+
+  if (!measuredHeights.length) return;
+  const targetVerdictHeight = Math.max(...measuredHeights);
+  for (const row of verdictRows) {
+    row.style.minHeight = `${targetVerdictHeight}px`;
+  }
+
+  const anchors = columns
+    .map(col => col.querySelector('.comparison-answer-anchor'))
+    .filter(Boolean);
+  if (anchors.length < 2) return;
+
+  for (const anchor of anchors) anchor.style.marginTop = '0px';
+  const maxTop = Math.max(...anchors.map(anchor => anchor.getBoundingClientRect().top));
+  for (const anchor of anchors) {
+    const delta = maxTop - anchor.getBoundingClientRect().top;
+    if (delta > 0.5) anchor.style.marginTop = `${delta}px`;
+  }
+}
+
+/** Render per-column structural stats for a single answer */
+function _renderColumnStats(answer) {
+  const words = countWords(answer || '');
+  const sections = countPattern(answer || '', /^#{1,6}\s/gm);
+  const _codeBlocks = Math.round(countPattern(answer || '', /```/g) / 2);
+  const mdLinks = countPattern(answer || '', /\[([^\]]+)\]\(([^)]+)\)/g);
+  const withoutMd = (answer || '').replace(/\[([^\]]+)\]\(([^)]+)\)/g, '');
+  const bareUrls = countPattern(withoutMd, /https?:\/\/[^\s)>\]]+/g);
+  const links = mdLinks + bareUrls;
+  const _listItems = countPattern(answer || '', /^[\s]*[-*+]\s|^\s*\d+\.\s/gm);
+
+  const stats = [
+    { emoji: '📝', value: words, label: 'words' },
+    { emoji: '📑', value: sections, label: 'sections' },
+    { emoji: '🔗', value: links, label: 'links' },
+  ];
+
+  let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
+  for (const s of stats) {
+    if (s.value === 0) continue;
+    html += `<span class="meta-chip" style="font-size:11px">${s.emoji} ${s.value} ${s.label}</span>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function _verdictClass(v) {
+  if (v.startsWith('yes')) return 'yes';
+  if (v.startsWith('no')) return 'no';
+  return '';
+}
+
+function renderComparisonColContent(row, run) {
+  let html = '';
+
+  // Models (or spacer so both columns start answers at the same vertical point)
+  // Use run-level model info to avoid spreadsheet auto-fill corruption in per-row fields.
+  const modelChips = renderModelChips(run);
+  html += modelChips || '<div class="comparison-model-spacer"></div>';
+
+  // Mini metadata
+  html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">';
+  if (row.inferenceTimeMs) html += `<span class="meta-chip" style="font-size:11px">⏱ ${formatMs(row.inferenceTimeMs)}</span>`;
+  const bl = parseBrokenLinks(row);
+  if (bl.total > 0) {
+    const color = bl.broken > 0 ? 'color:var(--red-700)' : 'color:var(--green-700)';
+    html += `<span class="meta-chip" style="font-size:11px;${color}">🔗 ${bl.broken}/${bl.total} broken</span>`;
+  }
+  const toolCallCount = parseToolCallCount(row);
+  html += `<span class="meta-chip" style="font-size:11px">🛠 ${toolCallCount} tool calls</span>`;
+  const filesReadCount = parseFilesReadCount(row);
+  html += `<span class="meta-chip" style="font-size:11px">📄 ${filesReadCount} files read</span>`;
+  // Answer structural stats
+  if (row.answer.trim()) {
+    const words = countWords(row.answer);
+    const sections = countPattern(row.answer, /^#{1,6}\s/gm);
+    const mdLinks = countPattern(row.answer, /\[([^\]]+)\]\(([^)]+)\)/g);
+    const withoutMd = row.answer.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '');
+    const bareUrls = countPattern(withoutMd, /https?:\/\/[^\s)>\]]+/g);
+    const links = mdLinks + bareUrls;
+    if (words) html += `<span class="meta-chip" style="font-size:11px">📝 ${words} words</span>`;
+    if (sections) html += `<span class="meta-chip" style="font-size:11px">📑 ${sections} sections</span>`;
+    if (links) html += `<span class="meta-chip" style="font-size:11px">🔗 ${links} links</span>`;
+  }
+  html += '</div>';
+
+  // Verdict badges (or spacer for alignment)
+  html += '<div class="detail-verdicts comparison-verdict-row">';
+  if (hasVerdicts(row)) {
+    html += renderVerdictBadge('Complete', row.isAnswerComplete);
+    html += renderVerdictBadge('Evidenced', row.isEvidenceSupported);
+    html += renderVerdictBadge('Linked', row.isEvidenceLinked);
+    html += renderVerdictBadge('Good Reasoning', row.isReasoningSound);
+  }
+  html += '</div>';
+
+  // Answer (collapsible, expanded by default)
+  html += `<details class="detail-collapsible bordered" open>`;
+  html += `<summary>Answer</summary>`;
+  if (row.answer.trim()) {
+    html += `<div class="detail-collapsible-md md-content" style="font-size:13px">${renderMarkdown(row.answer)}</div>`;
+  } else {
+    html += '<div class="not-present" style="margin:10px 0">No answer — likely an error during eval</div>';
+  }
+  html += `</details>`;
+
+  // Collapsed sections below response
+  html += renderCollapsibleSections(row);
+
+  // Judge feedback (collapsed, after stats)
+  if (row.miscFeedback?.trim()) {
+    html += `<details class="detail-collapsible bordered"><summary>Judge Feedback</summary>`;
+    html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.miscFeedback)}</div></details>`;
+  }
+
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Analyse with AI
+// ═══════════════════════════════════════════════════════════════════════════
+
+let openaiApiKey = null;
+const openaiBaseUrl = 'https://openrouter.ai/api/v1';
+const openaiModel = 'openai/gpt-5-mini';
+let analysisInProgress = false;
+
+function getAnalysisCache(key) {
+  return sessionStorage.getItem(`analysis:${key}`);
+}
+
+function setAnalysisCache(key, markdown) {
+  sessionStorage.setItem(`analysis:${key}`, markdown);
+}
+
+async function callOpenAI(messages) {
+  let res;
+  try {
+    res = await fetch(`${openaiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: openaiModel,
+        messages,
+        temperature: 0.3,
+        max_tokens: 5000,
+      }),
+    });
+  } catch (_networkErr) {
+    // CORS or network failure — OpenAI omits CORS headers on 401/403 responses,
+    // so the browser blocks the response and fetch() throws a TypeError.
+    throw new Error(
+      'Network error — please check your API key and that the base URL is reachable.'
+    );
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+function buildAnalysisPrompt(cr) {
+  const runALabel = state.runB.name;  // previous
+  const runBLabel = state.runA.name;  // current
+
+  function formatRun(row, label) {
+    let s = `## ${label}\n`;
+    if (row.askSystemPrompt) s += `### System Prompt\n${row.askSystemPrompt}\n\n`;
+    if (row.toolCalls) s += `### Tool Calls\n${row.toolCalls}\n\n`;
+    if (row.filesRead) s += `### Files Read\n${row.filesRead}\n\n`;
+    s += `### Response\n${row.answer}\n\n`;
+    if (row.judgePrompt) s += `### Judge Prompt Used\n${row.judgePrompt}\n\n`;
+    return s;
+  }
+
+  const user = `# Evaluation Comparison
+
+## Question
+${cr.question}
+
+## Status: ${cr.status}
+
+${cr.runA ? formatRun(cr.runA, `Previous Run — ${runALabel}`) : 'Previous run: not present'}
+
+${cr.runB ? formatRun(cr.runB, `Current Run — ${runBLabel}`) : 'Current run: not present'}
+
+Compare the two runs and provide suggestions targeted at the **current run's prompts**. The only tools available to the ask model are: \`ls\`, \`fd\`, \`rg\`, \`read\`, and \`git\`.
+
+Format your output as concise markdown with these sections:
+
+## Regressions
+Highlight any regressions in the current run compared to the previous — in quality, evidence, or tool call efficiency. If there are none, say so briefly and move on.
+
+## Context Engineering
+Analyse tool call patterns in the current run. Identify: redundant/wasted calls, missing reads that would have improved the response, opportunities to reduce context size. Suggest specific ask system prompt changes to improve tool usage.
+
+## Ask Prompt Improvements
+Specific, actionable changes to the ask system prompt. Quote the relevant parts and suggest concrete rewrites.
+
+## Judge Prompt Improvements
+Are the judge criteria catching the right things? Suggest specific changes to improve evaluation accuracy.
+
+## Insights
+Brief observations a human reviewer would find interesting — patterns, surprising differences, or things worth investigating.
+
+Rules:
+- Do NOT include a summary section.
+- Do NOT discuss response quality — the judge already evaluates that.
+- Keep the analysis as concise as possible without sacrificing quality.
+- Be specific — quote prompt sections and suggest exact rewrites where possible.`;
+
+  return [
+    { role: 'system', content: 'You are an expert evaluation analyst specialising in prompt engineering and context engineering for code-analysis AI agents. You compare eval run pairs and provide targeted, actionable improvements to the current run\'s prompts. Emphasise regressions. Be direct and concrete — suggest exact wording changes, not vague advice. Output clean markdown.' },
+    { role: 'user', content: user },
+  ];
+}
+
+async function handleAnalyseClick(key) {
+  if (analysisInProgress) return;
+  if (!openaiApiKey) {
+    showKeyInput(key);
+    return;
+  }
+  await runAnalysis(key);
+}
+
+function showKeyInput(key) {
+  const btn = $('analyseBtn');
+  btn.style.display = 'none';
+  const inputHtml = `<div class="analyse-key-row" id="analyseKeyRow">
+    <input type="password" class="analyse-key-input" id="analyseKeyInput"
+           placeholder="OpenRouter API key (sk-or-…)" autofocus>
+    <button class="analyse-btn" id="analyseGoBtn">Go</button>
+    <button class="btn-ghost" onclick="$('analyseKeyRow').remove(); $('analyseBtn').style.display='';">Cancel</button>
+  </div>`;
+  btn.insertAdjacentHTML('afterend', inputHtml);
+  $('analyseGoBtn').addEventListener('click', () => submitKey(key));
+  $('analyseKeyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitKey(key);
+  });
+}
+
+async function submitKey(key) {
+  const input = $('analyseKeyInput');
+  const val = input?.value?.trim();
+  if (!val) return;
+  openaiApiKey = val;
+  $('analyseKeyRow')?.remove();
+  $('analyseBtn').style.display = '';
+  await runAnalysis(key);
+}
+
+async function runAnalysis(key) {
+  const cr = state.comparison.find(c => c.key === key);
+  if (!cr || !cr.runA || !cr.runB) return;
+
+  const cacheKey = `${cr.key}|${cr.runA.sessionId}:${cr.runB.sessionId}`;
+  const btn = $('analyseBtn');
+
+  analysisInProgress = true;
+  btn.disabled = true;
+  btn.textContent = '🤖 Analysing…';
+  btn.classList.add('loading');
+
+  try {
+    const messages = buildAnalysisPrompt(cr);
+    const result = await callOpenAI(messages);
+    setAnalysisCache(cacheKey, result);
+    renderDetail();
+  } catch (err) {
+    btn.textContent = '🤖 Analyse with AI';
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    document.querySelector('.analyse-error')?.remove();
+    const errDiv = document.createElement('div');
+    errDiv.className = 'analyse-error';
+    errDiv.textContent = `Error: ${err.message}`;
+    btn.insertAdjacentElement('afterend', errDiv);
+    if (err.message.includes('401') || err.message.includes('auth') || err.message.includes('API key')) {
+      openaiApiKey = null;
+    }
+  } finally {
+    analysisInProgress = false;
+  }
+}
+
+function _reanalyse(key) {
+  const cr = state.comparison.find(c => c.key === key);
+  if (cr?.runA && cr?.runB) {
+    sessionStorage.removeItem(`analysis:${cr.key}|${cr.runA.sessionId}:${cr.runB.sessionId}`);
+  }
+  handleAnalyseClick(key);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Keyboard Navigation
+// ═══════════════════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', (e) => {
+  // Only handle when app is visible and not typing in an input
+  if (!$('appShell').classList.contains('visible')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const items = getFilteredItems();
+    if (items.length === 0) return;
+
+    const keys = items.map(getRowKey);
+    const currentIdx = keys.indexOf(state.selectedKey);
+    let nextIdx;
+    if (e.key === 'ArrowDown') {
+      nextIdx = currentIdx < keys.length - 1 ? currentIdx + 1 : 0;
+    } else {
+      nextIdx = currentIdx > 0 ? currentIdx - 1 : keys.length - 1;
+    }
+    state.selectedKey = keys[nextIdx];
+
+    // Update selection highlight and scroll into view
+    const list = $('cardList');
+    list.querySelectorAll('.row-card').forEach(c => { c.classList.remove('selected'); });
+    const card = list.querySelectorAll('.row-card')[nextIdx];
+    if (card) {
+      card.classList.add('selected');
+      card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    renderDetail();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Theme
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MOON_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+const SUN_SVG  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+
+function isDark() {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
+/** Sync both toggle buttons to show the icon for the *opposite* theme. */
+function updateThemeButtons() {
+  const icon = isDark() ? SUN_SVG : MOON_SVG;
+  for (const id of ['themeToggleApp', 'themeToggleUpload']) {
+    const btn = $(id);
+    if (btn) btn.innerHTML = icon;
+  }
+}
+
+function _toggleTheme() {
+  const goingDark = !isDark();
+  document.documentElement.setAttribute('data-theme', goingDark ? 'dark' : '');
+  localStorage.setItem('theme', goingDark ? 'dark' : 'light');
+  updateThemeButtons();
+}
+
+// Initialise button icons to match the theme that was applied in <head>
+updateThemeButtons();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════════════════
+
+window.addEventListener('resize', () => {
+  if (!isComparisonMode()) return;
+  const panel = $('rightPanel');
+  if (panel) syncComparisonAnswerStart(panel);
+});
+
+setupUpload();
+
+</script>
+</body>
+</html>

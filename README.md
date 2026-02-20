@@ -370,10 +370,19 @@ The CSV must have these columns:
 bun run scripts/eval/run-eval.ts ./eval-dataset.csv
 ```
 
-Results are written to `scripts/eval/reports/` as both CSV (with per-row verdicts) and an HTML report. The judge evaluates each answer on three criteria:
+Results are written to `scripts/eval/reports/` as a CSV with per-row verdicts. The judge evaluates each answer on four criteria:
 
 | Criterion | Description |
 |-----------|-------------|
-| `is_answer_relevant` | Does the answer directly address the question? |
+| `is_answer_complete` | Does the answer address every aspect of the question? |
 | `is_evidence_supported` | Are repository-specific claims backed by evidence? |
 | `is_evidence_linked` | Are code references linked with valid GitHub/GitLab URLs with line anchors? |
+| `is_reasoning_sound` | Are conclusions internally consistent and supported by cited evidence? |
+
+#### Viewing results
+
+Open `scripts/eval/eval-viewer.html` in a browser to visualise eval results.
+
+**Single run:** Drag and drop a results CSV into the "Current Run" zone and click "View Report" to browse questions, answers, verdicts, tool calls, and broken link ratios.
+
+**Comparing runs:** Drag a previous run CSV into the "Previous Run" zone as well. The viewer highlights regressions, improvements, and structural differences between the two runs side by side.

@@ -9,15 +9,20 @@ export interface EvalRow {
 	repository: string;
 	commit_id: string;
 	question: string;
-	is_answer_relevant: string;
+	is_answer_complete: string;
 	is_evidence_supported: string;
 	is_evidence_linked: string;
+	is_reasoning_sound: string;
 	misc_feedback: string;
 	answer: string;
 	broken_link_ratio: string;
 	tool_calls: string;
 	files_read: string;
 	inference_time_ms: string;
+	ask_model: string;
+	judge_model: string;
+	ask_system_prompt: string;
+	judge_prompt: string;
 }
 
 // =============================================================================
@@ -31,15 +36,20 @@ const OUTPUT_COLUMNS = [
 	"repository",
 	"commit_id",
 	"question",
-	"is_answer_relevant",
+	"is_answer_complete",
 	"is_evidence_supported",
 	"is_evidence_linked",
+	"is_reasoning_sound",
 	"misc_feedback",
 	"answer",
 	"broken_link_ratio",
 	"tool_calls",
 	"files_read",
 	"inference_time_ms",
+	"ask_model",
+	"judge_model",
+	"ask_system_prompt",
+	"judge_prompt",
 ] as const;
 
 // =============================================================================
@@ -89,19 +99,24 @@ export function parseCsv(content: string): ParseResult {
 	for (let i = 1; i < records.length; i++) {
 		const fields = records[i] as string[];
 		rows.push({
-			session_id: hasSessionId ? (fields[colIndex["session_id"]!] ?? "") : (fields[colIndex["id"]!] ?? ""),
-			repository: fields[colIndex["repository"]!] ?? "",
-			commit_id: fields[colIndex["commit_id"]!] ?? "",
-			question: fields[colIndex["question"]!] ?? "",
+			session_id: hasSessionId ? (fields[colIndex.session_id] ?? "") : (fields[colIndex.id] ?? ""),
+			repository: fields[colIndex.repository] ?? "",
+			commit_id: fields[colIndex.commit_id] ?? "",
+			question: fields[colIndex.question] ?? "",
 			answer: "",
-			is_answer_relevant: "",
+			is_answer_complete: "",
 			is_evidence_supported: "",
 			is_evidence_linked: "",
+			is_reasoning_sound: "",
 			misc_feedback: "",
 			broken_link_ratio: "",
 			tool_calls: "",
 			files_read: "",
 			inference_time_ms: "",
+			ask_model: "",
+			judge_model: "",
+			ask_system_prompt: "",
+			judge_prompt: "",
 		});
 	}
 	return { ok: true, rows };
@@ -185,5 +200,5 @@ export async function loadRowsFromCsv(path: string): Promise<EvalRow[]> {
 
 export function writeCsvString(rows: EvalRow[]): string {
 	const header = OUTPUT_COLUMNS.join(",");
-	return [header, ...rows.map(rowToCsv)].join("\n") + "\n";
+	return `${[header, ...rows.map(rowToCsv)].join("\n")}\n`;
 }

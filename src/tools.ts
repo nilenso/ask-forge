@@ -3,8 +3,6 @@ import { join } from "node:path";
 import type { Tool } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 
-// Default limits for tool outputs to prevent context window overflow
-const DEFAULT_READ_LINE_LIMIT = 2000;
 const RG_MAX_MATCHES_PER_FILE = 50;
 
 export const tools: Tool[] = [
@@ -75,7 +73,7 @@ export const tools: Tool[] = [
 	},
 	{
 		name: "read",
-		description: "Read the contents of a file. Output is limited to 2000 lines.",
+		description: "Read the entire contents of a file. Each line is prefixed with its line number.",
 		parameters: Type.Object({
 			path: Type.String({
 				description: "Path to the file, relative to repository root",
@@ -207,22 +205,11 @@ async function executeRead(args: Record<string, unknown>, repoPath: string): Pro
 	try {
 		const content = await readFile(fullPath, "utf-8");
 		const lines = content.split("\n");
-		const totalLines = lines.length;
 
-		const selectedLines = lines.slice(0, DEFAULT_READ_LINE_LIMIT);
-		let result = selectedLines.join("\n");
+		const lineNumWidth = String(lines.length).length;
+		const numbered = lines.map((line, i) => `${String(i + 1).padStart(lineNumWidth)}: ${line}`);
 
-		// Echo the resolved relative path so the model can copy it for links
-		result = `[File: ${filePath}]\n\n${result}`;
-
-		// Add metadata if file is truncated
-		if (totalLines > DEFAULT_READ_LINE_LIMIT) {
-			result = `[Lines 1-${DEFAULT_READ_LINE_LIMIT} of ${totalLines} total]\n\n${result}`;
-			const remaining = totalLines - DEFAULT_READ_LINE_LIMIT;
-			result += `\n\n[${remaining} more lines truncated]`;
-		}
-
-		return result;
+		return `[File: ${filePath}]\n\n${numbered.join("\n")}`;
 	} catch (e) {
 		return `Error reading file: ${(e as Error).message}`;
 	}
