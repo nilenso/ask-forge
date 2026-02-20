@@ -5,7 +5,6 @@ import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/confi
 import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
 import { type EvalRow, loadRowsFromCsv, writeCsvString } from "./csv";
-import { generateReport } from "./generate-report";
 
 // =============================================================================
 // LLM Judge (commented out — currently using link validation instead)
@@ -222,27 +221,6 @@ async function runEval(inputPath: string): Promise<void> {
 	console.log(`Total rows:          ${total}`);
 	console.log(`Broken links:        ${sumBrokenLinks}/${sumTotalLinks}`);
 
-	// Generate HTML report with same timestamp
-	// Use first row's repo to build a representative system prompt for the report
-	const sampleRow = rows[0];
-	const systemPrompt = sampleRow ? buildDefaultSystemPrompt(sampleRow.repository, sampleRow.commit_id) : "(no rows)";
-
-	const reportPath = `${reportsDir}eval-${timestamp}-report.html`;
-	const reportHtml = await generateReport(
-		output,
-		{
-			total,
-			complete,
-			evidenced,
-			linked,
-			soundReasoning,
-			brokenLinkRatio: `${sumBrokenLinks}/${sumTotalLinks}`,
-		},
-		timestamp,
-		systemPrompt,
-	);
-	await writeFile(reportPath, reportHtml, "utf-8");
-	console.log(`\n✓ Report written to: ${reportPath}`);
 }
 
 // CLI entry point
