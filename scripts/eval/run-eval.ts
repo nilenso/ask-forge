@@ -212,15 +212,14 @@ async function runEval(inputPath: string): Promise<void> {
 
 	// Print summary
 	const total = resultRows.length;
-	const complete = resultRows.filter((r) => r.is_answer_complete === "yes").length;
-	const evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
-	const linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
-	const soundReasoning = resultRows.filter((r) => r.is_reasoning_sound === "yes").length;
+	const _complete = resultRows.filter((r) => r.is_answer_complete === "yes").length;
+	const _evidenced = resultRows.filter((r) => r.is_evidence_supported === "yes").length;
+	const _linked = resultRows.filter((r) => r.is_evidence_linked === "yes").length;
+	const _soundReasoning = resultRows.filter((r) => r.is_reasoning_sound === "yes").length;
 
 	console.log("\n--- Summary ---");
 	console.log(`Total rows:          ${total}`);
 	console.log(`Broken links:        ${sumBrokenLinks}/${sumTotalLinks}`);
-
 }
 
 // CLI entry point
