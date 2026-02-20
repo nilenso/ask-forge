@@ -207,9 +207,7 @@ async function executeRead(args: Record<string, unknown>, repoPath: string): Pro
 		const lines = content.split("\n");
 
 		const lineNumWidth = String(lines.length).length;
-		const numbered = lines.map(
-			(line, i) => `${String(i + 1).padStart(lineNumWidth)}: ${line}`,
-		);
+		const numbered = lines.map((line, i) => `${String(i + 1).padStart(lineNumWidth)}: ${line}`);
 
 		return `[File: ${filePath}]\n\n${numbered.join("\n")}`;
 	} catch (e) {
