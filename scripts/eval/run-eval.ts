@@ -19,8 +19,8 @@ import { generateReport } from "./generate-report";
 // LLM Judge (commented out — currently using link validation instead)
 // =============================================================================
 
-const JUDGE_MODEL_PROVIDER = "anthropic";
-const JUDGE_MODEL_NAME = "claude-sonnet-4-6";
+const JUDGE_MODEL_PROVIDER = "openrouter";
+const JUDGE_MODEL_NAME = "anthropic/claude-sonnet-4.6";
 
 type JudgeVerdict = "yes" | "no" | "error";
 

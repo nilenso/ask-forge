@@ -17,7 +17,7 @@
 		"typescript": "^5"
 	},
 	"dependencies": {
-		"@mariozechner/pi-ai": "^0.51.5",
+		"@mariozechner/pi-ai": "^0.53.0",
 		"@sinclair/typebox": "^0.34.48",
 		"dotenv": "^17.2.3"
 	}
