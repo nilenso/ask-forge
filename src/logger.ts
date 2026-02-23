@@ -1,39 +1,41 @@
 /**
  * Logger interface for Session output.
  * Implement this interface to customize logging behavior.
+ *
+ * Levels (from most to least severe):
+ *   error → warn → info/log → debug
  */
 export interface Logger {
-	/** Log an informational message */
-	log(label: string, content: string): void;
-	/** Log an error with details */
+	/** Log an error with details (maps to console.error) */
 	error(label: string, error: unknown): void;
+	/** Log a warning (maps to console.warn) */
+	warn(label: string, content: string): void;
+	/** Log an informational message (maps to console.log) */
+	log(label: string, content: string): void;
+	/** Log an informational message (maps to console.info, same level as log) */
+	info(label: string, content: string): void;
+	/** Log a debug/trace message (maps to console.debug) */
+	debug(label: string, content: string): void;
+}
+
+function formatError(error: unknown): string {
+	if (error instanceof Error) {
+		let msg = error.message;
+		if (error.cause) msg += ` cause=${JSON.stringify(error.cause)}`;
+		return msg;
+	}
+	return JSON.stringify(error);
 }
 
 /**
- * Default logger that writes formatted output to console.
- * Uses box-drawing characters for visual separation.
+ * Default logger that writes to console with a `[LEVEL] label: content` format.
  */
 export const consoleLogger: Logger = {
-	log(label: string, content: string) {
-		console.log(`\n${"─".repeat(60)}`);
-		console.log(`│ ${label}`);
-		console.log(`${"─".repeat(60)}`);
-		console.log(content);
-	},
-
-	error(label: string, error: unknown) {
-		console.error(`\n${"═".repeat(60)}`);
-		console.error(`│ ERROR: ${label}`);
-		console.error(`${"═".repeat(60)}`);
-		if (error instanceof Error) {
-			console.error(`Message: ${error.message}`);
-			if (error.cause) console.error(`Cause: ${JSON.stringify(error.cause, null, 2)}`);
-			if (error.stack) console.error(`Stack: ${error.stack}`);
-		} else {
-			console.error(JSON.stringify(error, null, 2));
-		}
-		console.error(`${"═".repeat(60)}\n`);
-	},
+	error: (label, error) => console.error(`[ERROR] ${label}: ${formatError(error)}`),
+	warn: (label, content) => console.warn(`[WARN] ${label}: ${content}`),
+	log: (label, content) => console.log(`[LOG] ${label}: ${content}`),
+	info: (label, content) => console.info(`[INFO] ${label}: ${content}`),
+	debug: (label, content) => console.debug(`[DEBUG] ${label}: ${content}`),
 };
 
 /**
@@ -41,6 +43,9 @@ export const consoleLogger: Logger = {
  * Useful for testing or when logging is not desired.
  */
 export const nullLogger: Logger = {
-	log() {},
 	error() {},
+	warn() {},
+	log() {},
+	info() {},
+	debug() {},
 };

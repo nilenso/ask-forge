@@ -42,6 +42,16 @@ const TOOL_TIMEOUT_MS = 30_000;
 /** Default timeout for git operations (120 seconds) */
 const GIT_TIMEOUT_MS = 120_000;
 
+/** Shorten a command array for logging (avoid dumping huge bwrap arg lists). */
+function summarizeCmd(cmd: string[]): string {
+	// Find the index after "--" (end of bwrap args) to show the actual command
+	const dashDash = cmd.indexOf("--");
+	if (dashDash !== -1 && dashDash < cmd.length - 1) {
+		return `bwrap -- ${cmd.slice(dashDash + 1).join(" ")}`;
+	}
+	return cmd.join(" ");
+}
+
 async function run(
 	cmd: string[],
 	cwd?: string,
@@ -49,6 +59,10 @@ async function run(
 	timeoutMs?: number,
 	seccompFilterPath?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	const t0 = Date.now();
+	const cmdSummary = summarizeCmd(cmd);
+	console.debug(`[sandbox:run] exec: ${cmdSummary} cwd=${cwd ?? "(none)"}`);
+
 	// If seccomp filter is specified, open it and pass as FD 3
 	let seccompFd: number | undefined;
 	let stdio: ["pipe", "pipe", "pipe"] | ["pipe", "pipe", "pipe", number] = ["pipe", "pipe", "pipe"];
@@ -78,13 +92,30 @@ async function run(
 			clearTimeout(timer);
 
 			if (exitCode === 137 || exitCode === -1) {
+				const duration = Date.now() - t0;
+				console.error(`[sandbox:run] timeout after ${duration}ms: ${cmdSummary}`);
 				return { stdout, stderr: `${stderr}\nOperation timed out after ${timeoutMs}ms`, exitCode: 124 };
+			}
+
+			const duration = Date.now() - t0;
+			if (exitCode !== 0) {
+				console.warn(`[sandbox:run] exit=${exitCode} (${duration}ms): ${cmdSummary} stderr=${stderr.slice(0, 200)}`);
+			} else {
+				console.debug(`[sandbox:run] exit=0 (${duration}ms): ${cmdSummary}`);
 			}
 			return { stdout, stderr, exitCode };
 		}
 
 		const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-		return { stdout, stderr, exitCode: await proc.exited };
+		const exitCode = await proc.exited;
+
+		const duration = Date.now() - t0;
+		if (exitCode !== 0) {
+			console.warn(`[sandbox:run] exit=${exitCode} (${duration}ms): ${cmdSummary} stderr=${stderr.slice(0, 200)}`);
+		} else {
+			console.debug(`[sandbox:run] exit=0 (${duration}ms): ${cmdSummary}`);
+		}
+		return { stdout, stderr, exitCode };
 	} finally {
 		if (seccompFd !== undefined) {
 			closeSync(seccompFd);
@@ -166,7 +197,7 @@ async function handleClone(body: CloneRequest): Promise<Response> {
 		if (await headFile.exists()) {
 			const { exitCode, stderr } = await runGitIsolated(["fetch", "origin", "--tags"], bareDir, baseDir);
 			if (exitCode !== 0) {
-				console.error(`[clone] fetch failed: ${stderr}`);
+				console.error(`[sandbox:clone] fetch failed: ${stderr}`);
 			}
 		} else {
 			const { exitCode, stderr } = await runGitIsolated(["clone", "--bare", url, bareDir], undefined, baseDir);
@@ -370,13 +401,27 @@ function checkAuth(req: Request): Response | null {
 	return null;
 }
 
+/** Extract key params from request body for logging. */
+function requestSummary(pathname: string, body: unknown): string {
+	if (pathname === "/clone") {
+		const b = body as Partial<CloneRequest>;
+		return `url=${b.url ?? "?"} commitish=${b.commitish ?? "HEAD"}`;
+	}
+	if (pathname === "/tool") {
+		const b = body as Partial<ToolRequest>;
+		return `slug=${b.slug ?? "?"} sha=${(b.sha ?? "?").slice(0, 12)} name=${b.name ?? "?"}`;
+	}
+	return "";
+}
+
 const server = Bun.serve({
 	port: PORT,
 	async fetch(req) {
 		const url = new URL(req.url);
+		const { pathname } = url;
 
 		// Health check is unauthenticated (needed for Docker healthcheck)
-		if (url.pathname === "/health" && req.method === "GET") {
+		if (pathname === "/health" && req.method === "GET") {
 			return Response.json({ ok: true });
 		}
 
@@ -384,22 +429,33 @@ const server = Bun.serve({
 		const authError = checkAuth(req);
 		if (authError) return authError;
 
-		if (url.pathname === "/clone" && req.method === "POST") {
-			const body = (await req.json()) as CloneRequest;
-			return handleClone(body);
+		const t0 = Date.now();
+		let body: unknown;
+		let response: Response;
+
+		if (pathname === "/clone" && req.method === "POST") {
+			body = await req.json();
+			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+			response = await handleClone(body as CloneRequest);
+		} else if (pathname === "/tool" && req.method === "POST") {
+			body = await req.json();
+			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+			response = await handleTool(body as ToolRequest);
+		} else if (pathname === "/reset" && req.method === "POST") {
+			console.info(`[sandbox] ${req.method} ${pathname}`);
+			response = await handleReset();
+		} else {
+			return new Response("Not Found", { status: 404 });
 		}
 
-		if (url.pathname === "/tool" && req.method === "POST") {
-			const body = (await req.json()) as ToolRequest;
-			return handleTool(body);
+		const duration = Date.now() - t0;
+		if (response.status >= 400) {
+			console.warn(`[sandbox] ${req.method} ${pathname} → ${response.status} (${duration}ms)`);
+		} else {
+			console.info(`[sandbox] ${req.method} ${pathname} → ${response.status} (${duration}ms)`);
 		}
-
-		if (url.pathname === "/reset" && req.method === "POST") {
-			return handleReset();
-		}
-
-		return new Response("Not Found", { status: 404 });
+		return response;
 	},
 });
 
-console.log(`[sandbox-worker] Listening on :${server.port}`);
+console.log(`[sandbox] listening on :${server.port}`);

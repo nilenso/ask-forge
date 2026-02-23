@@ -67,11 +67,20 @@ function createCapturingLogger(): { logger: Logger; logs: string[]; errors: stri
 		logs,
 		errors,
 		logger: {
+			error(label: string, error: unknown) {
+				errors.push(`${label}: ${JSON.stringify(error)}`);
+			},
+			warn(label: string, content: string) {
+				logs.push(`WARN ${label}: ${content}`);
+			},
 			log(label: string, content: string) {
 				logs.push(`${label}: ${content}`);
 			},
-			error(label: string, error: unknown) {
-				errors.push(`${label}: ${JSON.stringify(error)}`);
+			info(label: string, content: string) {
+				logs.push(`${label}: ${content}`);
+			},
+			debug(label: string, content: string) {
+				logs.push(`DEBUG ${label}: ${content}`);
 			},
 		},
 	};
