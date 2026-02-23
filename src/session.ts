@@ -5,6 +5,7 @@ import {
 	type Context,
 	type Message,
 	type Model,
+	type ProviderStreamOptions,
 	stream,
 	type Tool,
 } from "@mariozechner/pi-ai";
@@ -181,6 +182,8 @@ export interface SessionConfig {
 	stream?: typeof stream;
 	/** Context compaction settings (defaults to sensible values) */
 	compaction?: Partial<CompactionSettings>;
+	/** Stream options passed to pi-ai's stream function (e.g., cacheRetention for prompt caching) */
+	streamOptions?: ProviderStreamOptions;
 }
 
 /**
@@ -219,7 +222,14 @@ export class Session {
 		this.repo = repo;
 		this.#config = config;
 		this.#logger = config.logger ?? consoleLogger;
-		this.#stream = config.stream ?? stream;
+
+		const baseStream = config.stream ?? stream;
+		const streamOptions: ProviderStreamOptions = {
+			sessionId: this.id,
+			...config.streamOptions,
+		};
+		this.#stream = (model, context) => baseStream(model, context, streamOptions);
+
 		this.#context = {
 			systemPrompt: config.systemPrompt,
 			messages: [],
