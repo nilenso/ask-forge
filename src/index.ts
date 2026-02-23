@@ -132,7 +132,7 @@ export class AskForgeClient {
 		this.#logger = logger;
 
 		if (this.config.sandbox) {
-			this.#sandboxClient = new SandboxClient(this.config.sandbox);
+			this.#sandboxClient = new SandboxClient(this.config.sandbox, this.#logger);
 		}
 	}
 
