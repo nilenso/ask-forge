@@ -19,6 +19,11 @@ export interface EvalRow {
 	tool_calls: string;
 	files_read: string;
 	inference_time_ms: string;
+	input_tokens: string;
+	output_tokens: string;
+	total_tokens: string;
+	cache_read_tokens: string;
+	cache_write_tokens: string;
 	ask_model: string;
 	judge_model: string;
 	ask_system_prompt: string;
@@ -46,6 +51,11 @@ const OUTPUT_COLUMNS = [
 	"tool_calls",
 	"files_read",
 	"inference_time_ms",
+	"input_tokens",
+	"output_tokens",
+	"total_tokens",
+	"cache_read_tokens",
+	"cache_write_tokens",
 	"ask_model",
 	"judge_model",
 	"ask_system_prompt",
@@ -113,6 +123,11 @@ export function parseCsv(content: string): ParseResult {
 			tool_calls: "",
 			files_read: "",
 			inference_time_ms: "",
+			input_tokens: "",
+			output_tokens: "",
+			total_tokens: "",
+			cache_read_tokens: "",
+			cache_write_tokens: "",
 			ask_model: "",
 			judge_model: "",
 			ask_system_prompt: "",

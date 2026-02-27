@@ -32,7 +32,7 @@ Return ONLY valid JSON with exactly these keys:
   "is_evidence_supported": "yes" | "no",
   "is_evidence_linked": "yes" | "no",
   "is_reasoning_sound": "yes" | "no",
-  "misc_feedback": "string"
+  "misc_feedback": "string (bullet-point list)"
 }
 
 Rubric:
@@ -66,7 +66,13 @@ Rubric:
     where the two scenarios are meaningfully different.
   - Two statements in the answer contradict each other.
   Do NOT penalise omissions or incomplete coverage here — only internal
-  inconsistency between what is stated and what the cited evidence supports.`;
+  inconsistency between what is stated and what the cited evidence supports.
+
+misc_feedback format:
+- Write feedback as a bullet-point list (one bullet per observation).
+- Each bullet should be a short, skimmable phrase — not a full paragraph.
+- Lead with the verdict area (e.g. "Completeness:", "Evidence:", "Linking:", "Reasoning:") when relevant.
+- Only include bullets for issues or notable observations; omit areas with no findings.`;
 
 /**
  * Build the default system prompt, interpolating the repository's browse URL
@@ -95,7 +101,7 @@ Tool usage guidelines:
 Response content guidelines:
 - Focus on what the code DOES, not just how the project is organized. Explain design decisions, key algorithms, and architectural patterns. Directory listings and config files are supporting evidence, not the main story.
 - Be as concise as possible without sacrificing completeness.
-- Use structured format: headings, bullet points, or numbered lists.
+- Format your response as GitHub Flavored Markdown (GFM): use headings, bullet points, numbered lists, fenced code blocks, and markdown links.
 - If you don't know the answer or cannot find supporting evidence in the codebase, say so explicitly. Never speculate or fabricate claims.
 - When you encounter code that appears deprecated or legacy — indicated by DEPRECATED/TODO/FIXME comments, names like legacy_*, old_*, or being visibly superseded by a newer file covering the same concern — say so explicitly. Never present deprecated code as the current behaviour.
 

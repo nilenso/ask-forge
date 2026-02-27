@@ -158,6 +158,17 @@
     text-decoration: none;
   }
   .md-content a:hover { text-decoration: underline; }
+  .md-content table {
+    border-collapse: collapse; width: 100%; margin: 12px 0;
+    font-size: 13px;
+  }
+  .md-content th, .md-content td {
+    border: 1px solid var(--gray-200); padding: 8px 12px; text-align: left;
+  }
+  .md-content th {
+    background: var(--gray-50); font-weight: 600; color: var(--gray-800);
+  }
+  .md-content tr:nth-child(even) { background: var(--gray-50); }
 
   /* ─── Stats Cards ─── */
   .stats-row {
