@@ -832,6 +832,17 @@
     border-left: 3px solid var(--gray-200); padding-left: 16px;
     color: var(--gray-500); margin: 8px 0;
   }
+  .md-content table {
+    border-collapse: collapse; width: 100%; margin: 12px 0;
+    font-size: 13px;
+  }
+  .md-content th, .md-content td {
+    border: 1px solid var(--gray-200); padding: 8px 12px; text-align: left;
+  }
+  .md-content th {
+    background: var(--gray-50); font-weight: 600; color: var(--gray-800);
+  }
+  .md-content tr:nth-child(even) { background: var(--gray-50); }
 
   /* ─── Scrollbar ─── */
   ::-webkit-scrollbar { width: 6px; }
@@ -1078,18 +1089,6 @@ function rowKey(row) {
   return `${row.sessionId.trim()}::${row.question.trim()}`;
 }
 
-/** Parse broken link ratio "N/M" or standalone number into { broken, total } */
-function parseBrokenLinks(row) {
-  const ratio = row.brokenLinkRatio.trim();
-  if (ratio.includes('/')) {
-    const [b, t] = ratio.split('/').map(Number);
-    return { broken: b || 0, total: t || 0 };
-  }
-  const broken = Number(ratio) || 0;
-  const total = Number((row.totalLinks || '0').trim()) || 0;
-  return { broken, total };
-}
-
 function parseListOrCount(rawValue) {
   const raw = String(rawValue || '').trim();
   if (!raw) return 0;
@@ -1126,12 +1125,6 @@ function classifyChange(rowA, rowB) {
     if (a.startsWith('no') && b.startsWith('yes')) anyImproved = true;
     if (a.startsWith('yes') && b.startsWith('no')) anyRegressed = true;
   }
-
-  // Broken links changes
-  const linksA = parseBrokenLinks(rowA);
-  const linksB = parseBrokenLinks(rowB);
-  if (linksB.broken < linksA.broken) anyImproved = true;
-  if (linksB.broken > linksA.broken) anyRegressed = true;
 
   // Answer presence
   if (!rowA.answer.trim() && rowB.answer.trim()) anyImproved = true;
@@ -1251,24 +1244,6 @@ function _computeStructuralSummary(answerA, answerB) {
   return result;
 }
 
-/**
- * Compute broken-link structural metric for two rows.
- * @returns {StructuralMetric | null}
- */
-function _computeBrokenLinkMetric(rowA, rowB) {
-  const a = parseBrokenLinks(rowA);
-  const b = parseBrokenLinks(rowB);
-  const delta = b.broken - a.broken;
-  if (delta === 0) return null;
-  return {
-    label: 'Broken links',
-    emoji: '⚠️',
-    valueA: a.broken,
-    valueB: b.broken,
-    delta,
-    direction: delta < 0 ? 'better' : 'worse',
-  };
-}
 
 // ─── Utility ─────────────────────────────────────────────────────────────
 
@@ -1503,14 +1478,6 @@ function renderStats() {
   const rows = run.rows;
   const total = rows.length;
 
-  // Broken links
-  let totalBroken = 0, totalLinks = 0;
-  for (const r of rows) {
-    const bl = parseBrokenLinks(r);
-    totalBroken += bl.broken;
-    totalLinks += bl.total;
-  }
-
   // Avg inference time
   let sumMs = 0, countMs = 0;
   for (const r of rows) {
@@ -1529,7 +1496,6 @@ function renderStats() {
   }
 
   let html = `<span class="stat-pill"><span class="stat-pill-value">${total}</span> questions</span>`;
-  html += `<span class="stat-pill ${totalBroken > 0 ? 'red' : 'green'}"><span class="stat-pill-value">${totalBroken}/${totalLinks}</span> broken links</span>`;
   if (avgMs) html += `<span class="stat-pill"><span class="stat-pill-value">${formatMs(avgMs)}</span> avg inference</span>`;
   if (sumInputTokens + sumOutputTokens > 0) {
     html += `<span class="stat-pill blue"><span class="stat-pill-value">${formatTokens(sumInputTokens + sumOutputTokens)}</span> total tokens</span>`;
@@ -1622,19 +1588,6 @@ function renderComparisonStats(bar) {
     }
   }
 
-  // Broken links change
-  let brokenA = 0, brokenB = 0;
-  for (const cr of comp) {
-    if (cr.runA) { brokenA += parseBrokenLinks(cr.runA).broken; }
-    if (cr.runB) { brokenB += parseBrokenLinks(cr.runB).broken; }
-  }
-  const linkDelta = brokenB - brokenA;
-  if (linkDelta !== 0) {
-    const linkCls = linkDelta < 0 ? 'green' : 'red';
-    const linkSign = linkDelta > 0 ? '+' : '';
-    html += `<span class="stat-pill ${linkCls}">🔗 <span class="stat-pill-value">${linkSign}${linkDelta}</span> broken links</span>`;
-  }
-
   // Token usage change
   let tokensA = 0, tokensB = 0;
   for (const cr of comp) {
@@ -1704,7 +1657,6 @@ function renderFilters() {
   // Metric rank dropdown
   html += `<select class="filter-select" id="filterSortMetric">`;
   html += `<option value=""${state.sort === '' ? ' selected' : ''}>Metric rank: default</option>`;
-  html += `<option value="broken"${state.sort === 'broken' ? ' selected' : ''}>Metric rank: broken links</option>`;
   html += `<option value="tool-calls"${state.sort === 'tool-calls' ? ' selected' : ''}>Metric rank: tool calls</option>`;
   html += `<option value="files-read"${state.sort === 'files-read' ? ' selected' : ''}>Metric rank: files read</option>`;
   html += `<option value="latency"${state.sort === 'latency' ? ' selected' : ''}>Metric rank: latency</option>`;
@@ -1758,10 +1710,6 @@ function sortRow(item) {
   return item;
 }
 
-function sortBrokenLinks(item) {
-  return parseBrokenLinks(sortRow(item)).broken;
-}
-
 function sortToolCalls(item) {
   const raw = String(sortRow(item).toolCalls || '').trim();
   if (!raw) return 0;
@@ -1786,7 +1734,6 @@ function applySorting(items) {
 
   // Map sort metric to extractor
   const extractors = {
-    broken: sortBrokenLinks,
     'tool-calls': sortToolCalls,
     'files-read': sortFilesRead,
     latency: sortLatency,
@@ -1975,11 +1922,6 @@ function renderSingleRowDetail(row) {
   html += `<span class="meta-chip">📁 <a href="${esc(row.repository)}" target="_blank">${esc(shortRepoName(row.repository))}</a></span>`;
   if (row.commitId) html += `<span class="meta-chip">🔗 <a href="${esc(row.repository)}/commit/${esc(row.commitId)}" target="_blank"><code>${esc(row.commitId.slice(0, 12))}</code></a></span>`;
   if (row.inferenceTimeMs) html += `<span class="meta-chip">⏱ ${formatMs(row.inferenceTimeMs)}</span>`;
-  const bl = parseBrokenLinks(row);
-  if (bl.total > 0) {
-    const color = bl.broken > 0 ? 'color:var(--red-700)' : 'color:var(--green-700)';
-    html += `<span class="meta-chip" style="${color}">🔗 ${bl.broken}/${bl.total} broken links</span>`;
-  }
   if (row.toolCalls) {
     const count = row.toolCalls.split('\n').filter(l => l.trim().startsWith('-')).length || row.toolCalls;
     html += `<span class="meta-chip">🛠 ${typeof count === 'number' ? `${count} tool calls` : `${count} tool calls`}</span>`;
@@ -2242,11 +2184,6 @@ function renderComparisonColContent(row, run) {
   // Mini metadata
   html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">';
   if (row.inferenceTimeMs) html += `<span class="meta-chip" style="font-size:11px">⏱ ${formatMs(row.inferenceTimeMs)}</span>`;
-  const bl = parseBrokenLinks(row);
-  if (bl.total > 0) {
-    const color = bl.broken > 0 ? 'color:var(--red-700)' : 'color:var(--green-700)';
-    html += `<span class="meta-chip" style="font-size:11px;${color}">🔗 ${bl.broken}/${bl.total} broken</span>`;
-  }
   const toolCallCount = parseToolCallCount(row);
   html += `<span class="meta-chip" style="font-size:11px">🛠 ${toolCallCount} tool calls</span>`;
   const filesReadCount = parseFilesReadCount(row);
