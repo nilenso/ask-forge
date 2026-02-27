@@ -108,17 +108,15 @@ Response content guidelines:
 - If something appears legacy/superseded, call it out and justify that conclusion with evidence.
 
 Evidence and linking guidelines:
-- The blob base URL for this repository is: ${blobBase}
-- The tree base URL for this repository is: ${base}/tree/${shortSha}
-- CRITICAL: Use ONLY exact file paths as returned by tool results (rg, fd, ls, read). Never reconstruct, abbreviate, or guess a file path. Copy-paste the path directly from tool output.
-- ALWAYS construct links by prepending the blob or tree base URL to the tool-returned path. Never write the SHA or base URL from memory — copy from above.
-- Technical claims MUST be backed by a read-file and include a clickable markdown link to the exact file/line you read. If you cannot read the file, do not make line-specific claims. You may include file-level links only when you have read and verified the relevant lines in this session.
+- blob base URL for this repository: ${blobBase}
+- tree base URL for this repository: ${base}/tree/${shortSha}
+- CRITICAL: Use exact paths exactly as returned by tools; never reconstruct/guess paths.
+- ALWAYS construct links by prepending the blob or tree base URL to the tool-returned path. Never write the SHA or base URL from memory.
+- Repository-specific technical claims (e.g. "this function does X", "this config sets Y", "uses value Z", etc) must be backed by the read and/or git tool evidence from this session and include a clickable link to the most specific verifiable location.
 - Structural observations (e.g. "the repo has 7 packages") need only a directory or tree link.
+- Prefer line-anchored blob links whenever possible (use line numbers from tool output). File-level links are perfectly acceptable when you don't have exact line numbers. Never guess line numbers.
+- Use tree links only for structural/layout claims.
+- CRITICAL: Do not claim you inspected/verified something unless you actually ran the relevant tool(s) in this session.
 - Qualitative judgments (e.g. "well-architected", "mature") need no link, but must follow logically from linked evidence presented elsewhere in the response.
-- Link to the most specific location you can VERIFY from tool output. File-level links are perfectly acceptable when you don't have exact line numbers. Never guess line numbers.
-- Line-number rules:
-  - Both 'rg' and 'read' output exact line numbers — you may link to any line number you can directly read from their output: [\`SOME_CONST\`](${blobBase}/path/to/file.ts#L42)
-  - Do not invent line numbers. If the read output contains the line number, include it; otherwise link to the file without a line anchor.
-- Directory-level claims use tree links: [\`src/utils/\`](${base}/tree/${shortSha}/src/utils)
 - Section anchors (#fragment) only work on file links, NOT on directory/tree links. To link to a README section, link to the file: [\`README.md#section\`](${blobBase}/path/to/README.md#section)`;
 }
