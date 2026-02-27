@@ -715,6 +715,78 @@
   .detail-collapsible.bordered summary {
     padding: 10px 0;
   }
+  .answer-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .copy-answer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    background: var(--white, #fff);
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .copy-answer-btn:hover {
+    color: var(--gray-600);
+    border-color: var(--gray-300);
+    background: var(--gray-50);
+  }
+  .copy-answer-btn.copied {
+    color: var(--green-600, #16a34a);
+    border-color: var(--green-300, #86efac);
+  }
+  .toggle-view-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    background: var(--white, #fff);
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  .toggle-view-btn:hover {
+    color: var(--gray-600);
+    border-color: var(--gray-300);
+    background: var(--gray-50);
+  }
+  .toggle-view-btn.active {
+    color: var(--indigo-500, #6366f1);
+    border-color: var(--indigo-300, #a5b4fc);
+    background: var(--indigo-50, #eef2ff);
+  }
+  .answer-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .answer-raw-md {
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--gray-600);
+    padding: 10px 0 12px;
+    border-top: 1px solid var(--gray-100);
+  }
+  .answer-raw-md.visible { display: block; }
+  .detail-collapsible-md.hidden { display: none; }
   .detail-collapsible.bordered .detail-collapsible-body,
   .detail-collapsible.bordered .detail-collapsible-md {
     border-top: 1px solid var(--gray-100);
@@ -1506,6 +1578,43 @@ function renderMarkdown(text) {
   return `<pre>${esc(text)}</pre>`;
 }
 
+const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+const CHECK_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+const _answerStore = {};
+let _answerIdSeq = 0;
+function storeAnswer(text) {
+  const id = 'ans-' + (++_answerIdSeq);
+  _answerStore[id] = text;
+  return id;
+}
+
+function copyAnswerMarkdown(btn, answerId) {
+  const text = _answerStore[answerId] || '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = CHECK_ICON;
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = COPY_ICON;
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+}
+
+// code/preview toggle icon: </> for code view
+const CODE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+
+function toggleAnswerView(btn, answerId) {
+  const details = btn.closest('details');
+  const preview = details.querySelector('.detail-collapsible-md');
+  const raw = details.querySelector('.answer-raw-md');
+  if (!preview || !raw) return;
+  const showingCode = raw.classList.toggle('visible');
+  preview.classList.toggle('hidden', showingCode);
+  btn.classList.toggle('active', showingCode);
+  btn.title = showingCode ? 'Show preview' : 'Show markdown source';
+}
+
 function renderStats() {
   const bar = $('statsBar');
   if (isComparisonMode()) {
@@ -1996,10 +2105,12 @@ function renderSingleRowDetail(row) {
   }
 
   // Answer (collapsible, expanded by default)
+  const ansId = storeAnswer(row.answer);
   html += `<details class="detail-collapsible bordered" open>`;
-  html += `<summary>Answer</summary>`;
+  html += `<summary><span class="answer-summary-row"><span>Answer</span>${row.answer.trim() ? `<span class="answer-actions"><button class="toggle-view-btn" title="Show markdown source" onclick="event.preventDefault(); event.stopPropagation(); toggleAnswerView(this, '${ansId}')">${CODE_ICON}</button><button class="copy-answer-btn" title="Copy as Markdown" onclick="event.preventDefault(); event.stopPropagation(); copyAnswerMarkdown(this, '${ansId}')">${COPY_ICON}</button></span>` : ''}</span></summary>`;
   if (row.answer.trim()) {
     html += `<div class="detail-collapsible-md md-content">${renderMarkdown(row.answer)}</div>`;
+    html += `<div class="answer-raw-md">${esc(row.answer)}</div>`;
   } else {
     html += '<div class="not-present" style="margin:10px 0">No answer — likely an error during eval</div>';
   }
@@ -2081,9 +2192,11 @@ function renderComparisonDetail(panel) {
     html += `<div class="analyse-section" id="analyseSection">`;
     html += `<button class="analyse-btn" id="analyseBtn" data-key="${esc(cr.key)}" onclick="handleAnalyseClick(this.dataset.key)">🤖 Analyse with AI</button>`;
     if (cached) {
+      const analysisId = storeAnswer(cached);
       html += `<details class="detail-collapsible bordered analyse-result" open>`;
-      html += `<summary>AI Analysis <a class="reanalyse-link" data-key="${esc(cr.key)}" onclick="event.stopPropagation(); reanalyse(this.dataset.key)">(re-analyse)</a></summary>`;
+      html += `<summary><span class="answer-summary-row"><span>AI Analysis <a class="reanalyse-link" data-key="${esc(cr.key)}" onclick="event.stopPropagation(); reanalyse(this.dataset.key)">(re-analyse)</a></span><span class="answer-actions"><button class="toggle-view-btn" title="Show markdown source" onclick="event.preventDefault(); event.stopPropagation(); toggleAnswerView(this, '${analysisId}')">${CODE_ICON}</button><button class="copy-answer-btn" title="Copy as Markdown" onclick="event.preventDefault(); event.stopPropagation(); copyAnswerMarkdown(this, '${analysisId}')">${COPY_ICON}</button></span></span></summary>`;
       html += `<div class="detail-collapsible-md md-content">${renderMarkdown(cached)}</div>`;
+      html += `<div class="answer-raw-md">${esc(cached)}</div>`;
       html += `</details>`;
     }
     html += `</div>`;
@@ -2258,10 +2371,12 @@ function renderComparisonColContent(row, run) {
   html += '</div>';
 
   // Answer (collapsible, expanded by default)
+  const cmpAnsId = storeAnswer(row.answer);
   html += `<details class="detail-collapsible bordered" open>`;
-  html += `<summary>Answer</summary>`;
+  html += `<summary><span class="answer-summary-row"><span>Answer</span>${row.answer.trim() ? `<span class="answer-actions"><button class="toggle-view-btn" title="Show markdown source" onclick="event.preventDefault(); event.stopPropagation(); toggleAnswerView(this, '${cmpAnsId}')">${CODE_ICON}</button><button class="copy-answer-btn" title="Copy as Markdown" onclick="event.preventDefault(); event.stopPropagation(); copyAnswerMarkdown(this, '${cmpAnsId}')">${COPY_ICON}</button></span>` : ''}</span></summary>`;
   if (row.answer.trim()) {
     html += `<div class="detail-collapsible-md md-content" style="font-size:13px">${renderMarkdown(row.answer)}</div>`;
+    html += `<div class="answer-raw-md">${esc(row.answer)}</div>`;
   } else {
     html += '<div class="not-present" style="margin:10px 0">No answer — likely an error during eval</div>';
   }
