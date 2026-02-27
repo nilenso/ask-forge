@@ -1008,6 +1008,11 @@ const COLUMN_ALIASES = {
   total_links: 'totalLinks',
   ask_model: 'askModel',
   judge_model: 'judgeModel',
+  input_tokens: 'inputTokens',
+  output_tokens: 'outputTokens',
+  total_tokens: 'totalTokens',
+  cache_read_tokens: 'cacheReadTokens',
+  cache_write_tokens: 'cacheWriteTokens',
   ask_system_prompt: 'askSystemPrompt',
   judge_prompt: 'judgePrompt',
 };
@@ -1019,6 +1024,8 @@ function makeEmptyRow() {
     isReasoningSound: '',
     miscFeedback: '', brokenLinkRatio: '', toolCalls: '', filesRead: '',
     inferenceTimeMs: '', totalLinks: '',
+    inputTokens: '', outputTokens: '', totalTokens: '',
+    cacheReadTokens: '', cacheWriteTokens: '',
     askModel: '', judgeModel: '',
     askSystemPrompt: '', judgePrompt: '',
   };
@@ -1265,6 +1272,43 @@ function _computeBrokenLinkMetric(rowA, rowB) {
 
 // ─── Utility ─────────────────────────────────────────────────────────────
 
+/** Format a token count for display (e.g., 1234 → "1.2k", 1234567 → "1.2M") */
+function formatTokens(n) {
+  if (!n || n === 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Parse token usage from a row into structured numbers */
+function parseTokenUsage(row) {
+  return {
+    input: Number(row.inputTokens) || 0,
+    output: Number(row.outputTokens) || 0,
+    total: Number(row.totalTokens) || 0,
+    cacheRead: Number(row.cacheReadTokens) || 0,
+    cacheWrite: Number(row.cacheWriteTokens) || 0,
+  };
+}
+
+/** Check if a row has any token usage data */
+function hasTokenUsage(row) {
+  const u = parseTokenUsage(row);
+  return u.total > 0 || u.input > 0 || u.output > 0;
+}
+
+/** Render token usage badges for a row */
+function renderTokenBadges(row) {
+  const u = parseTokenUsage(row);
+  if (u.total === 0 && u.input === 0 && u.output === 0) return '';
+  let html = '';
+  if (u.input) html += `<span class="meta-chip">⬇ ${formatTokens(u.input)} in</span>`;
+  if (u.output) html += `<span class="meta-chip">⬆ ${formatTokens(u.output)} out</span>`;
+  if (u.cacheRead) html += `<span class="meta-chip" style="color:var(--green-700)">♻ ${formatTokens(u.cacheRead)} cache read</span>`;
+  if (u.cacheWrite) html += `<span class="meta-chip" style="color:var(--amber-700)">📥 ${formatTokens(u.cacheWrite)} cache write</span>`;
+  return html;
+}
+
 /** Extract "org/repo" from a full GitHub/GitLab URL */
 function shortRepoName(url) {
   const m = url.match(/(?:github|gitlab)\.com\/([^/]+\/[^/.]+)/);
@@ -1475,9 +1519,25 @@ function renderStats() {
   }
   const avgMs = countMs > 0 ? Math.round(sumMs / countMs) : 0;
 
+  // Token usage totals
+  let sumInputTokens = 0, sumOutputTokens = 0, sumCacheRead = 0;
+  for (const r of rows) {
+    const tu = parseTokenUsage(r);
+    sumInputTokens += tu.input;
+    sumOutputTokens += tu.output;
+    sumCacheRead += tu.cacheRead;
+  }
+
   let html = `<span class="stat-pill"><span class="stat-pill-value">${total}</span> questions</span>`;
   html += `<span class="stat-pill ${totalBroken > 0 ? 'red' : 'green'}"><span class="stat-pill-value">${totalBroken}/${totalLinks}</span> broken links</span>`;
   if (avgMs) html += `<span class="stat-pill"><span class="stat-pill-value">${formatMs(avgMs)}</span> avg inference</span>`;
+  if (sumInputTokens + sumOutputTokens > 0) {
+    html += `<span class="stat-pill blue"><span class="stat-pill-value">${formatTokens(sumInputTokens + sumOutputTokens)}</span> total tokens</span>`;
+    if (sumCacheRead > 0) {
+      const cachePct = Math.round((sumCacheRead / sumInputTokens) * 100);
+      html += `<span class="stat-pill green"><span class="stat-pill-value">${cachePct}%</span> cache hit</span>`;
+    }
+  }
 
   // Verdict stats (only if any row has verdicts)
   const withVerdicts = rows.filter(hasVerdicts);
@@ -1573,6 +1633,21 @@ function renderComparisonStats(bar) {
     const linkCls = linkDelta < 0 ? 'green' : 'red';
     const linkSign = linkDelta > 0 ? '+' : '';
     html += `<span class="stat-pill ${linkCls}">🔗 <span class="stat-pill-value">${linkSign}${linkDelta}</span> broken links</span>`;
+  }
+
+  // Token usage change
+  let tokensA = 0, tokensB = 0;
+  for (const cr of comp) {
+    if (cr.runA) { const tu = parseTokenUsage(cr.runA); tokensA += tu.input + tu.output; }
+    if (cr.runB) { const tu = parseTokenUsage(cr.runB); tokensB += tu.input + tu.output; }
+  }
+  if (tokensA > 0 && tokensB > 0) {
+    const tokenDelta = tokensB - tokensA;
+    if (tokenDelta !== 0) {
+      const tokenCls = tokenDelta < 0 ? 'green' : 'red';
+      const tokenSign = tokenDelta > 0 ? '+' : '';
+      html += `<span class="stat-pill ${tokenCls}">🪙 <span class="stat-pill-value">${tokenSign}${formatTokens(tokenDelta)}</span> tokens</span>`;
+    }
   }
 
   bar.innerHTML = html;
@@ -1814,6 +1889,8 @@ function renderCardList() {
     if (latencyMs) html += `<span>${formatMs(latencyMs)}</span>`;
     if (tcCount) html += `<span>${tcCount} tool call${tcCount !== 1 ? 's' : ''}</span>`;
     if (frCount) html += `<span>${frCount} file${frCount !== 1 ? 's' : ''} read</span>`;
+    const rowTokens = parseTokenUsage(row);
+    if (rowTokens.total > 0) html += `<span>🪙 ${formatTokens(rowTokens.total)}</span>`;
     html += `</div>`;
     html += `</div>`;
   }
@@ -1907,6 +1984,8 @@ function renderSingleRowDetail(row) {
     const count = row.toolCalls.split('\n').filter(l => l.trim().startsWith('-')).length || row.toolCalls;
     html += `<span class="meta-chip">🛠 ${typeof count === 'number' ? `${count} tool calls` : `${count} tool calls`}</span>`;
   }
+  // Token usage badges
+  html += renderTokenBadges(row);
   // Answer structural stats
   if (row.answer.trim()) {
     const words = countWords(row.answer);
@@ -2172,6 +2251,11 @@ function renderComparisonColContent(row, run) {
   html += `<span class="meta-chip" style="font-size:11px">🛠 ${toolCallCount} tool calls</span>`;
   const filesReadCount = parseFilesReadCount(row);
   html += `<span class="meta-chip" style="font-size:11px">📄 ${filesReadCount} files read</span>`;
+  // Token usage badges
+  const tu = parseTokenUsage(row);
+  if (tu.input) html += `<span class="meta-chip" style="font-size:11px">⬇ ${formatTokens(tu.input)} in</span>`;
+  if (tu.output) html += `<span class="meta-chip" style="font-size:11px">⬆ ${formatTokens(tu.output)} out</span>`;
+  if (tu.cacheRead) html += `<span class="meta-chip" style="font-size:11px;color:var(--green-700)">♻ ${formatTokens(tu.cacheRead)} cache</span>`;
   // Answer structural stats
   if (row.answer.trim()) {
     const words = countWords(row.answer);
