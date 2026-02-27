@@ -2476,7 +2476,7 @@ function updateThemeButtons() {
   }
 }
 
-function _toggleTheme() {
+function toggleTheme() {
   const goingDark = !isDark();
   document.documentElement.setAttribute('data-theme', goingDark ? 'dark' : '');
   localStorage.setItem('theme', goingDark ? 'dark' : 'light');
