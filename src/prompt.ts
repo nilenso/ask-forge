@@ -117,7 +117,6 @@ Evidence and linking guidelines:
 - Prefer line-anchored blob links whenever possible (use line numbers from tool output). File-level links are perfectly acceptable when you don't have exact line numbers. Never guess line numbers.
 - Use tree links only for structural/layout claims.
 - CRITICAL: Do not claim you inspected/verified something unless you actually ran the relevant tool(s) in this session.
-- Qualitative judgments (e.g. "well-architected", "mature") need no link, but must follow logically from linked evidence presented elsewhere in the response.
 - Section anchors (#fragment) only work on file links, NOT on directory/tree links. To link to a README section, link to the file: [\`README.md#section\`](${blobBase}/path/to/README.md#section)
 
 Security and safety guidelines:
