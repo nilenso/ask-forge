@@ -363,6 +363,10 @@
     display: grid;
     grid-template-columns: 320px 1fr;
     overflow: hidden;
+    transition: grid-template-columns 0.2s ease;
+  }
+  .split-pane.sidebar-collapsed {
+    grid-template-columns: 0px 1fr;
   }
 
   /* ─── Left Panel (Card List) ─── */
@@ -375,6 +379,41 @@
     overflow: hidden;
     position: relative;
     z-index: 1;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-collapsed .left-panel {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sidebar-toggle {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    z-index: 2;
+    width: 20px;
+    height: 44px;
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--gray-400);
+    font-size: 12px;
+    transition: color 0.15s, background 0.15s, left 0.2s;
+  }
+  .sidebar-toggle:hover {
+    color: var(--gray-700);
+    background: var(--gray-50);
+  }
+  .split-pane:not(.sidebar-collapsed) .sidebar-toggle {
+    left: 320px;
+  }
+  .split-pane.sidebar-collapsed .sidebar-toggle {
+    left: 0;
   }
   .filter-bar {
     padding: 10px 0;
@@ -893,10 +932,11 @@
     <div class="stats-bar" id="statsBar"></div>
     <div class="filter-bar" id="filterBar"></div>
   </div>
-  <div class="split-pane">
+  <div class="split-pane" id="splitPane">
     <div class="left-panel">
       <div class="card-list" id="cardList"></div>
     </div>
+    <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar" onclick="toggleSidebar()">◀</button>
     <div class="right-panel" id="rightPanel">
       <div class="detail-empty">Select a row to view details</div>
     </div>
@@ -2485,6 +2525,18 @@ function toggleTheme() {
 
 // Initialise button icons to match the theme that was applied in <head>
 updateThemeButtons();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sidebar Toggle
+// ═══════════════════════════════════════════════════════════════════════════
+
+function toggleSidebar() {
+  const pane = $('splitPane');
+  const btn = $('sidebarToggle');
+  if (!pane || !btn) return;
+  const collapsed = pane.classList.toggle('sidebar-collapsed');
+  btn.innerHTML = collapsed ? '▶' : '◀';
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Init
