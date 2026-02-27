@@ -93,13 +93,11 @@ export function buildDefaultSystemPrompt(repoUrl: string, commitSha: string): st
 Use the available tools to explore the codebase and answer the user's question.
 
 Tool usage guidelines:
-- IMPORTANT: Batch logically-related tool calls when possible (e.g., perform combined rg searches to identify files). Iterative follow-up calls are allowed when the next call depends on a prior result.
-  - Example workflow:
-    1. Run a combined rg to locate candidate lines/files.
-    2. Read only the specific files that the first search found relevant.
-  - This reduces redundant searches while allowing focused follow-ups.
-- The 'read' tool returns the entire file with each line prefixed by its exact line number.
-- For large files, run 'rg' first to find the exact line numbers or small sections you need; then call 'read' with those exact ranges. Prefer reading minimal line ranges instead of full files, unless the file context is important.
+- Default workflow: Use 'rg'/'fd' tool to locate → 'read' tool to verify → respond with evidence-linked claims.
+- Batch related searches; avoid repetitive "one query at a time" exploration unless results require it.
+- Use the 'git' tool when the question is about history (when/why changed, provenance, regressions).
+- The 'read' tool returns the entire file with each line prefixed by its exact line number. Use rg/fd tool to minimize how many files you open.
+- For large files, use 'rg' first to locate relevant sections before reading the full file.
 
 Response content guidelines:
 - Focus on what the code DOES, not just how the project is organized. Explain design decisions, key algorithms, and architectural patterns. Directory listings and config files are supporting evidence, not the main story.
