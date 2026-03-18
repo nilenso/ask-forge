@@ -448,7 +448,7 @@
     background: var(--white);
     outline: none;
     cursor: pointer;
-    min-width: 130px;
+    min-width: 160px;
   }
   .filter-count {
     font-size: 12px;
@@ -1784,11 +1784,21 @@ function renderFilters() {
   }
 
   if (anyVerdicts) {
+    const verdictOptions = [
+      { value: '', label: 'Verdict: all' },
+      { value: 'pass', label: 'Verdict: pass' },
+      { value: 'fail', label: 'Verdict: fail (any)' },
+      { value: 'fail:incomplete', label: 'Fail: incomplete' },
+      { value: 'fail:not-evidenced', label: 'Fail: not evidenced' },
+      { value: 'fail:not-linked', label: 'Fail: not linked' },
+      { value: 'fail:bad-reasoning', label: 'Fail: bad reasoning' },
+      { value: 'none', label: 'Verdict: none' },
+    ];
     html += `<select class="filter-select" id="filterVerdict">`;
-    html += `<option value=""${state.filters.verdict === '' ? ' selected' : ''}>Verdict: all</option>`;
-    html += `<option value="pass"${state.filters.verdict === 'pass' ? ' selected' : ''}>Verdict: pass</option>`;
-    html += `<option value="fail"${state.filters.verdict === 'fail' ? ' selected' : ''}>Verdict: fail</option>`;
-    html += `<option value="none"${state.filters.verdict === 'none' ? ' selected' : ''}>Verdict: none</option>`;
+    for (const opt of verdictOptions) {
+      const sel = state.filters.verdict === opt.value ? ' selected' : '';
+      html += `<option value="${esc(opt.value)}"${sel}>${esc(opt.label)}</option>`;
+    }
     html += `</select>`;
   }
 
@@ -1910,10 +1920,7 @@ function getFilteredItems() {
       if (f.status && cr.status !== f.status) return false;
       // Verdict filter applies to current run (runB)
       if (f.verdict && cr.runB) {
-        const pass = isPassRow(cr.runB);
-        if (f.verdict === 'pass' && !pass) return false;
-        if (f.verdict === 'fail' && pass) return false;
-        if (f.verdict === 'none' && hasVerdicts(cr.runB)) return false;
+        if (!matchesVerdictFilter(cr.runB, f.verdict)) return false;
       }
       return true;
     });
@@ -1923,10 +1930,7 @@ function getFilteredItems() {
       if (f.search && !row.question.toLowerCase().includes(f.search.toLowerCase())) return false;
       if (f.repo && shortRepoName(row.repository) !== f.repo) return false;
       if (f.verdict) {
-        const hv = hasVerdicts(row);
-        if (f.verdict === 'none' && hv) return false;
-        if (f.verdict === 'pass' && !isPassRow(row)) return false;
-        if (f.verdict === 'fail' && isPassRow(row)) return false;
+        if (!matchesVerdictFilter(row, f.verdict)) return false;
       }
       return true;
     });
@@ -1939,6 +1943,25 @@ function isPassRow(row) {
   if (!hasVerdicts(row)) return true; // no verdicts = not a failure
   const fields = ['isAnswerComplete', 'isEvidenceSupported', 'isEvidenceLinked', 'isReasoningSound'];
   return !fields.some(f => row[f].toLowerCase().startsWith('no'));
+}
+
+/** Map granular fail filter values to the corresponding row field */
+const FAIL_FIELD_MAP = {
+  'fail:incomplete': 'isAnswerComplete',
+  'fail:not-evidenced': 'isEvidenceSupported',
+  'fail:not-linked': 'isEvidenceLinked',
+  'fail:bad-reasoning': 'isReasoningSound',
+};
+
+function matchesVerdictFilter(row, verdict) {
+  if (!verdict) return true;
+  if (verdict === 'none') return !hasVerdicts(row);
+  if (verdict === 'pass') return isPassRow(row);
+  if (verdict === 'fail') return !isPassRow(row);
+  // Granular fail filter: check specific field
+  const field = FAIL_FIELD_MAP[verdict];
+  if (field) return row[field].toLowerCase().startsWith('no');
+  return true;
 }
 
 function getRowKey(item) {
