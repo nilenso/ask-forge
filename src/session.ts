@@ -369,7 +369,13 @@ export class Session {
 		iteration: number,
 		onProgress?: OnProgress,
 	): Promise<{ done: true; result: AskResult } | { done: false }> {
-		const outcome = await processStream(this.#stream, this.#config.model, this.#context, onProgress, this.#buildStreamOptions());
+		const outcome = await processStream(
+			this.#stream,
+			this.#config.model,
+			this.#context,
+			onProgress,
+			this.#buildStreamOptions(),
+		);
 
 		if (!outcome.ok) {
 			this.#logger.error(`API call failed (iteration ${iteration + 1})`, {

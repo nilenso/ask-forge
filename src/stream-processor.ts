@@ -1,4 +1,11 @@
-import type { Api, AssistantMessage, Context, stream as defaultStream, Model, ProviderStreamOptions } from "@mariozechner/pi-ai";
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	stream as defaultStream,
+	Model,
+	ProviderStreamOptions,
+} from "@mariozechner/pi-ai";
 import type { OnProgress, ProgressEvent } from "./session";
 
 // =============================================================================

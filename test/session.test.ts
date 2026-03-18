@@ -285,10 +285,7 @@ describe("Session", () => {
 			}) as unknown as SessionConfig["stream"];
 
 			const repo = createMockRepo();
-			const session = new Session(
-				repo,
-				createMockConfig({ stream: customStream }),
-			);
+			const session = new Session(repo, createMockConfig({ stream: customStream }));
 
 			await session.ask("Test");
 
