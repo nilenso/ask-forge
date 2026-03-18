@@ -7,6 +7,15 @@
 
 Ask Forge allows you to programmatically ask questions to a GitHub/GitLab repository.
 
+## Features
+
+- 🔗 **Ask questions about any GitHub/GitLab repository**: Point it at any public or private repository URL and start asking questions in plain language.
+- 📌 **Query any point in history**: Pin your question to a specific branch, tag, or commit
+- 🤖 **Configurable**: Choose any model and provider supported by [`pi-ai`](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts) (OpenRouter, Anthropic, Google, and more). Customize the system prompt, tool iteration limits, and context compaction settings.
+- 🔒 **Sandboxed execution**: Run tool execution (file reads, code search) in an isolated container for exploring untrusted repositories safely
+- 📊 **Rich answer metadata**: Every response comes with token usage, inference time, and a list of all the sources the model consulted to form its answer.
+- 🧪 **Built-in evaluation system**: Measure and track answer quality over time using an LLM judge that scores responses on completeness, evidence, sourcing, and reasoning.
+
 ## Requirements
 
 - [Bun](https://bun.sh/) (or Node.js ≥ 18)
@@ -73,15 +82,19 @@ await client.resetSandbox();
 
 ### Configuration
 
-The `ForgeConfig` object controls the AI model and behavior:
+The `ForgeConfig` object controls the AI model and behavior.
+
+By default, the client uses **OpenRouter** with **`anthropic/claude-sonnet-4.6`**. You can override both `provider` and `model` (they must be specified together). The corresponding API key environment variable is resolved automatically (e.g. `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`).
+
+Available providers and model IDs are defined in [`@mariozechner/pi-ai`](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts).
 
 ```typescript
 import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
 
-// Use defaults (openrouter + claude-sonnet-4.6)
+// Use defaults (openrouter + anthropic/claude-sonnet-4.6)
 const client = new AskForgeClient();
 
-// Or specify a different model (provider and model must both be specified)
+// Or specify a different provider/model
 const client = new AskForgeClient({
   provider: "anthropic",
   model: "claude-sonnet-4.6",
@@ -243,7 +256,7 @@ const client = new AskForgeClient({
   model: "anthropic/claude-sonnet-4.6",
   systemPrompt: "You are a code analysis assistant.",
   maxIterations: 20,
-  
+
   // Enable sandboxed execution
   sandbox: {
     baseUrl: "http://sandbox:8080",  // Sandbox worker URL
