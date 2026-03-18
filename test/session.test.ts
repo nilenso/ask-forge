@@ -231,5 +231,65 @@ describe("Session", () => {
 
 			expect(streamCalled).toBe(true);
 		});
+
+		test("passes thinking options to stream function when thinking is adaptive", async () => {
+			let capturedOptions: unknown;
+			const customStream = ((_model: unknown, _context: unknown, options?: unknown) => {
+				capturedOptions = options;
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const repo = createMockRepo();
+			const session = new Session(
+				repo,
+				createMockConfig({
+					stream: customStream,
+					thinking: { mode: "adaptive", effort: "high" },
+				}),
+			);
+
+			await session.ask("Test");
+
+			expect(capturedOptions).toEqual({
+				thinkingEnabled: true,
+				effort: "high",
+			});
+		});
+
+		test("does not pass thinking options when thinking is off", async () => {
+			let capturedOptions: unknown = "sentinel";
+			const customStream = ((_model: unknown, _context: unknown, options?: unknown) => {
+				capturedOptions = options;
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const repo = createMockRepo();
+			const session = new Session(
+				repo,
+				createMockConfig({
+					stream: customStream,
+					thinking: { mode: "off" },
+				}),
+			);
+
+			await session.ask("Test");
+
+			expect(capturedOptions).toBeUndefined();
+		});
+
+		test("does not pass thinking options when no thinking config provided", async () => {
+			let capturedOptions: unknown = "sentinel";
+			const customStream = ((_model: unknown, _context: unknown, options?: unknown) => {
+				capturedOptions = options;
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig({ stream: customStream }));
+
+			await session.ask("Test");
+
+			expect(capturedOptions).toBeUndefined();
+		});
 	});
 });
