@@ -1,5 +1,5 @@
 import { getModel, type KnownProvider, type Message, stream } from "@mariozechner/pi-ai";
-import { type CompactionSettings, MODEL_NAME, MODEL_PROVIDER } from "./config";
+import { type CompactionSettings, MODEL_NAME, MODEL_PROVIDER, type ThinkingConfig, type ThinkingMode } from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { buildDefaultSystemPrompt } from "./prompt";
@@ -32,6 +32,8 @@ export type {
 	Repo,
 	SandboxClientConfig,
 	Session,
+	ThinkingConfig,
+	ThinkingMode,
 	ToolCallRecord,
 };
 export { buildDefaultSystemPrompt, consoleLogger, nullLogger };
@@ -54,6 +56,12 @@ interface ForgeConfigBase {
 	 * If omitted, uses sensible defaults (enabled with 200K context window).
 	 */
 	compaction?: Partial<CompactionSettings>;
+	/**
+	 * Optional thinking configuration.
+	 * Controls whether the model uses adaptive/extended thinking.
+	 * If omitted, thinking is off (default).
+	 */
+	thinking?: ThinkingConfig;
 }
 
 /**
@@ -105,6 +113,7 @@ interface ResolvedConfig {
 	maxIterations: number;
 	sandbox?: SandboxClientConfig;
 	compaction?: Partial<CompactionSettings>;
+	thinking?: ThinkingConfig;
 }
 
 export class AskForgeClient {
@@ -128,6 +137,7 @@ export class AskForgeClient {
 			maxIterations: config.maxIterations ?? 20,
 			sandbox: config.sandbox,
 			compaction: config.compaction,
+			thinking: config.thinking,
 		};
 		this.#logger = logger;
 
@@ -181,6 +191,7 @@ export class AskForgeClient {
 				logger: this.#logger,
 				stream,
 				compaction: config.compaction,
+				thinking: config.thinking,
 			});
 		}
 
@@ -198,6 +209,7 @@ export class AskForgeClient {
 			logger: this.#logger,
 			stream,
 			compaction: config.compaction,
+			thinking: config.thinking,
 		});
 	}
 

@@ -5,10 +5,12 @@ import {
 	type Context,
 	type Message,
 	type Model,
+	type ProviderStreamOptions,
 	stream,
 	type Tool,
 } from "@mariozechner/pi-ai";
 import { type CompactionSettings, maybeCompact } from "./compaction";
+import type { ThinkingConfig } from "./config";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { type ParsedLink, validateLinks } from "./response-validation";
@@ -181,6 +183,8 @@ export interface SessionConfig {
 	stream?: typeof stream;
 	/** Context compaction settings (defaults to sensible values) */
 	compaction?: Partial<CompactionSettings>;
+	/** Thinking configuration (defaults to off) */
+	thinking?: ThinkingConfig;
 }
 
 /**
@@ -224,6 +228,18 @@ export class Session {
 			systemPrompt: config.systemPrompt,
 			messages: [],
 			tools: config.tools,
+		};
+	}
+
+	/** Converts ThinkingConfig into provider stream options, or undefined if thinking is off. */
+	#buildStreamOptions(): ProviderStreamOptions | undefined {
+		const thinking = this.#config.thinking;
+		if (!thinking || thinking.mode === "off") return undefined;
+
+		return {
+			thinkingEnabled: true,
+			...(thinking.effort && { effort: thinking.effort }),
+			...(thinking.budgetTokens && { thinkingBudgetTokens: thinking.budgetTokens }),
 		};
 	}
 
@@ -353,7 +369,7 @@ export class Session {
 		iteration: number,
 		onProgress?: OnProgress,
 	): Promise<{ done: true; result: AskResult } | { done: false }> {
-		const outcome = await processStream(this.#stream, this.#config.model, this.#context, onProgress);
+		const outcome = await processStream(this.#stream, this.#config.model, this.#context, onProgress, this.#buildStreamOptions());
 
 		if (!outcome.ok) {
 			this.#logger.error(`API call failed (iteration ${iteration + 1})`, {

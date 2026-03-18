@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Context, stream as defaultStream, Model } from "@mariozechner/pi-ai";
+import type { Api, AssistantMessage, Context, stream as defaultStream, Model, ProviderStreamOptions } from "@mariozechner/pi-ai";
 import type { OnProgress, ProgressEvent } from "./session";
 
 // =============================================================================
@@ -171,11 +171,12 @@ export async function processStream(
 	model: Model<Api>,
 	context: Context,
 	onProgress?: OnProgress,
+	streamOptions?: ProviderStreamOptions,
 ): Promise<StreamOutcome> {
 	const toolCallNames = new Map<number, string>();
 
 	try {
-		const eventStream = streamFn(model, context);
+		const eventStream = streamFn(model, context, streamOptions);
 
 		for await (const event of eventStream) {
 			const error = handleStreamEvent(event as RawStreamEvent, toolCallNames, onProgress);
