@@ -5,12 +5,12 @@ import {
 	type Context,
 	type Message,
 	type Model,
-	type ProviderStreamOptions,
-	stream,
+	type SimpleStreamOptions,
+	streamSimple,
+	type ThinkingLevel,
 	type Tool,
 } from "@mariozechner/pi-ai";
 import { type CompactionSettings, maybeCompact } from "./compaction";
-import type { ThinkingConfig } from "./config";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { type ParsedLink, validateLinks } from "./response-validation";
@@ -179,12 +179,12 @@ export interface SessionConfig {
 	executeTool: (name: string, args: Record<string, unknown>, cwd: string) => Promise<string>;
 	/** Logger for debug output (defaults to consoleLogger) */
 	logger?: Logger;
-	/** Stream function for AI inference (defaults to pi-ai's stream) */
-	stream?: typeof stream;
+	/** Stream function for AI inference (defaults to pi-ai's streamSimple) */
+	stream?: typeof streamSimple;
 	/** Context compaction settings (defaults to sensible values) */
 	compaction?: Partial<CompactionSettings>;
-	/** Thinking configuration (defaults to off) */
-	thinking?: ThinkingConfig;
+	/** Reasoning/thinking level. If omitted, thinking is off. */
+	reasoning?: ThinkingLevel;
 }
 
 /**
@@ -212,7 +212,7 @@ export class Session {
 
 	#config: SessionConfig;
 	#logger: Logger;
-	#stream: typeof stream;
+	#stream: typeof streamSimple;
 	#context: Context;
 	#pending: Promise<AskResult> | null = null;
 	#closed = false;
@@ -223,7 +223,7 @@ export class Session {
 		this.repo = repo;
 		this.#config = config;
 		this.#logger = config.logger ?? consoleLogger;
-		this.#stream = config.stream ?? stream;
+		this.#stream = config.stream ?? streamSimple;
 		this.#context = {
 			systemPrompt: config.systemPrompt,
 			messages: [],
@@ -231,16 +231,11 @@ export class Session {
 		};
 	}
 
-	/** Converts ThinkingConfig into provider stream options, or undefined if thinking is off. */
-	#buildStreamOptions(): ProviderStreamOptions | undefined {
-		const thinking = this.#config.thinking;
-		if (!thinking || thinking.mode === "off") return undefined;
-
-		return {
-			thinkingEnabled: true,
-			...(thinking.effort && { effort: thinking.effort }),
-			...(thinking.budgetTokens && { thinkingBudgetTokens: thinking.budgetTokens }),
-		};
+	/** Builds SimpleStreamOptions with reasoning level if configured. */
+	#buildStreamOptions(): SimpleStreamOptions | undefined {
+		const { reasoning } = this.#config;
+		if (!reasoning) return undefined;
+		return { reasoning };
 	}
 
 	/**

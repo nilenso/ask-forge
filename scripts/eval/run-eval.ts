@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
+import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import { completeSimple, getModel } from "@mariozechner/pi-ai";
-import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, type ThinkingConfig } from "../../src/config";
+import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER } from "../../src/config";
 import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
 import { type EvalRow, loadRowsFromCsv, writeCsvString } from "./csv";
@@ -77,7 +78,7 @@ ${answer}`;
 // Main
 // =============================================================================
 
-async function runEval(inputPath: string, thinking: ThinkingConfig | undefined): Promise<void> {
+async function runEval(inputPath: string, reasoning: ThinkingLevel | undefined): Promise<void> {
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
 	const reportsDir = new URL("reports/", import.meta.url).pathname;
 	await mkdir(reportsDir, { recursive: true });
@@ -93,8 +94,8 @@ async function runEval(inputPath: string, thinking: ThinkingConfig | undefined):
 
 	console.log(`Reading dataset from: ${inputPath}`);
 	console.log(`Found ${rows.length} rows to evaluate`);
-	if (thinking) {
-		console.log(`Adaptive thinking: enabled (effort: ${thinking.effort ?? "default"})`);
+	if (reasoning) {
+		console.log(`Reasoning level: ${reasoning}`);
 	}
 	console.log();
 
@@ -103,7 +104,7 @@ async function runEval(inputPath: string, thinking: ThinkingConfig | undefined):
 			provider: MODEL_PROVIDER,
 			model: MODEL_NAME,
 			maxIterations: MAX_TOOL_ITERATIONS,
-			thinking,
+			reasoning,
 		},
 		nullLogger,
 	);
@@ -239,15 +240,15 @@ async function runEval(inputPath: string, thinking: ThinkingConfig | undefined):
 
 // CLI entry point
 const args = process.argv.slice(2);
-const thinkingFlag = args.includes("--thinking");
+const reasoningFlag = args.includes("--reasoning");
 const positionalArgs = args.filter((a) => !a.startsWith("--"));
 const inputPath = positionalArgs[0];
 
 if (!inputPath) {
-	console.error("Usage: bun run eval/run-eval.ts <path-to-dataset.csv> [--thinking]");
+	console.error("Usage: bun run eval/run-eval.ts <path-to-dataset.csv> [--reasoning]");
 	process.exit(1);
 }
 
-const thinkingConfig: ThinkingConfig | undefined = thinkingFlag ? { mode: "adaptive" } : undefined;
+const reasoning: ThinkingLevel | undefined = reasoningFlag ? "high" : undefined;
 
-await runEval(inputPath, thinkingConfig);
+await runEval(inputPath, reasoning);

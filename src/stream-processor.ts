@@ -2,9 +2,9 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
-	stream as defaultStream,
+	streamSimple as defaultStream,
 	Model,
-	ProviderStreamOptions,
+	SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import type { OnProgress, ProgressEvent } from "./session";
 
@@ -178,7 +178,7 @@ export async function processStream(
 	model: Model<Api>,
 	context: Context,
 	onProgress?: OnProgress,
-	streamOptions?: ProviderStreamOptions,
+	streamOptions?: SimpleStreamOptions,
 ): Promise<StreamOutcome> {
 	const toolCallNames = new Map<number, string>();
 

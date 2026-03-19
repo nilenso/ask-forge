@@ -5,26 +5,6 @@
  */
 
 // =============================================================================
-// THINKING CONFIGURATION
-// =============================================================================
-
-/** Whether thinking is off or adaptive (model decides when/how much to think) */
-export type ThinkingMode = "off" | "adaptive";
-
-/**
- * Configuration for Claude's adaptive/extended thinking.
- * Default: thinking is off. Enable via `mode: "adaptive"` for eval-gated rollout.
- */
-export interface ThinkingConfig {
-	/** Thinking mode: "off" (default) or "adaptive" */
-	mode: ThinkingMode;
-	/** Effort level for adaptive thinking (Anthropic Opus 4.6+ only). Default: "high" */
-	effort?: "low" | "medium" | "high" | "max";
-	/** Explicit token budget for extended thinking (older Anthropic models). Ignored for adaptive. */
-	budgetTokens?: number;
-}
-
-// =============================================================================
 // MODEL CONFIGURATION
 // =============================================================================
 
