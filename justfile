@@ -31,3 +31,19 @@ sandbox-down:
 # View sandbox logs
 sandbox-logs:
     podman-compose logs -f
+
+# Start Langfuse observability stack
+langfuse-up:
+    docker compose up -d langfuse-postgres langfuse-redis langfuse-clickhouse langfuse-minio langfuse-minio-init
+    @echo "Waiting for infra services..."
+    @sleep 5
+    docker compose up -d langfuse-worker langfuse-web
+    @echo "Langfuse starting at http://localhost:3000"
+
+# Stop Langfuse stack
+langfuse-down:
+    docker compose down langfuse-web langfuse-worker langfuse-minio-init langfuse-minio langfuse-clickhouse langfuse-redis langfuse-postgres
+
+# View Langfuse logs
+langfuse-logs:
+    docker compose logs -f langfuse-web langfuse-worker
