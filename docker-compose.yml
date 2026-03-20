@@ -75,6 +75,16 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minioadmin
       LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minioadmin
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      # Headless bootstrap — auto-creates org, project, user, and API keys
+      LANGFUSE_INIT_ORG_ID: ask-forge
+      LANGFUSE_INIT_ORG_NAME: ask-forge
+      LANGFUSE_INIT_PROJECT_ID: ask-forge-dev
+      LANGFUSE_INIT_PROJECT_NAME: ask-forge-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_ask_forge_dev
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_ask_forge_dev
+      LANGFUSE_INIT_USER_EMAIL: admin@askforge.local
+      LANGFUSE_INIT_USER_NAME: Admin
+      LANGFUSE_INIT_USER_PASSWORD: admin123
     restart: unless-stopped
 
   langfuse-worker:
