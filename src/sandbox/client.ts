@@ -78,8 +78,9 @@ export class SandboxClient {
 	/**
 	 * Clone a repository inside the sandbox.
 	 * Kicks off an async clone and polls until ready (up to 20 minutes).
+	 * @param onProgress - Optional callback invoked with status messages during polling
 	 */
-	async clone(url: string, commitish?: string): Promise<CloneResult> {
+	async clone(url: string, commitish?: string, onProgress?: (message: string) => void): Promise<CloneResult> {
 		const commit = commitish ?? "HEAD";
 		this.logger.debug("sandbox:client", `POST /clone url=${url} commitish=${commit}`);
 		const t0 = Date.now();
@@ -113,6 +114,7 @@ export class SandboxClient {
 				"sandbox:client",
 				`POST /clone → ready (cached) (${duration}ms) slug=${startBody.slug} sha=${startBody.sha.slice(0, 12)}`,
 			);
+			onProgress?.("Repository ready");
 			return { slug: startBody.slug, sha: startBody.sha, worktree: startBody.worktree };
 		}
 
@@ -123,6 +125,7 @@ export class SandboxClient {
 
 		// Step 2: Poll until ready or failed
 		this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
+		onProgress?.("Cloning repository…");
 
 		const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
 		while (Date.now() < deadline) {
@@ -152,6 +155,7 @@ export class SandboxClient {
 					"sandbox:client",
 					`clone ready (${duration}ms) slug=${slug} sha=${statusBody.sha.slice(0, 12)}`,
 				);
+				onProgress?.("Repository ready");
 				return { slug: statusBody.slug ?? slug, sha: statusBody.sha, worktree: statusBody.worktree };
 			}
 
@@ -163,7 +167,9 @@ export class SandboxClient {
 
 			// Still cloning — log progress
 			const elapsed = statusBody.elapsedMs ?? Date.now() - t0;
-			this.logger.debug("sandbox:client", `clone in progress for ${url} (${Math.round(elapsed / 1000)}s elapsed)`);
+			const elapsedSec = Math.round(elapsed / 1000);
+			this.logger.debug("sandbox:client", `clone in progress for ${url} (${elapsedSec}s elapsed)`);
+			onProgress?.(`Cloning repository… ${elapsedSec}s`);
 		}
 
 		throw new Error(`Sandbox clone timed out after ${CLONE_POLL_TIMEOUT_MS / 1000}s for ${url}`);

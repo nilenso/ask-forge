@@ -141,9 +141,14 @@ export class AskForgeClient {
 	 *
 	 * @param repoUrl - The URL of the repository to connect to
 	 * @param options - Git connection options (token, forge, commitish)
+	 * @param onProgress - Optional callback for clone progress messages (useful for long clones)
 	 * @returns A Session for asking questions about the repository
 	 */
-	async connect(repoUrl: string, options: ConnectOptions = {}): Promise<Session> {
+	async connect(
+		repoUrl: string,
+		options: ConnectOptions = {},
+		onProgress?: (message: string) => void,
+	): Promise<Session> {
 		const { config } = this;
 
 		// getModel has strict generics tying provider to model IDs - cast for flexibility
@@ -151,7 +156,7 @@ export class AskForgeClient {
 
 		if (this.#sandboxClient) {
 			// Sandbox mode: clone and execute tools in isolated container
-			const cloneResult = await this.#sandboxClient.clone(repoUrl, options.commitish);
+			const cloneResult = await this.#sandboxClient.clone(repoUrl, options.commitish, onProgress);
 
 			// Create a Repo-like object with sandbox metadata
 			const repo: Repo = {
