@@ -377,6 +377,7 @@ export class Session {
 				endAskSpan(askSpan, {
 					response: result.response,
 					toolCallCount: result.toolCalls.length,
+					totalIterations: iteration + 1,
 					totalLinks: result.totalLinks,
 					invalidLinks: result.invalidLinks.length,
 					usage: result.usage,
@@ -401,6 +402,7 @@ export class Session {
 		const genSpan = startGenerationSpan(askSpan, {
 			iteration: iteration + 1,
 			model: modelId,
+			provider: String(this.#config.model.provider),
 			messages: [...this.#context.messages],
 		});
 
@@ -446,6 +448,7 @@ export class Session {
 			outputTokens: response.usage?.output ?? 0,
 			cacheReadTokens: response.usage?.cacheRead ?? 0,
 			cacheCreationTokens: response.usage?.cacheWrite ?? 0,
+			stopReason: (response as unknown as { stopReason?: string }).stopReason,
 		});
 
 		this.#context.messages.push(response);

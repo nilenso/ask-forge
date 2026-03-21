@@ -371,9 +371,9 @@ ask (root)
 
 | Span | Attributes | Events |
 |------|-----------|--------|
-| **`ask`** (root) | `gen_ai.operation.name`, `gen_ai.request.model`, `ask_forge.session.id`, `ask_forge.repo.url`, `ask_forge.repo.commitish`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `ask_forge.response.total_links`, `ask_forge.response.invalid_links` | `gen_ai.system_instructions` (system prompt content) |
+| **`ask`** (root) | `gen_ai.operation.name`, `gen_ai.request.model`, `ask_forge.session.id`, `ask_forge.repo.url`, `ask_forge.repo.commitish`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `ask_forge.total_iterations`, `ask_forge.total_tool_calls`, `ask_forge.response.total_links`, `ask_forge.response.invalid_links` | `gen_ai.system_instructions` (system prompt content) |
 | **`compaction`** | `ask_forge.compaction.was_compacted`, `ask_forge.compaction.tokens_before`, `ask_forge.compaction.tokens_after` | Exception recorded on error |
-| **`gen_ai.chat`** | `gen_ai.operation.name`, `gen_ai.request.model`, `ask_forge.iteration`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens` | `gen_ai.input.messages` (full LLM context), `gen_ai.output.messages` (response content). Exception recorded on error with full stack trace. |
+| **`gen_ai.chat`** | `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.provider.name`, `ask_forge.iteration`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.response.finish_reason` | `gen_ai.input.messages` (full LLM context), `gen_ai.output.messages` (response content). Exception recorded on error with full stack trace. |
 | **`gen_ai.execute_tool`** | `gen_ai.operation.name`, `gen_ai.tool.name`, `gen_ai.tool.call.id` | `gen_ai.tool.call.arguments` (tool input), `gen_ai.tool.call.result` (tool output, including file contents for `read` tool) |
 
 ### Error Handling

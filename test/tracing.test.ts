@@ -297,15 +297,24 @@ describe("OTel tracing", () => {
 			expect(sysEvent?.attributes?.content).toBe("You are a test assistant");
 		});
 
-		test("records usage and link stats on completion", async () => {
-			const session = new Session(createMockRepo(), createMockConfig());
+		test("records usage, link stats, iteration count, and tool call count on completion", async () => {
+			let callCount = 0;
+			const streamFn = (() => {
+				callCount++;
+				if (callCount === 1) return createToolCallStreamResult();
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ stream: streamFn }));
 			await session.ask("Hello?");
 
 			const span = recorder.getSpan("ask");
-			expect(span?.attributes["gen_ai.usage.input_tokens"]).toBe(100);
-			expect(span?.attributes["gen_ai.usage.output_tokens"]).toBe(50);
+			expect(span?.attributes["gen_ai.usage.input_tokens"]).toBe(200);
+			expect(span?.attributes["gen_ai.usage.output_tokens"]).toBe(80);
 			expect(span?.attributes["ask_forge.response.total_links"]).toBeDefined();
 			expect(span?.attributes["ask_forge.response.invalid_links"]).toBeDefined();
+			expect(span?.attributes["ask_forge.total_iterations"]).toBe(2);
+			expect(span?.attributes["ask_forge.total_tool_calls"]).toBe(1);
 		});
 
 		test("each ask() creates a separate root span", async () => {
@@ -342,15 +351,24 @@ describe("OTel tracing", () => {
 	// -------------------------------------------------------------------------
 
 	describe("generation span", () => {
-		test("emits gen_ai.chat span with model and iteration", async () => {
+		test("emits gen_ai.chat span with model, provider, and iteration", async () => {
 			const session = new Session(createMockRepo(), createMockConfig());
 			await session.ask("Hello?");
 
 			const genSpan = recorder.getSpan("gen_ai.chat");
 			expect(genSpan).toBeDefined();
 			expect(genSpan?.attributes["gen_ai.request.model"]).toBe("test-provider/test-model");
+			expect(genSpan?.attributes["gen_ai.provider.name"]).toBe("test-provider");
 			expect(genSpan?.attributes["ask_forge.iteration"]).toBe(1);
 			expect(genSpan?.status.code).toBe(SpanStatusCode.OK);
+		});
+
+		test("records stop reason on generation span", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.ask("Hello?");
+
+			const genSpan = recorder.getSpan("gen_ai.chat");
+			expect(genSpan?.attributes["gen_ai.response.finish_reason"]).toBe("end_turn");
 		});
 
 		test("emits input and output message events", async () => {

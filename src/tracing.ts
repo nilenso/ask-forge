@@ -41,11 +41,15 @@ const ATTR = {
 	TOOL_NAME: "gen_ai.tool.name",
 	TOOL_CALL_ID: "gen_ai.tool.call.id",
 
+	STOP_REASON: "gen_ai.response.finish_reason",
+
 	// ask-forge extensions
 	SESSION_ID: "ask_forge.session.id",
 	REPO_URL: "ask_forge.repo.url",
 	REPO_COMMITISH: "ask_forge.repo.commitish",
 	ITERATION: "ask_forge.iteration",
+	TOTAL_ITERATIONS: "ask_forge.total_iterations",
+	TOTAL_TOOL_CALLS: "ask_forge.total_tool_calls",
 	COMPACTION_WAS_COMPACTED: "ask_forge.compaction.was_compacted",
 	COMPACTION_TOKENS_BEFORE: "ask_forge.compaction.tokens_before",
 	COMPACTION_TOKENS_AFTER: "ask_forge.compaction.tokens_after",
@@ -97,6 +101,7 @@ export function endAskSpan(
 	result: {
 		response: string;
 		toolCallCount: number;
+		totalIterations: number;
 		totalLinks: number;
 		invalidLinks: number;
 		usage: { inputTokens: number; outputTokens: number };
@@ -108,6 +113,8 @@ export function endAskSpan(
 		[ATTR.RESPONSE_INVALID_LINKS]: result.invalidLinks,
 		[ATTR.USAGE_INPUT_TOKENS]: result.usage.inputTokens,
 		[ATTR.USAGE_OUTPUT_TOKENS]: result.usage.outputTokens,
+		[ATTR.TOTAL_ITERATIONS]: result.totalIterations,
+		[ATTR.TOTAL_TOOL_CALLS]: result.toolCallCount,
 	});
 	span.setStatus({ code: SpanStatusCode.OK });
 	span.end();
@@ -155,7 +162,7 @@ export function endCompactionSpanWithError(span: Span, error: unknown): void {
 /** Start a generation child span for an LLM iteration. */
 export function startGenerationSpan(
 	parentSpan: Span,
-	params: { iteration: number; model: string; messages: unknown[] },
+	params: { iteration: number; model: string; provider: string; messages: unknown[] },
 ): Span {
 	const ctx = trace.setSpan(context.active(), parentSpan);
 	const span = tracer.startSpan(
@@ -164,6 +171,7 @@ export function startGenerationSpan(
 			attributes: {
 				[ATTR.OPERATION_NAME]: "chat",
 				[ATTR.REQUEST_MODEL]: params.model,
+				[ATTR.PROVIDER_NAME]: params.provider,
 				[ATTR.ITERATION]: params.iteration,
 			},
 		},
@@ -184,6 +192,7 @@ export function endGenerationSpan(
 		outputTokens: number;
 		cacheReadTokens: number;
 		cacheCreationTokens: number;
+		stopReason?: string;
 	},
 ): void {
 	span.setAttributes({
@@ -191,6 +200,7 @@ export function endGenerationSpan(
 		[ATTR.USAGE_OUTPUT_TOKENS]: result.outputTokens,
 		[ATTR.USAGE_CACHE_READ]: result.cacheReadTokens,
 		[ATTR.USAGE_CACHE_CREATION]: result.cacheCreationTokens,
+		...(result.stopReason ? { [ATTR.STOP_REASON]: result.stopReason } : {}),
 	});
 	span.addEvent(EVENT.OUTPUT_MESSAGES, {
 		content: JSON.stringify(result.output),
