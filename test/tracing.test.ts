@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type Span, SpanStatusCode, context, trace } from "@opentelemetry/api";
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { type context, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Repo } from "../src/forge";
 import { nullLogger } from "../src/logger";
 import { Session, type SessionConfig } from "../src/session";

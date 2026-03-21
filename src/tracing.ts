@@ -21,7 +21,7 @@
  *
  * @see https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
  */
-import { type Span, SpanStatusCode, context, trace } from "@opentelemetry/api";
+import { context, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
 
 const tracer = trace.getTracer("ask-forge");
 
@@ -158,13 +158,17 @@ export function startGenerationSpan(
 	params: { iteration: number; model: string; messages: unknown[] },
 ): Span {
 	const ctx = trace.setSpan(context.active(), parentSpan);
-	const span = tracer.startSpan("gen_ai.chat", {
-		attributes: {
-			[ATTR.OPERATION_NAME]: "chat",
-			[ATTR.REQUEST_MODEL]: params.model,
-			[ATTR.ITERATION]: params.iteration,
+	const span = tracer.startSpan(
+		"gen_ai.chat",
+		{
+			attributes: {
+				[ATTR.OPERATION_NAME]: "chat",
+				[ATTR.REQUEST_MODEL]: params.model,
+				[ATTR.ITERATION]: params.iteration,
+			},
 		},
-	}, ctx);
+		ctx,
+	);
 	span.addEvent(EVENT.INPUT_MESSAGES, {
 		content: JSON.stringify(params.messages),
 	});
@@ -212,13 +216,17 @@ export function startToolSpan(
 	params: { toolName: string; toolCallId: string; args: Record<string, unknown> },
 ): Span {
 	const ctx = trace.setSpan(context.active(), parentSpan);
-	const span = tracer.startSpan("gen_ai.execute_tool", {
-		attributes: {
-			[ATTR.OPERATION_NAME]: "execute_tool",
-			[ATTR.TOOL_NAME]: params.toolName,
-			[ATTR.TOOL_CALL_ID]: params.toolCallId,
+	const span = tracer.startSpan(
+		"gen_ai.execute_tool",
+		{
+			attributes: {
+				[ATTR.OPERATION_NAME]: "execute_tool",
+				[ATTR.TOOL_NAME]: params.toolName,
+				[ATTR.TOOL_CALL_ID]: params.toolCallId,
+			},
 		},
-	}, ctx);
+		ctx,
+	);
 	span.addEvent(EVENT.TOOL_CALL_ARGUMENTS, {
 		content: JSON.stringify(params.args),
 	});
