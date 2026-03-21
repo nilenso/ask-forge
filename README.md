@@ -321,13 +321,6 @@ just sandbox-tests       # Test HTTP API + security (runs against container)
 just sandbox-all-tests   # Run both
 ```
 
-The test suite includes 49 tests covering:
-- Filesystem isolation and read-only enforcement
-- PID namespace isolation
-- Network blocking via seccomp
-- Path traversal prevention
-- Command injection protection
-- Input validation
 
 ## Observability
 

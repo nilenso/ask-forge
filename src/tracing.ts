@@ -78,7 +78,7 @@ export function startAskSpan(params: {
 	repoUrl: string;
 	commitish: string;
 	model: string;
-	systemPrompt: string;
+	systemPrompt?: string;
 }): Span {
 	const span = tracer.startSpan("ask", {
 		attributes: {
@@ -89,8 +89,13 @@ export function startAskSpan(params: {
 			[ATTR.REPO_COMMITISH]: params.commitish,
 		},
 	});
-	span.addEvent(EVENT.SYSTEM_INSTRUCTIONS, {
-		content: params.systemPrompt,
+	if (params.systemPrompt) {
+		span.addEvent(EVENT.SYSTEM_INSTRUCTIONS, {
+			content: params.systemPrompt,
+		});
+	}
+	span.addEvent(EVENT.INPUT_MESSAGES, {
+		content: params.question,
 	});
 	return span;
 }
@@ -99,13 +104,11 @@ export function startAskSpan(params: {
 export function endAskSpan(
 	span: Span,
 	result: {
-		response: string;
 		toolCallCount: number;
 		totalIterations: number;
 		totalLinks: number;
 		invalidLinks: number;
 		usage: { inputTokens: number; outputTokens: number };
-		inferenceTimeMs: number;
 	},
 ): void {
 	span.setAttributes({
@@ -249,5 +252,14 @@ export function endToolSpan(span: Span, result: string): void {
 		content: result,
 	});
 	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End a tool span with an error. */
+export function endToolSpanWithError(span: Span, error: unknown): void {
+	span.setStatus({ code: SpanStatusCode.ERROR, message: "tool execution failed" });
+	if (error instanceof Error) {
+		span.recordException(error);
+	}
 	span.end();
 }

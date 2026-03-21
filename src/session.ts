@@ -8,6 +8,7 @@ import {
 	stream,
 	type Tool,
 } from "@mariozechner/pi-ai";
+import type { Span } from "@opentelemetry/api";
 import { type CompactionSettings, maybeCompact } from "./compaction";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
@@ -21,6 +22,7 @@ import {
 	endGenerationSpan,
 	endGenerationSpanWithError,
 	endToolSpan,
+	endToolSpanWithError,
 	startAskSpan,
 	startCompactionSpan,
 	startGenerationSpan,
@@ -335,8 +337,9 @@ export class Session {
 				this.#context.messages = compactionResult.messages;
 				this.#compactionSummary = compactionResult.summary;
 
-				console.log(
-					`[compaction] Context compacted: ${compactionResult.tokensBefore} -> ${compactionResult.tokensAfter} tokens`,
+				this.#logger.log(
+					"[compaction]",
+					`Context compacted: ${compactionResult.tokensBefore} -> ${compactionResult.tokensAfter} tokens`,
 				);
 
 				endCompactionSpan(compactionSpan, {
@@ -367,35 +370,38 @@ export class Session {
 			endCompactionSpanWithError(compactionSpan, compactionError);
 		}
 
-		for (let iteration = 0; iteration < this.#config.maxIterations; iteration++) {
-			onProgress?.({ type: "thinking" });
+		try {
+			for (let iteration = 0; iteration < this.#config.maxIterations; iteration++) {
+				onProgress?.({ type: "thinking" });
 
-			const iterationResult = await this.#processIteration(ctx, iteration, askSpan, onProgress);
+				const iterationResult = await this.#processIteration(ctx, iteration, askSpan, onProgress);
 
-			if (iterationResult.done) {
-				const result = iterationResult.result;
-				endAskSpan(askSpan, {
-					response: result.response,
-					toolCallCount: result.toolCalls.length,
-					totalIterations: iteration + 1,
-					totalLinks: result.totalLinks,
-					invalidLinks: result.invalidLinks.length,
-					usage: result.usage,
-					inferenceTimeMs: result.inferenceTimeMs,
-				});
-				return result;
+				if (iterationResult.done) {
+					const result = iterationResult.result;
+					endAskSpan(askSpan, {
+						toolCallCount: result.toolCalls.length,
+						totalIterations: iteration + 1,
+						totalLinks: result.totalLinks,
+						invalidLinks: result.invalidLinks.length,
+						usage: result.usage,
+					});
+					return result;
+				}
 			}
-		}
 
-		const result = buildResult(ctx, "[ERROR: Max iterations reached without a final answer.]");
-		endAskSpanWithError(askSpan, "max_iterations_reached");
-		return result;
+			const result = buildResult(ctx, "[ERROR: Max iterations reached without a final answer.]");
+			endAskSpanWithError(askSpan, "max_iterations_reached");
+			return result;
+		} catch (error) {
+			endAskSpanWithError(askSpan, "unexpected_error", error instanceof Error ? error : undefined);
+			throw error;
+		}
 	}
 
 	async #processIteration(
 		ctx: AskContext,
 		iteration: number,
-		askSpan: import("@opentelemetry/api").Span,
+		askSpan: Span,
 		onProgress?: OnProgress,
 	): Promise<{ done: true; result: AskResult } | { done: false }> {
 		const modelId = `${this.#config.model.provider}/${this.#config.model.id}`;
@@ -495,7 +501,7 @@ export class Session {
 	async #executeToolCalls(
 		toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[],
 		toolCallRecords: ToolCallRecord[],
-		askSpan: import("@opentelemetry/api").Span,
+		askSpan: Span,
 	): Promise<void> {
 		for (const call of toolCalls) {
 			this.#logger.log(`TOOL: ${call.name}`, JSON.stringify(call.arguments, null, 2));
@@ -510,10 +516,15 @@ export class Session {
 					args: call.arguments,
 				});
 				const t0 = Date.now();
-				const result = await this.#config.executeTool(call.name, call.arguments, this.repo.localPath);
-				endToolSpan(toolSpan, result);
-				this.#logger.log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
-				return result;
+				try {
+					const result = await this.#config.executeTool(call.name, call.arguments, this.repo.localPath);
+					endToolSpan(toolSpan, result);
+					this.#logger.log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
+					return result;
+				} catch (error) {
+					endToolSpanWithError(toolSpan, error);
+					throw error;
+				}
 			}),
 		);
 		this.#logger.log(`ALL_TOOLS_DONE: ${toolCalls.length} calls`, `${Date.now() - toolExecStart}ms`);
