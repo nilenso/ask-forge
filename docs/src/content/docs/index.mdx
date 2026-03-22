@@ -1,0 +1,31 @@
+---
+title: ask-forge
+description: Ask questions to any GitHub repository with a sandboxed AI harness.
+template: splash
+hero:
+  tagline: Ask questions to any GitHub repository using an AI-powered, sandboxed harness with full code exploration tools.
+  actions:
+    - text: Get Started
+      link: /ask-forge/guides/getting-started/
+      icon: right-arrow
+    - text: API Reference
+      link: /ask-forge/api/readme/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Local Exploration" icon="magnifier">
+    Clone any git repository and explore it with built-in tools — ripgrep search, file reading, directory listing, and git operations.
+  </Card>
+  <Card title="Sandboxed Execution" icon="laptop">
+    Run all operations inside an isolated container with bubblewrap, seccomp, and namespace isolation. No access to your host filesystem.
+  </Card>
+  <Card title="Observability" icon="star">
+    Every LLM call and tool invocation is traced with OpenTelemetry, following GenAI semantic conventions. Track tokens, latency, and tool usage.
+  </Card>
+  <Card title="Configurable" icon="setting">
+    Bring your own provider and model, customize the system prompt, tune iteration limits, and configure context compaction — all from a single config object.
+  </Card>
+</CardGrid>
