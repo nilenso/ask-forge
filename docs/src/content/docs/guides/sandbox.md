@@ -1,9 +1,15 @@
 ---
 title: Sandboxed Execution
 description: Run ask-forge in an isolated sandbox for secure code analysis.
+sidebar:
+  order: 3
 ---
 
 ask-forge can execute all repository operations inside an isolated sandbox, providing multiple layers of security.
+
+## Architecture
+
+![Sandbox architecture diagram](../../../assets/sandbox-architecture.svg)
 
 ## Enabling Sandbox Mode
 

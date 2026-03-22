@@ -1,6 +1,8 @@
 ---
 title: Observability
 description: Monitor ask-forge sessions with OpenTelemetry tracing.
+sidebar:
+  order: 4
 ---
 
 ask-forge instruments all LLM interactions with [OpenTelemetry](https://opentelemetry.io/) spans following the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
