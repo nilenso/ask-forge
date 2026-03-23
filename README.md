@@ -7,6 +7,16 @@
 
 Ask Forge allows you to programmatically ask questions to a GitHub/GitLab repository.
 
+## Features
+
+- 🔗 **Ask questions about any GitHub/GitLab repository**: Point it at any public or private repository URL and start asking questions in plain language.
+- 📌 **Query any point in history**: Pin your question to a specific branch, tag, or commit
+- 🤖 **Configurable**: Choose any model and provider supported by [`pi-ai`](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts) (OpenRouter, Anthropic, Google, and more). Customize the system prompt, tool iteration limits, and context compaction settings.
+- 🔒 **Sandboxed execution**: Run tool execution (file reads, code search) in an isolated container for exploring untrusted repositories safely
+- 📊 **Rich answer metadata**: Every response comes with token usage, inference time, and a list of all the sources the model consulted to form its answer.
+- 📡 **OpenTelemetry observability**: Built-in tracing with GenAI semantic conventions — send spans to Langfuse, Jaeger, or any OTel-compatible backend. Zero overhead when no SDK is installed.
+- 🧪 **Built-in evaluation system**: Measure and track answer quality over time using an LLM judge that scores responses on completeness, evidence, sourcing, and reasoning.
+
 ## Requirements
 
 - [Bun](https://bun.sh/) (or Node.js ≥ 18)
@@ -73,15 +83,19 @@ await client.resetSandbox();
 
 ### Configuration
 
-The `ForgeConfig` object controls the AI model and behavior:
+The `ForgeConfig` object controls the AI model and behavior.
+
+By default, the client uses **OpenRouter** with **`anthropic/claude-sonnet-4.6`**. You can override both `provider` and `model` (they must be specified together). The corresponding API key environment variable is resolved automatically (e.g. `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`).
+
+Available providers and model IDs are defined in [`@mariozechner/pi-ai`](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts).
 
 ```typescript
 import { AskForgeClient, type ForgeConfig } from "@nilenso/ask-forge";
 
-// Use defaults (openrouter + claude-sonnet-4.6)
+// Use defaults (openrouter + anthropic/claude-sonnet-4.6)
 const client = new AskForgeClient();
 
-// Or specify a different model (provider and model must both be specified)
+// Or specify a different provider/model
 const client = new AskForgeClient({
   provider: "anthropic",
   model: "claude-sonnet-4.6",
@@ -243,7 +257,7 @@ const client = new AskForgeClient({
   model: "anthropic/claude-sonnet-4.6",
   systemPrompt: "You are a code analysis assistant.",
   maxIterations: 20,
-  
+
   // Enable sandboxed execution
   sandbox: {
     baseUrl: "http://sandbox:8080",  // Sandbox worker URL
@@ -308,13 +322,61 @@ just sandbox-tests       # Test HTTP API + security (runs against container)
 just sandbox-all-tests   # Run both
 ```
 
-The test suite includes 49 tests covering:
-- Filesystem isolation and read-only enforcement
-- PID namespace isolation
-- Network blocking via seccomp
-- Path traversal prevention
-- Command injection protection
-- Input validation
+
+## Observability
+
+Ask Forge emits [OpenTelemetry](https://opentelemetry.io/) spans following the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/). The library depends only on `@opentelemetry/api` — if no OTel SDK is installed, all tracing is a zero-overhead no-op.
+
+### Setup
+
+Install an OTel SDK and configure an exporter. Ask Forge spans will flow to any backend automatically.
+
+```typescript
+// Example: send traces to Langfuse
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+
+const sdk = new NodeSDK({
+  spanProcessors: [new LangfuseSpanProcessor()],
+});
+sdk.start();
+
+// That's it — ask-forge spans now appear in Langfuse
+const client = new AskForgeClient();
+const session = await client.connect("https://github.com/owner/repo");
+await session.ask("What frameworks does this project use?");
+```
+
+### Trace Structure
+
+Each `ask()` call produces a trace with the following span tree:
+
+```
+ask (root)
+├── compaction
+├── gen_ai.chat (iteration 1)
+├── gen_ai.execute_tool (rg)
+├── gen_ai.execute_tool (read)
+├── gen_ai.chat (iteration 2)
+└── gen_ai.chat (iteration 3, final response)
+```
+
+### Captured Metrics
+
+| Span | Attributes | Events |
+|------|-----------|--------|
+| **`ask`** (root) | `gen_ai.operation.name`, `gen_ai.request.model`, `ask_forge.session.id`, `ask_forge.repo.url`, `ask_forge.repo.commitish`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `ask_forge.total_iterations`, `ask_forge.total_tool_calls`, `ask_forge.response.total_links`, `ask_forge.response.invalid_links` | `gen_ai.system_instructions` (system prompt content) |
+| **`compaction`** | `ask_forge.compaction.was_compacted`, `ask_forge.compaction.tokens_before`, `ask_forge.compaction.tokens_after` | Exception recorded on error |
+| **`gen_ai.chat`** | `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.provider.name`, `ask_forge.iteration`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.response.finish_reason` | `gen_ai.input.messages` (full LLM context), `gen_ai.output.messages` (response content). Exception recorded on error with full stack trace. |
+| **`gen_ai.execute_tool`** | `gen_ai.operation.name`, `gen_ai.tool.name`, `gen_ai.tool.call.id` | `gen_ai.tool.call.arguments` (tool input), `gen_ai.tool.call.result` (tool output, including file contents for `read` tool) |
+
+### Error Handling
+
+All error paths record exceptions with full stack traces via `span.recordException()`:
+- Stream errors during LLM calls
+- API errors (`stopReason === "error"`)
+- Max iterations exceeded (`error.type = "max_iterations_reached"`)
+- Compaction failures
 
 ## Development
 

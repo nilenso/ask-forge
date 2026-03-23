@@ -456,7 +456,7 @@
     background: var(--white);
     outline: none;
     cursor: pointer;
-    min-width: 130px;
+    min-width: 160px;
   }
   .filter-count {
     font-size: 12px;
@@ -974,7 +974,7 @@
 
 <!-- ═══ Upload Screen ═══ -->
 <div class="upload-screen" id="uploadScreen">
-  <button class="btn-icon" id="themeToggleUpload" title="Toggle light/dark mode" style="position:absolute;top:16px;right:20px" onclick="toggleTheme()"></button>
+  <button type="button" class="btn-icon" id="themeToggleUpload" title="Toggle light/dark mode" style="position:absolute;top:16px;right:20px" onclick="toggleTheme()"></button>
   <div class="upload-container">
     <h1 class="upload-title">Eval Viewer</h1>
     <p class="upload-subtitle">Upload one or two eval run CSVs to visualise and compare results.</p>
@@ -994,7 +994,7 @@
     </div>
     <div class="upload-error" id="uploadError"></div>
     <div class="upload-actions">
-      <button class="btn-primary" id="viewBtn" disabled>View Report</button>
+      <button type="button" class="btn-primary" id="viewBtn" disabled>View Report</button>
     </div>
   </div>
 </div>
@@ -1006,7 +1006,7 @@
       <h2 class="header-title" id="headerTitle">Evaluation Review Workspace</h2>
       <div class="header-subtitle" id="headerSubtitle"></div>
       <div class="header-actions">
-        <button class="btn-icon" id="themeToggleApp" title="Toggle light/dark mode" onclick="toggleTheme()"></button>
+        <button type="button" class="btn-icon" id="themeToggleApp" title="Toggle light/dark mode" onclick="toggleTheme()"></button>
       </div>
     </div>
     <div class="stats-bar" id="statsBar"></div>
@@ -1016,7 +1016,7 @@
     <div class="left-panel">
       <div class="card-list" id="cardList"></div>
     </div>
-    <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar" onclick="toggleSidebar()">◀</button>
+    <button type="button" class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar" onclick="toggleSidebar()">◀</button>
     <div class="right-panel" id="rightPanel">
       <div class="detail-empty">Select a row to view details</div>
     </div>
@@ -1390,7 +1390,7 @@ function parseTokenUsage(row) {
 }
 
 /** Check if a row has any token usage data */
-function hasTokenUsage(row) {
+function _hasTokenUsage(row) {
   const u = parseTokenUsage(row);
   return u.total > 0 || u.input > 0 || u.output > 0;
 }
@@ -1597,12 +1597,12 @@ const CHECK_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" 
 const _answerStore = {};
 let _answerIdSeq = 0;
 function storeAnswer(text) {
-  const id = 'ans-' + (++_answerIdSeq);
+  const id = `ans-${++_answerIdSeq}`;
   _answerStore[id] = text;
   return id;
 }
 
-function copyAnswerMarkdown(btn, answerId) {
+function _copyAnswerMarkdown(btn, answerId) {
   const text = _answerStore[answerId] || '';
   navigator.clipboard.writeText(text).then(() => {
     btn.innerHTML = CHECK_ICON;
@@ -1617,7 +1617,7 @@ function copyAnswerMarkdown(btn, answerId) {
 // code/preview toggle icon: </> for code view
 const CODE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
 
-function toggleAnswerView(btn, answerId) {
+function _toggleAnswerView(btn, _answerId) {
   const details = btn.closest('details');
   const preview = details.querySelector('.detail-collapsible-md');
   const raw = details.querySelector('.answer-raw-md');
@@ -1797,11 +1797,21 @@ function renderFilters() {
   }
 
   if (anyVerdicts) {
+    const verdictOptions = [
+      { value: '', label: 'Verdict: all' },
+      { value: 'pass', label: 'Verdict: pass' },
+      { value: 'fail', label: 'Verdict: fail (any)' },
+      { value: 'fail:incomplete', label: 'Fail: incomplete' },
+      { value: 'fail:not-evidenced', label: 'Fail: not evidenced' },
+      { value: 'fail:not-linked', label: 'Fail: not linked' },
+      { value: 'fail:bad-reasoning', label: 'Fail: bad reasoning' },
+      { value: 'none', label: 'Verdict: none' },
+    ];
     html += `<select class="filter-select" id="filterVerdict">`;
-    html += `<option value=""${state.filters.verdict === '' ? ' selected' : ''}>Verdict: all</option>`;
-    html += `<option value="pass"${state.filters.verdict === 'pass' ? ' selected' : ''}>Verdict: pass</option>`;
-    html += `<option value="fail"${state.filters.verdict === 'fail' ? ' selected' : ''}>Verdict: fail</option>`;
-    html += `<option value="none"${state.filters.verdict === 'none' ? ' selected' : ''}>Verdict: none</option>`;
+    for (const opt of verdictOptions) {
+      const sel = state.filters.verdict === opt.value ? ' selected' : '';
+      html += `<option value="${esc(opt.value)}"${sel}>${esc(opt.label)}</option>`;
+    }
     html += `</select>`;
   }
 
@@ -1923,10 +1933,7 @@ function getFilteredItems() {
       if (f.status && cr.status !== f.status) return false;
       // Verdict filter applies to current run (runB)
       if (f.verdict && cr.runB) {
-        const pass = isPassRow(cr.runB);
-        if (f.verdict === 'pass' && !pass) return false;
-        if (f.verdict === 'fail' && pass) return false;
-        if (f.verdict === 'none' && hasVerdicts(cr.runB)) return false;
+        if (!matchesVerdictFilter(cr.runB, f.verdict)) return false;
       }
       return true;
     });
@@ -1936,10 +1943,7 @@ function getFilteredItems() {
       if (f.search && !row.question.toLowerCase().includes(f.search.toLowerCase())) return false;
       if (f.repo && shortRepoName(row.repository) !== f.repo) return false;
       if (f.verdict) {
-        const hv = hasVerdicts(row);
-        if (f.verdict === 'none' && hv) return false;
-        if (f.verdict === 'pass' && !isPassRow(row)) return false;
-        if (f.verdict === 'fail' && isPassRow(row)) return false;
+        if (!matchesVerdictFilter(row, f.verdict)) return false;
       }
       return true;
     });
@@ -1952,6 +1956,25 @@ function isPassRow(row) {
   if (!hasVerdicts(row)) return true; // no verdicts = not a failure
   const fields = ['isAnswerComplete', 'isEvidenceSupported', 'isEvidenceLinked', 'isReasoningSound'];
   return !fields.some(f => row[f].toLowerCase().startsWith('no'));
+}
+
+/** Map granular fail filter values to the corresponding row field */
+const FAIL_FIELD_MAP = {
+  'fail:incomplete': 'isAnswerComplete',
+  'fail:not-evidenced': 'isEvidenceSupported',
+  'fail:not-linked': 'isEvidenceLinked',
+  'fail:bad-reasoning': 'isReasoningSound',
+};
+
+function matchesVerdictFilter(row, verdict) {
+  if (!verdict) return true;
+  if (verdict === 'none') return !hasVerdicts(row);
+  if (verdict === 'pass') return isPassRow(row);
+  if (verdict === 'fail') return !isPassRow(row);
+  // Granular fail filter: check specific field
+  const field = FAIL_FIELD_MAP[verdict];
+  if (field) return row[field].toLowerCase().startsWith('no');
+  return true;
 }
 
 function getRowKey(item) {
@@ -2644,7 +2667,7 @@ function updateThemeButtons() {
   }
 }
 
-function toggleTheme() {
+function _toggleTheme() {
   const goingDark = !isDark();
   document.documentElement.setAttribute('data-theme', goingDark ? 'dark' : '');
   localStorage.setItem('theme', goingDark ? 'dark' : 'light');
@@ -2658,7 +2681,7 @@ updateThemeButtons();
 // Sidebar Toggle
 // ═══════════════════════════════════════════════════════════════════════════
 
-function toggleSidebar() {
+function _toggleSidebar() {
   const pane = $('splitPane');
   const btn = $('sidebarToggle');
   if (!pane || !btn) return;

@@ -10,7 +10,7 @@ import { type Logger, nullLogger } from "../logger";
 export interface SandboxClientConfig {
 	/** Base URL of the sandbox worker. */
 	baseUrl: string;
-	/** Request timeout in ms. */
+	/** Request timeout in ms (used for tool execution and polling interval upper bound). */
 	timeoutMs: number;
 	/** Shared secret for authenticating with the sandbox worker. */
 	secret?: string;
@@ -21,6 +21,11 @@ export interface CloneResult {
 	sha: string;
 	worktree: string;
 }
+
+/** Maximum time to wait for a clone to complete (20 minutes). */
+const CLONE_POLL_TIMEOUT_MS = 20 * 60 * 1000;
+/** Interval between clone status polls. */
+const CLONE_POLL_INTERVAL_MS = 2_000;
 
 export class SandboxClient {
 	private config: SandboxClientConfig;
@@ -70,31 +75,104 @@ export class SandboxClient {
 		throw new Error(`Sandbox worker not ready after ${maxWaitMs}ms`);
 	}
 
-	/** Clone a repository inside the sandbox. */
-	async clone(url: string, commitish?: string): Promise<CloneResult> {
-		this.logger.debug("sandbox:client", `POST /clone url=${url} commitish=${commitish ?? "HEAD"}`);
+	/**
+	 * Clone a repository inside the sandbox.
+	 * Kicks off an async clone and polls until ready (up to 20 minutes).
+	 * @param onProgress - Optional callback invoked with status messages during polling
+	 */
+	async clone(url: string, commitish?: string, onProgress?: (message: string) => void): Promise<CloneResult> {
+		const commit = commitish ?? "HEAD";
+		this.logger.debug("sandbox:client", `POST /clone url=${url} commitish=${commit}`);
 		const t0 = Date.now();
 
-		const res = await fetch(`${this.config.baseUrl}/clone`, {
+		// Step 1: Kick off clone
+		const startRes = await fetch(`${this.config.baseUrl}/clone`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json", ...this.authHeaders() },
 			body: JSON.stringify({ url, commitish }),
-			signal: AbortSignal.timeout(this.config.timeoutMs),
+			signal: AbortSignal.timeout(30_000), // Starting a clone should be fast
 		});
 
-		const body = (await res.json()) as { ok: boolean; error?: string } & CloneResult;
-		const duration = Date.now() - t0;
+		const startBody = (await startRes.json()) as {
+			ok: boolean;
+			status?: string;
+			slug?: string;
+			sha?: string;
+			worktree?: string;
+			error?: string;
+		};
 
-		if (!body.ok) {
-			this.logger.error("sandbox:client", new Error(`POST /clone → ${res.status} (${duration}ms): ${body.error}`));
-			throw new Error(`Sandbox clone failed: ${body.error}`);
+		if (!startBody.ok) {
+			this.logger.error("sandbox:client", new Error(`POST /clone → ${startRes.status}: ${startBody.error}`));
+			throw new Error(`Sandbox clone failed: ${startBody.error}`);
 		}
 
-		this.logger.debug(
-			"sandbox:client",
-			`POST /clone → ${res.status} (${duration}ms) slug=${body.slug} sha=${body.sha.slice(0, 12)}`,
-		);
-		return { slug: body.slug, sha: body.sha, worktree: body.worktree };
+		// Already ready (cached)
+		if (startBody.status === "ready" && startBody.slug && startBody.sha && startBody.worktree) {
+			const duration = Date.now() - t0;
+			this.logger.debug(
+				"sandbox:client",
+				`POST /clone → ready (cached) (${duration}ms) slug=${startBody.slug} sha=${startBody.sha.slice(0, 12)}`,
+			);
+			onProgress?.("Repository ready");
+			return { slug: startBody.slug, sha: startBody.sha, worktree: startBody.worktree };
+		}
+
+		const slug = startBody.slug;
+		if (!slug) {
+			throw new Error("Sandbox clone failed: no slug returned");
+		}
+
+		// Step 2: Poll until ready or failed
+		this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
+		onProgress?.("Cloning repository…");
+
+		const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
+		while (Date.now() < deadline) {
+			await Bun.sleep(CLONE_POLL_INTERVAL_MS);
+
+			const statusRes = await fetch(
+				`${this.config.baseUrl}/clone/status/${slug}?commitish=${encodeURIComponent(commit)}`,
+				{
+					headers: { ...this.authHeaders() },
+					signal: AbortSignal.timeout(10_000),
+				},
+			);
+
+			const statusBody = (await statusRes.json()) as {
+				ok: boolean;
+				status?: string;
+				slug?: string;
+				sha?: string;
+				worktree?: string;
+				error?: string;
+				elapsedMs?: number;
+			};
+
+			if (statusBody.status === "ready" && statusBody.sha && statusBody.worktree) {
+				const duration = Date.now() - t0;
+				this.logger.debug(
+					"sandbox:client",
+					`clone ready (${duration}ms) slug=${slug} sha=${statusBody.sha.slice(0, 12)}`,
+				);
+				onProgress?.("Repository ready");
+				return { slug: statusBody.slug ?? slug, sha: statusBody.sha, worktree: statusBody.worktree };
+			}
+
+			if (statusBody.status === "failed") {
+				const duration = Date.now() - t0;
+				this.logger.error("sandbox:client", new Error(`clone failed after ${duration}ms: ${statusBody.error}`));
+				throw new Error(`Sandbox clone failed: ${statusBody.error}`);
+			}
+
+			// Still cloning — log progress
+			const elapsed = statusBody.elapsedMs ?? Date.now() - t0;
+			const elapsedSec = Math.round(elapsed / 1000);
+			this.logger.debug("sandbox:client", `clone in progress for ${url} (${elapsedSec}s elapsed)`);
+			onProgress?.(`Cloning repository… ${elapsedSec}s`);
+		}
+
+		throw new Error(`Sandbox clone timed out after ${CLONE_POLL_TIMEOUT_MS / 1000}s for ${url}`);
 	}
 
 	/** Execute a tool inside the sandbox against a previously-cloned repo. */

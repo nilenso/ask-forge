@@ -2,10 +2,11 @@
  * Sandbox worker — HTTP server for isolated git and tool operations.
  *
  * Endpoints:
- *   POST /clone   { url, commitish? }  → clone a repo, check out a commit
- *   POST /tool    { slug, sha, name, args }  → execute a tool (rg, fd, ls, read, git)
- *   GET  /health                       → liveness check
- *   POST /reset                        → delete all cloned data
+ *   POST /clone          { url, commitish? }  → start cloning a repo (async)
+ *   GET  /clone/status/:slug?commitish=       → poll clone status
+ *   POST /tool           { slug, sha, name, args }  → execute a tool
+ *   GET  /health                              → liveness check
+ *   POST /reset                               → delete all cloned data
  *
  * Security is provided by the isolation module (see ./isolation/).
  */
@@ -39,7 +40,9 @@ const GIT_ENV: Record<string, string> = {
 
 /** Default timeout for tool execution (30 seconds) */
 const TOOL_TIMEOUT_MS = 30_000;
-/** Default timeout for git operations (120 seconds) */
+/** Default timeout for git clone operations (20 minutes) */
+const CLONE_TIMEOUT_MS = 20 * 60 * 1000;
+/** Default timeout for non-clone git operations (120 seconds) */
 const GIT_TIMEOUT_MS = 120_000;
 
 /** Shorten a command array for logging (avoid dumping huge bwrap arg lists). */
@@ -151,12 +154,13 @@ async function runGitIsolated(
 	gitArgs: string[],
 	cwd: string | undefined,
 	repoBaseDir: string,
+	timeoutMs: number = GIT_TIMEOUT_MS,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	return run(
 		isolatedGitCommand(gitArgs, repoBaseDir),
 		cwd,
 		{ ...GIT_ENV, GIT_ATTR_NOSYSTEM: "1", GIT_CONFIG_NOSYSTEM: "1" },
-		GIT_TIMEOUT_MS,
+		timeoutMs,
 	);
 }
 
@@ -169,7 +173,45 @@ async function runToolIsolated(
 }
 
 // =============================================================================
-// Clone
+// Async Clone State
+// =============================================================================
+
+type CloneStatus = "cloning" | "ready" | "failed";
+
+interface CloneJob {
+	status: CloneStatus;
+	url: string;
+	slug: string;
+	/** Set when status = "ready" */
+	sha?: string;
+	worktree?: string;
+	/** Set when status = "failed" */
+	error?: string;
+	startedAt: number;
+	finishedAt?: number;
+}
+
+/**
+ * In-memory clone job tracker.
+ * Key: `${slug}:${commitish}` — one job per repo+commitish combination.
+ * If a clone is already in progress for the same slug+commitish, new requests
+ * get the existing job (deduplication).
+ */
+const cloneJobs = new Map<string, CloneJob>();
+
+/** Clean up finished jobs older than 10 minutes. */
+const JOB_TTL_MS = 10 * 60 * 1000;
+setInterval(() => {
+	const now = Date.now();
+	for (const [key, job] of cloneJobs) {
+		if (job.finishedAt && now - job.finishedAt > JOB_TTL_MS) {
+			cloneJobs.delete(key);
+		}
+	}
+}, 60_000);
+
+// =============================================================================
+// Clone (async)
 // =============================================================================
 
 interface CloneRequest {
@@ -177,19 +219,40 @@ interface CloneRequest {
 	commitish?: string;
 }
 
-async function handleClone(body: CloneRequest): Promise<Response> {
-	const { url, commitish = "HEAD" } = body;
-	if (!url) {
-		return Response.json({ ok: false, error: "url is required" }, { status: 400 });
+/** Translate raw git clone stderr into a user-friendly error message. */
+function friendlyCloneError(stderr: string, url: string): string {
+	const s = stderr.toLowerCase();
+	if (s.includes("could not read username") || s.includes("terminal prompts disabled")) {
+		return `Repository not found or is private: ${url}. Only public repositories are supported.`;
 	}
+	if (s.includes("repository not found") || s.includes("not found")) {
+		return `Repository not found: ${url}. Check that the URL is correct and the repository exists.`;
+	}
+	if (s.includes("could not resolve host")) {
+		return `Could not reach the git host. Check that the URL is correct.`;
+	}
+	if (s.includes("timed out") || s.includes("operation timed out")) {
+		return `Clone timed out for ${url}. The repository may be too large or the server is unreachable.`;
+	}
+	// Fallback: return a trimmed version of stderr
+	return `Clone failed for ${url}: ${stderr.slice(0, 300).trim()}`;
+}
 
-	const slug = slugify(url);
+/**
+ * Execute the clone/fetch + worktree setup in the background.
+ * Updates the job entry in cloneJobs as it progresses.
+ */
+async function executeClone(jobKey: string, url: string, commitish: string): Promise<void> {
+	const job = cloneJobs.get(jobKey);
+	if (!job) return;
+
+	const slug = job.slug;
 	const baseDir = repoDir(slug);
 	const bareDir = `${baseDir}/bare`;
 	const treesDir = `${baseDir}/trees`;
 
 	try {
-		// Ensure directories exist (run outside bwrap — bwrap needs them to exist for bind mounts)
+		// Ensure directories exist
 		await Bun.spawn(["mkdir", "-p", bareDir, treesDir]).exited;
 
 		// Clone or fetch
@@ -200,22 +263,28 @@ async function handleClone(body: CloneRequest): Promise<Response> {
 				console.error(`[sandbox:clone] fetch failed: ${stderr}`);
 			}
 		} else {
-			const { exitCode, stderr } = await runGitIsolated(["clone", "--bare", url, bareDir], undefined, baseDir);
+			const { exitCode, stderr } = await runGitIsolated(
+				["clone", "--bare", url, bareDir],
+				undefined,
+				baseDir,
+				CLONE_TIMEOUT_MS,
+			);
 			if (exitCode !== 0) {
-				return Response.json({ ok: false, error: `git clone failed: ${stderr.slice(0, 500)}` }, { status: 500 });
+				job.status = "failed";
+				job.error = friendlyCloneError(stderr, url);
+				job.finishedAt = Date.now();
+				console.error(`[sandbox:clone] clone failed for ${url}: ${stderr.slice(0, 200)}`);
+				return;
 			}
 		}
 
 		// Resolve commitish → SHA
 		const revParse = await runGitIsolated(["rev-parse", commitish], bareDir, baseDir);
 		if (revParse.exitCode !== 0) {
-			return Response.json(
-				{
-					ok: false,
-					error: `Cannot resolve commitish "${commitish}": ${revParse.stderr.slice(0, 300)}`,
-				},
-				{ status: 400 },
-			);
+			job.status = "failed";
+			job.error = `Cannot resolve commitish "${commitish}": ${revParse.stderr.slice(0, 300)}`;
+			job.finishedAt = Date.now();
+			return;
 		}
 		const sha = revParse.stdout.trim();
 		const shortSha = sha.slice(0, 12);
@@ -226,18 +295,113 @@ async function handleClone(body: CloneRequest): Promise<Response> {
 		if (!worktreeExists) {
 			const wt = await runGitIsolated(["worktree", "add", worktree, sha], bareDir, baseDir);
 			if (wt.exitCode !== 0) {
-				return Response.json(
-					{ ok: false, error: `git worktree add failed: ${wt.stderr.slice(0, 300)}` },
-					{ status: 500 },
-				);
+				job.status = "failed";
+				job.error = `git worktree add failed: ${wt.stderr.slice(0, 300)}`;
+				job.finishedAt = Date.now();
+				return;
 			}
 		}
 
-		return Response.json({ ok: true, slug, sha, worktree });
+		job.status = "ready";
+		job.sha = sha;
+		job.worktree = worktree;
+		job.finishedAt = Date.now();
+		console.info(`[sandbox:clone] ready: ${url} → ${slug} @ ${shortSha} (${Date.now() - job.startedAt}ms)`);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		return Response.json({ ok: false, error: msg }, { status: 500 });
+		job.status = "failed";
+		job.error = msg;
+		job.finishedAt = Date.now();
+		console.error(`[sandbox:clone] exception for ${url}: ${msg}`);
 	}
+}
+
+/**
+ * POST /clone — kick off a clone in the background.
+ * Returns immediately with { ok, status: "cloning"|"ready", slug }.
+ * If the repo is already cloned, returns "ready" immediately.
+ * If a clone is already in progress, returns "cloning" (dedup).
+ */
+function handleClone(body: CloneRequest): Response {
+	const { url, commitish = "HEAD" } = body;
+	if (!url) {
+		return Response.json({ ok: false, error: "url is required" }, { status: 400 });
+	}
+
+	const slug = slugify(url);
+	const jobKey = `${slug}:${commitish}`;
+
+	// Check for existing job
+	const existing = cloneJobs.get(jobKey);
+	if (existing) {
+		if (existing.status === "ready") {
+			return Response.json({
+				ok: true,
+				status: "ready",
+				slug,
+				sha: existing.sha,
+				worktree: existing.worktree,
+			});
+		}
+		if (existing.status === "cloning") {
+			return Response.json({ ok: true, status: "cloning", slug });
+		}
+		// "failed" — allow retry by falling through to create a new job
+	}
+
+	// Create new job
+	const job: CloneJob = {
+		status: "cloning",
+		url,
+		slug,
+		startedAt: Date.now(),
+	};
+	cloneJobs.set(jobKey, job);
+
+	// Fire and forget — clone runs in the background
+	executeClone(jobKey, url, commitish);
+
+	return Response.json({ ok: true, status: "cloning", slug });
+}
+
+/**
+ * GET /clone/status/:slug?commitish=HEAD — poll clone progress.
+ * Returns { ok, status: "cloning"|"ready"|"failed", ... }.
+ */
+function handleCloneStatus(slug: string, commitish: string): Response {
+	const jobKey = `${slug}:${commitish}`;
+	const job = cloneJobs.get(jobKey);
+
+	if (!job) {
+		return Response.json({ ok: false, error: "No clone job found for this repo" }, { status: 404 });
+	}
+
+	if (job.status === "ready") {
+		return Response.json({
+			ok: true,
+			status: "ready",
+			slug: job.slug,
+			sha: job.sha,
+			worktree: job.worktree,
+		});
+	}
+
+	if (job.status === "failed") {
+		return Response.json({
+			ok: false,
+			status: "failed",
+			error: job.error,
+		});
+	}
+
+	// Still cloning
+	const elapsed = Date.now() - job.startedAt;
+	return Response.json({
+		ok: true,
+		status: "cloning",
+		slug: job.slug,
+		elapsedMs: elapsed,
+	});
 }
 
 // =============================================================================
@@ -352,7 +516,7 @@ async function handleTool(body: ToolRequest): Promise<Response> {
 			for (const arg of gitArgs) {
 				if (arg.startsWith("-")) continue; // Skip flags
 				if (arg.includes("..")) {
-					return Response.json({ ok: false, error: `path traversal not allowed in args` }, { status: 400 });
+					return Response.json({ ok: false, error: "path traversal not allowed in args" }, { status: 400 });
 				}
 			}
 
@@ -383,6 +547,8 @@ async function handleReset(): Promise<Response> {
 		return Response.json({ ok: false, error: "Failed to clean repos" }, { status: 500 });
 	}
 	await Bun.spawn(["mkdir", "-p", REPO_BASE]).exited;
+	// Clear all clone job state
+	cloneJobs.clear();
 	return Response.json({ ok: true });
 }
 
@@ -436,7 +602,11 @@ const server = Bun.serve({
 		if (pathname === "/clone" && req.method === "POST") {
 			body = await req.json();
 			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
-			response = await handleClone(body as CloneRequest);
+			response = handleClone(body as CloneRequest);
+		} else if (pathname.startsWith("/clone/status/") && req.method === "GET") {
+			const slug = pathname.slice("/clone/status/".length);
+			const commitish = url.searchParams.get("commitish") || "HEAD";
+			response = handleCloneStatus(slug, commitish);
 		} else if (pathname === "/tool" && req.method === "POST") {
 			body = await req.json();
 			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
@@ -451,7 +621,8 @@ const server = Bun.serve({
 		const duration = Date.now() - t0;
 		if (response.status >= 400) {
 			console.warn(`[sandbox] ${req.method} ${pathname} → ${response.status} (${duration}ms)`);
-		} else {
+		} else if (!pathname.startsWith("/clone/status/")) {
+			// Don't log every poll request
 			console.info(`[sandbox] ${req.method} ${pathname} → ${response.status} (${duration}ms)`);
 		}
 		return response;
