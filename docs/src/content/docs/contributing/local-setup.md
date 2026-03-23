@@ -44,3 +44,20 @@ just sandbox-all-tests
 ```
 
 Use `just test` for the main unit test suite. The sandbox targets cover the container and isolation layers.
+
+### Documentation
+
+Build the docs site from the repo root:
+
+```bash
+just docs-build
+```
+
+Preview the built site locally:
+
+```bash
+cd docs
+bun run preview
+```
+
+For live docs authoring instead of a production preview, run `just docs-dev`.
