@@ -490,6 +490,28 @@ export class Session {
 			};
 		}
 
+		this.#context.messages.push(response);
+
+		// Check if we have a final text response (no tool calls)
+		const responseToolCalls = response.content.filter((b) => b.type === "toolCall");
+		if (responseToolCalls.length === 0) {
+			endGenerationSpan(genSpan, {
+				output: response.content,
+				inputTokens: response.usage?.input ?? 0,
+				outputTokens: response.usage?.output ?? 0,
+				cacheReadTokens: response.usage?.cacheRead ?? 0,
+				cacheCreationTokens: response.usage?.cacheWrite ?? 0,
+				stopReason: (response as unknown as { stopReason?: string }).stopReason,
+			});
+			return {
+				done: true,
+				result: this.#buildTextResponse(ctx, response, onProgress),
+			};
+		}
+
+		// Execute tool calls as children of this gen_ai.chat span
+		await this.#executeToolCalls(responseToolCalls, ctx.toolCalls, genSpan);
+
 		endGenerationSpan(genSpan, {
 			output: response.content,
 			inputTokens: response.usage?.input ?? 0,
@@ -498,20 +520,6 @@ export class Session {
 			cacheCreationTokens: response.usage?.cacheWrite ?? 0,
 			stopReason: (response as unknown as { stopReason?: string }).stopReason,
 		});
-
-		this.#context.messages.push(response);
-
-		// Check if we have a final text response (no tool calls)
-		const responseToolCalls = response.content.filter((b) => b.type === "toolCall");
-		if (responseToolCalls.length === 0) {
-			return {
-				done: true,
-				result: this.#buildTextResponse(ctx, response, onProgress),
-			};
-		}
-
-		// Execute tool calls
-		await this.#executeToolCalls(responseToolCalls, ctx.toolCalls, askSpan);
 
 		return { done: false };
 	}
