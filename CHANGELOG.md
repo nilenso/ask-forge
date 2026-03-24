@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.16] - 2026-03-24
+
+### Added
+* OpenTelemetry tracing with GenAI semantic conventions — spans for `ask`, `gen_ai.chat`, `gen_ai.execute_tool`, and compaction
+* Configurable adaptive thinking support via `thinking` option (off by default)
+
+### Fixed
+* Tool call spans now correctly nest under the `gen_ai.chat` span that triggered them
+* Friendly error messages for sandbox clone failures
+
 ## [0.0.11] - 2026-02-20
 
 ### Added
