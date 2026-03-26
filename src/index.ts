@@ -7,7 +7,6 @@ import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
 import {
 	type AskOptions,
 	type AskResult,
-	type InvalidLink,
 	type OnProgress,
 	type ProgressEvent,
 	Session,
@@ -23,7 +22,6 @@ export type {
 	ConnectOptions,
 	Forge,
 	ForgeName,
-	InvalidLink,
 	KnownProvider,
 	Logger,
 	Message,

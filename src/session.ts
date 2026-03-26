@@ -45,30 +45,18 @@ export interface ToolCallRecord {
 
 /** Result returned from Session.ask() */
 export interface AskResult {
-	/** The original question/prompt */
-	prompt: string;
-	/** List of tool calls made while answering */
-	toolCalls: ToolCallRecord[];
 	/** The final response text (or error message) */
 	response: string;
+	/** All messages generated during this ask() call (user question, assistant responses, tool results) */
+	messages: Message[];
+	/** List of tool calls made while answering */
+	toolCalls: ToolCallRecord[];
 	/** Token usage statistics */
 	usage: Usage;
 	/** Total time taken for inference in milliseconds */
 	inferenceTimeMs: number;
-	/** Total number of repo-pointing links found in the response */
-	totalLinks: number;
-	/** Links in the response whose repo-relative paths could not be found on disk */
-	invalidLinks: InvalidLink[];
 	/** The effort level the model actually used (from response output_config). Undefined if thinking is off. */
 	responseEffort?: string;
-}
-
-/** A link in the response that points to a non-existent file path */
-export interface InvalidLink {
-	/** The URL from the markdown link */
-	url: string;
-	/** The repo-relative path extracted from the URL */
-	repoPath: string;
 }
 
 /** Token usage statistics for an ask operation */
@@ -159,6 +147,8 @@ interface AskContext {
 	startTime: number;
 	/** Last response effort extracted from output_config (set per-iteration). */
 	responseEffort?: string;
+	/** Index into context.messages where this ask's messages start. */
+	messageStartIndex: number;
 }
 
 /** Extract the effort level from pi-ai's AssistantMessage (patched to include outputConfig). */
@@ -167,19 +157,13 @@ function extractResponseEffort(response: AssistantMessage): string | undefined {
 	return msg.outputConfig?.effort;
 }
 
-function buildResult(
-	ctx: AskContext,
-	response: string,
-	linkStats: { totalLinks: number; invalidLinks: InvalidLink[] } = { totalLinks: 0, invalidLinks: [] },
-): AskResult {
+function buildResult(ctx: AskContext, response: string, messages: Message[]): AskResult {
 	return {
-		prompt: ctx.question,
-		toolCalls: ctx.toolCalls,
 		response,
+		messages,
+		toolCalls: ctx.toolCalls,
 		usage: ctx.usage,
 		inferenceTimeMs: Date.now() - ctx.startTime,
-		totalLinks: linkStats.totalLinks,
-		invalidLinks: linkStats.invalidLinks,
 		responseEffort: ctx.responseEffort,
 	};
 }
@@ -355,6 +339,7 @@ export class Session {
 			toolCalls: [],
 			usage: createEmptyUsage(),
 			startTime: Date.now(),
+			messageStartIndex: 0, // set after compaction
 		};
 
 		const modelId = `${this.#config.model.provider}/${this.#config.model.id}`;
@@ -414,6 +399,9 @@ export class Session {
 			endCompactionSpanWithError(compactionSpan, compactionError);
 		}
 
+		// Record where this ask's messages start (user message is the last element pushed above)
+		ctx.messageStartIndex = this.#context.messages.length - 1;
+
 		try {
 			for (let iteration = 0; iteration < this.#config.maxIterations; iteration++) {
 				onProgress?.({ type: "thinking" });
@@ -421,19 +409,20 @@ export class Session {
 				const iterationResult = await this.#processIteration(ctx, iteration, askSpan, onProgress);
 
 				if (iterationResult.done) {
-					const result = iterationResult.result;
+					const { result, linkStats } = iterationResult;
 					endAskSpan(askSpan, {
 						toolCallCount: result.toolCalls.length,
 						totalIterations: iteration + 1,
-						totalLinks: result.totalLinks,
-						invalidLinks: result.invalidLinks.length,
+						totalLinks: linkStats?.totalLinks ?? 0,
+						invalidLinks: linkStats?.invalidLinks ?? 0,
 						usage: result.usage,
 					});
 					return result;
 				}
 			}
 
-			const result = buildResult(ctx, "[ERROR: Max iterations reached without a final answer.]");
+			const messages = this.#context.messages.slice(ctx.messageStartIndex);
+			const result = buildResult(ctx, "[ERROR: Max iterations reached without a final answer.]", messages);
 			endAskSpanWithError(askSpan, "max_iterations_reached");
 			return result;
 		} catch (error) {
@@ -447,7 +436,9 @@ export class Session {
 		iteration: number,
 		askSpan: Span,
 		onProgress?: OnProgress,
-	): Promise<{ done: true; result: AskResult } | { done: false }> {
+	): Promise<
+		{ done: true; result: AskResult; linkStats?: { totalLinks: number; invalidLinks: number } } | { done: false }
+	> {
 		const modelId = `${this.#config.model.provider}/${this.#config.model.id}`;
 		const genSpan = startGenerationSpan(askSpan, {
 			iteration: iteration + 1,
@@ -466,9 +457,10 @@ export class Session {
 				iteration: iteration + 1,
 				timestamp: new Date().toISOString(),
 			});
+			const messages = this.#context.messages.slice(ctx.messageStartIndex);
 			return {
 				done: true,
-				result: buildResult(ctx, `[ERROR: ${outcome.error}]`),
+				result: buildResult(ctx, `[ERROR: ${outcome.error}]`, messages),
 			};
 		}
 
@@ -491,9 +483,10 @@ export class Session {
 				timestamp: new Date().toISOString(),
 				fullResponse: response,
 			});
+			const messages = this.#context.messages.slice(ctx.messageStartIndex);
 			return {
 				done: true,
-				result: buildResult(ctx, `[ERROR: ${errorMsg}]`),
+				result: buildResult(ctx, `[ERROR: ${errorMsg}]`, messages),
 			};
 		}
 
@@ -510,10 +503,8 @@ export class Session {
 				cacheCreationTokens: response.usage?.cacheWrite ?? 0,
 				stopReason: (response as unknown as { stopReason?: string }).stopReason,
 			});
-			return {
-				done: true,
-				result: this.#buildTextResponse(ctx, response, onProgress),
-			};
+			const { result, linkStats } = this.#buildTextResponse(ctx, response, onProgress);
+			return { done: true, result, linkStats };
 		}
 
 		// Execute tool calls as children of this gen_ai.chat span
@@ -531,28 +522,37 @@ export class Session {
 		return { done: false };
 	}
 
-	#buildTextResponse(ctx: AskContext, response: AssistantMessage, onProgress?: OnProgress): AskResult {
+	#buildTextResponse(
+		ctx: AskContext,
+		response: AssistantMessage,
+		onProgress?: OnProgress,
+	): { result: AskResult; linkStats: { totalLinks: number; invalidLinks: number } } {
 		onProgress?.({ type: "responding" });
 
 		const textBlocks = response.content.filter((b) => b.type === "text");
 		const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
+		const messages = this.#context.messages.slice(ctx.messageStartIndex);
 
 		if (!responseText.trim()) {
 			this.#logger.error("WARNING: Empty response from API", { fullResponse: response });
-			return buildResult(ctx, "[ERROR: Empty response from API - check API key and credits]");
+			return {
+				result: buildResult(ctx, "[ERROR: Empty response from API - check API key and credits]", messages),
+				linkStats: { totalLinks: 0, invalidLinks: 0 },
+			};
 		}
 
-		// Validate links in the response
+		// Validate links in the response (for logging/tracing only, not included in AskResult)
 		const { totalRepoLinks, broken } = validateLinks(responseText, this.repo.localPath);
-		const invalidLinks: InvalidLink[] = broken
-			.filter((l): l is ParsedLink & { repoPath: string } => l.repoPath !== null)
-			.map((l) => ({ url: l.url, repoPath: l.repoPath }));
-		if (invalidLinks.length > 0) {
-			this.#logger.error(`Found ${invalidLinks.length} invalid link(s) in response:`, invalidLinks);
+		const brokenLinks = broken.filter((l): l is ParsedLink & { repoPath: string } => l.repoPath !== null);
+		if (brokenLinks.length > 0) {
+			this.#logger.error(`Found ${brokenLinks.length} invalid link(s) in response:`, brokenLinks);
 		}
 
 		this.#logger.log("RESPONSE", "");
-		return buildResult(ctx, responseText, { totalLinks: totalRepoLinks, invalidLinks });
+		return {
+			result: buildResult(ctx, responseText, messages),
+			linkStats: { totalLinks: totalRepoLinks, invalidLinks: brokenLinks.length },
+		};
 	}
 
 	async #executeToolCalls(

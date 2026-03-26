@@ -198,11 +198,22 @@ describe("Session", () => {
 
 			const result = await session.ask("What is 2+2?");
 
-			expect(result.prompt).toBe("What is 2+2?");
 			expect(result.response).toBe("Hello world");
 			expect(result.toolCalls).toEqual([]);
 			expect(result.usage.inputTokens).toBe(10);
 			expect(result.usage.outputTokens).toBe(5);
+		});
+
+		test("includes messages from the ask call", async () => {
+			const repo = createMockRepo();
+			const session = new Session(repo, createMockConfig());
+
+			const result = await session.ask("What is 2+2?");
+
+			expect(result.messages).toHaveLength(2);
+			expect(result.messages[0]?.role).toBe("user");
+			expect(result.messages[0]?.content).toBe("What is 2+2?");
+			expect(result.messages[1]?.role).toBe("assistant");
 		});
 
 		test("adds user message to context", async () => {
