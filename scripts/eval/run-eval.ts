@@ -5,6 +5,7 @@ import { completeSimple, getModel, type ThinkingLevel } from "@mariozechner/pi-a
 import { MAX_TOOL_ITERATIONS, MODEL_NAME, MODEL_PROVIDER, type ThinkingConfig } from "../../src/config";
 import { AskForgeClient, buildDefaultSystemPrompt, nullLogger } from "../../src/index";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/prompt";
+import { validateLinks } from "../../src/response-validation";
 import { type EvalRow, loadRowsFromCsv, writeCsvString } from "./csv";
 
 // =============================================================================
@@ -131,8 +132,13 @@ async function runEval(inputPath: string, thinking: ThinkingConfig | undefined):
 			session = await client.connect(repository, { commitish: commit_id });
 			const askResult = await session.ask(question);
 			const secs = (askResult.inferenceTimeMs / 1000).toFixed(1);
+
+			// Compute link validation stats from response text
+			const { totalRepoLinks, broken } = validateLinks(askResult.response, session.repo.localPath);
+			const brokenLinkCount = broken.filter((l) => l.repoPath !== null).length;
+
 			console.log(
-				`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${askResult.totalLinks} links, ${askResult.invalidLinks.length} broken)`,
+				`  ✓ Got response (${askResult.response.length} chars, ${askResult.toolCalls.length} tool calls, ${secs}s, ${totalRepoLinks} links, ${brokenLinkCount} broken)`,
 			);
 
 			// Format tool calls as a bulleted plain-text list
@@ -149,8 +155,8 @@ async function runEval(inputPath: string, thinking: ThinkingConfig | undefined):
 				.join("\n");
 
 			// Broken links as ratio string
-			const totalLinks = askResult.totalLinks;
-			const brokenCount = askResult.invalidLinks.length;
+			const totalLinks = totalRepoLinks;
+			const brokenCount = brokenLinkCount;
 			sumTotalLinks += totalLinks;
 			sumBrokenLinks += brokenCount;
 
