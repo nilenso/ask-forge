@@ -49,3 +49,4 @@ scripts/eval/reports/
 docs/src/content/docs/api/
 docs/dist/
 docs/.astro/
+tmp/
