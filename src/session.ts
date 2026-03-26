@@ -167,6 +167,12 @@ function extractResponseEffort(response: AssistantMessage): string | undefined {
 	return msg.outputConfig?.effort;
 }
 
+function formatToolExecutionError(toolName: string, error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	const detail = message.trim() || "Unknown error";
+	return `[ERROR] Tool execution failed for ${toolName}: ${detail}`;
+}
+
 function buildResult(
 	ctx: AskContext,
 	response: string,
@@ -577,10 +583,12 @@ export class Session {
 					const result = await this.#config.executeTool(call.name, call.arguments, this.repo.localPath);
 					endToolSpan(toolSpan, result);
 					this.#logger.log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
-					return result;
+					return { text: result, isError: false };
 				} catch (error) {
+					const errorText = formatToolExecutionError(call.name, error);
 					endToolSpanWithError(toolSpan, error);
-					throw error;
+					this.#logger.warn(`TOOL_ERROR: ${call.name}`, `${Date.now() - t0}ms ${errorText}`);
+					return { text: errorText, isError: true };
 				}
 			}),
 		);
@@ -596,8 +604,8 @@ export class Session {
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: results[j] ?? "" }],
-				isError: false,
+				content: [{ type: "text", text: results[j]?.text ?? "" }],
+				isError: results[j]?.isError ?? false,
 				timestamp: Date.now(),
 			});
 		});

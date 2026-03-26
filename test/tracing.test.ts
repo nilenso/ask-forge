@@ -558,7 +558,7 @@ describe("OTel tracing", () => {
 			expect(askSpan?.status.code).toBe(SpanStatusCode.OK); // ask succeeded in returning a result
 		});
 
-		test("tool execution error ends tool span with error and propagates to ask span", async () => {
+		test("tool execution error ends tool span with error and still lets ask complete", async () => {
 			let callCount = 0;
 			const streamFn = (() => {
 				callCount++;
@@ -572,7 +572,8 @@ describe("OTel tracing", () => {
 
 			const session = new Session(createMockRepo(), createMockConfig({ stream: streamFn, executeTool }));
 
-			await expect(session.ask("Boom")).rejects.toThrow("tool crashed");
+			const result = await session.ask("Boom");
+			expect(result.response).toBe("Hello world");
 
 			// Tool span ended with error
 			const toolSpan = recorder.getSpans("gen_ai.execute_tool")[0];
@@ -581,11 +582,10 @@ describe("OTel tracing", () => {
 			expect(toolSpan?.exceptions.length).toBe(1);
 			expect(toolSpan?.exceptions[0]?.message).toBe("tool crashed");
 
-			// Ask span also ended with error (no orphan)
+			// Ask span still ends successfully after the model gets the tool error as context
 			const askSpan = recorder.getSpan("ask");
-			expect(askSpan?.status.code).toBe(SpanStatusCode.ERROR);
+			expect(askSpan?.status.code).toBe(SpanStatusCode.OK);
 			expect(askSpan?.ended).toBe(true);
-			expect(askSpan?.attributes["error.type"]).toBe("unexpected_error");
 		});
 
 		test("API error in response records string error as exception on generation span", async () => {
