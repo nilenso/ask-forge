@@ -41,6 +41,44 @@ function createMockStreamResult() {
 	};
 }
 
+function createToolCallStreamResult(
+	toolCalls: { name: string; arguments: Record<string, unknown> }[] = [{ name: "rg", arguments: { pattern: "test" } }],
+) {
+	return {
+		[Symbol.asyncIterator]: async function* () {
+			for (let i = 0; i < toolCalls.length; i++) {
+				const tc = toolCalls[i];
+				yield {
+					type: "toolcall_delta",
+					delta: "",
+					contentIndex: i,
+					partial: { content: toolCalls.map((t) => ({ type: "toolCall", name: t.name })) },
+				};
+				yield {
+					type: "toolcall_end",
+					contentIndex: i,
+					toolCall: { name: tc?.name, arguments: tc?.arguments },
+				};
+			}
+		},
+		result: async () => ({
+			role: "assistant" as const,
+			content: toolCalls.map((tc, i) => ({
+				type: "toolCall" as const,
+				id: `tc${i}`,
+				name: tc.name,
+				arguments: tc.arguments,
+			})),
+			usage: { input: 100, output: 30, totalTokens: 130 },
+			timestamp: Date.now(),
+			api: "test",
+			provider: "test",
+			model: "test",
+			stopReason: "tool_use",
+		}),
+	};
+}
+
 function createMockStream(): SessionConfig["stream"] {
 	return (() => createMockStreamResult()) as unknown as SessionConfig["stream"];
 }
@@ -215,6 +253,39 @@ describe("Session", () => {
 			expect(messages.length).toBeGreaterThanOrEqual(1);
 			expect(messages[0]?.role).toBe("user");
 			expect(messages[0]?.content).toBe("Test question");
+		});
+
+		test("rejecting tool execution is fed back as an error tool result", async () => {
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "needle" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const repo = createMockRepo();
+			const session = new Session(
+				repo,
+				createMockConfig({
+					stream: customStream,
+					executeTool: async () => {
+						throw new Error("tool crashed");
+					},
+				}),
+			);
+
+			const result = await session.ask("Find needle");
+			expect(result.response).toBe("Hello world");
+			expect(streamCalls).toBe(2);
+
+			const toolResults = session.getMessages().filter((message) => message.role === "toolResult");
+			expect(toolResults).toHaveLength(1);
+			expect(toolResults[0]?.isError).toBe(true);
+			expect((toolResults[0]?.content[0] as { text?: string } | undefined)?.text).toBe(
+				"[ERROR] Tool execution failed for rg: tool crashed",
+			);
 		});
 
 		test("uses injected stream function", async () => {
