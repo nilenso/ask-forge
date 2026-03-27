@@ -133,7 +133,12 @@ class SpanRecorder {
 	}
 
 	getSpan(name: string): RecordedSpan | undefined {
-		return this.spans.find((s) => s.name === name)?.toRecorded();
+		for (let i = this.spans.length - 1; i >= 0; i--) {
+			if (this.spans[i]?.name === name) {
+				return this.spans[i]?.toRecorded();
+			}
+		}
+		return undefined;
 	}
 
 	getSpans(name: string): RecordedSpan[] {
