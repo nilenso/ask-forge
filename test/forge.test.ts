@@ -234,21 +234,15 @@ describe("forge", () => {
 		});
 
 		test("throws for unknown forge without explicit option", async () => {
-			expect(
-				connectRepo("https://bitbucket.org/user/repo"),
-			).rejects.toThrow("Cannot infer forge from URL");
+			expect(connectRepo("https://bitbucket.org/user/repo")).rejects.toThrow("Cannot infer forge from URL");
 		});
 
 		test("throws for URL with no path segments", async () => {
-			expect(
-				connectRepo("https://github.com/", { forge: "github" }),
-			).rejects.toThrow("Invalid repo URL");
+			expect(connectRepo("https://github.com/", { forge: "github" })).rejects.toThrow("Invalid repo URL");
 		});
 
 		test("throws for URL with only one path segment", async () => {
-			expect(
-				connectRepo("https://github.com/user", { forge: "github" }),
-			).rejects.toThrow("Invalid repo URL");
+			expect(connectRepo("https://github.com/user", { forge: "github" })).rejects.toThrow("Invalid repo URL");
 		});
 
 		test("succeeds with explicit forge option for non-standard host", async () => {
@@ -387,9 +381,7 @@ describe("forge", () => {
 		}, 30_000);
 
 		test("custom domain without forge option throws 'Cannot infer forge'", async () => {
-			await expect(
-				connectRepo("https://git.example.com/user/repo"),
-			).rejects.toThrow("Cannot infer forge");
+			await expect(connectRepo("https://git.example.com/user/repo")).rejects.toThrow("Cannot infer forge");
 		});
 	});
 
@@ -400,7 +392,10 @@ describe("forge", () => {
 			// repoUrl is file:// — parseRepoPath extracts the first two path segments
 			// The cache structure is ~/.ask-forge/repos/{username}/{reponame}/repo
 			const url = new URL(repoUrl);
-			const parts = url.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
+			const parts = url.pathname
+				.replace(/^\//, "")
+				.replace(/\.git$/, "")
+				.split("/");
 			const expectedSegment = join(parts[0], parts[1], "repo");
 
 			expect(repo.cachePath).toContain(expectedSegment);
@@ -411,7 +406,10 @@ describe("forge", () => {
 			const repo = await connectRepo(repoUrl, { forge: "github" });
 
 			const url = new URL(repoUrl);
-			const parts = url.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
+			const parts = url.pathname
+				.replace(/^\//, "")
+				.replace(/\.git$/, "")
+				.split("/");
 			const parsedReponame = parts[1];
 
 			// The parsed reponame should not end with .git

@@ -576,13 +576,15 @@ describe("Session", () => {
 			// Verify at least two tools overlapped in time (proves parallelism)
 			// Sort by start time and check if any tool started before a previous one ended
 			execLog.sort((a, b) => a.start - b.start);
-			const hasOverlap = execLog.some((entry, i) => i > 0 && entry.start < execLog[i - 1]!.end);
+			const hasOverlap = execLog.some((entry, i) => i > 0 && entry.start < (execLog[i - 1]?.end ?? 0));
 			expect(hasOverlap).toBe(true);
 		});
 
 		test("returns max-iterations error after exhausting iterations", async () => {
 			const customStream = (() =>
-				createToolCallStreamResult([{ name: "rg", arguments: { pattern: "test" } }])) as unknown as SessionConfig["stream"];
+				createToolCallStreamResult([
+					{ name: "rg", arguments: { pattern: "test" } },
+				])) as unknown as SessionConfig["stream"];
 
 			const session = new Session(
 				createMockRepo(),
@@ -677,10 +679,7 @@ describe("Session", () => {
 			// or fail (if real completeSimple is used with mock model).
 			// Either way, ask() must succeed — compaction errors are caught.
 			const { logger, logs, errors } = createCapturingLogger();
-			const session = new Session(
-				createMockRepo(),
-				createMockConfig({ logger }),
-			);
+			const session = new Session(createMockRepo(), createMockConfig({ logger }));
 			session.replaceMessages(createLargeContext());
 
 			const result = await session.ask("Hello");
@@ -692,9 +691,7 @@ describe("Session", () => {
 
 		test("ask() succeeds when context is below compaction threshold", async () => {
 			const session = new Session(createMockRepo(), createMockConfig());
-			session.replaceMessages([
-				{ role: "user", content: "short question", timestamp: Date.now() },
-			]);
+			session.replaceMessages([{ role: "user", content: "short question", timestamp: Date.now() }]);
 			const result = await session.ask("Hello");
 			expect(result.response).toBe("Hello world");
 		});
@@ -736,10 +733,7 @@ describe("Session", () => {
 			await Promise.all([p1, p2]);
 
 			// If serialized: q1 fully completes before q2 starts
-			expect(order).toEqual([
-				"stream-start-1", "stream-end-1",
-				"stream-start-2", "stream-end-2",
-			]);
+			expect(order).toEqual(["stream-start-1", "stream-end-1", "stream-start-2", "stream-end-2"]);
 		});
 	});
 });

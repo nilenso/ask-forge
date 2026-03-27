@@ -29,7 +29,13 @@ beforeEach(async () => {
 		cwd: repoDir,
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { ...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "t@t" },
+		env: {
+			...process.env,
+			GIT_AUTHOR_NAME: "test",
+			GIT_AUTHOR_EMAIL: "t@t",
+			GIT_COMMITTER_NAME: "test",
+			GIT_COMMITTER_EMAIL: "t@t",
+		},
 	});
 	await commit.exited;
 });
@@ -293,7 +299,7 @@ describe("executeRead", () => {
 		const result = await executeTool("read", { path: "special.txt" }, repoDir);
 		expect(result).toContain("<html>");
 		expect(result).toContain("&");
-		expect(result).toContain("\"quotes\"");
+		expect(result).toContain('"quotes"');
 	});
 
 	test("returns error for permission-denied file", async () => {
@@ -483,5 +489,4 @@ describe("validateProjectPath (via read/ls)", () => {
 		expect(result).toContain("hello.ts");
 		expect(result).toContain("src");
 	});
-
 });

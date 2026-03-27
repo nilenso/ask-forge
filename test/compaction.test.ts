@@ -229,7 +229,7 @@ describe("findCutPoint", () => {
 
 		// First kept message should be a user message (turn boundary)
 		expect(result.messagesToKeep.length).toBeGreaterThan(0);
-		expect(result.messagesToKeep[0]!.role).toBe("user");
+		expect(result.messagesToKeep[0]?.role).toBe("user");
 	});
 
 	test("handles split turn when single turn exceeds budget", () => {
@@ -252,7 +252,7 @@ describe("findCutPoint", () => {
 		expect(result.turnPrefixMessages.length).toBeGreaterThan(0);
 		// First kept message should be an assistant message (mid-turn cut)
 		expect(result.messagesToKeep.length).toBeGreaterThan(0);
-		expect(result.messagesToKeep[0]!.role).toBe("assistant");
+		expect(result.messagesToKeep[0]?.role).toBe("assistant");
 	});
 
 	test("can cut at assistant message boundaries", () => {
@@ -338,8 +338,8 @@ describe("maybeCompact", () => {
 		const firstMsg = result.messages[0];
 		expect(firstMsg).toBeDefined();
 		expect(typeof firstMsg?.content).toBe("string");
-		expect((firstMsg?.content as string)).toContain("[CONTEXT SUMMARY");
-		expect((firstMsg?.content as string)).toContain("[END CONTEXT SUMMARY");
+		expect(firstMsg?.content as string).toContain("[CONTEXT SUMMARY");
+		expect(firstMsg?.content as string).toContain("[END CONTEXT SUMMARY");
 		expect(result.messages.length).toBeLessThan(messages.length);
 		expect((result.summary ?? "").length).toBeGreaterThan(0);
 	});
