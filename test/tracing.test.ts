@@ -689,15 +689,18 @@ describe("OTel tracing", () => {
 		});
 
 		test("compaction error records structured details on the compaction span", async () => {
-			const brokenModel = {
-				id: "broken",
-				provider: "broken",
-			} as unknown as Model<Api>;
-
+			const loggerThatFailsOnCompactionLog = {
+				...nullLogger,
+				log: (label: string) => {
+					if (label === "[compaction]") {
+						throw new Error("logger failed during compaction");
+					}
+				},
+			};
 			const session = new Session(
 				createMockRepo(),
 				createMockConfig({
-					model: brokenModel,
+					logger: loggerThatFailsOnCompactionLog,
 					stream: (() => createMockStreamResult()) as unknown as SessionConfig["stream"],
 				}),
 			);
