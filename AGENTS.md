@@ -3,20 +3,17 @@
 1. Install dependencies with `bun install`
 2. See README.md for the library API (`connect`, `Session`, etc.)
 3. For sandboxed execution, see the `sandbox/` directory and `docker-compose.yml`
-4. The sandbox requires gVisor (`runsc`) and must run rootful with podman:
+4. The sandbox requires gVisor (`runsc`) and Docker:
    - `sudo just sandbox-up` / `sudo just sandbox-down`
-   - Podman needs `--in-pod=false` (already in justfile) because pod infra containers conflict with gVisor runtime
-   - `/etc/containers/containers.conf` must have `runsc = ["/usr/local/bin/runsc"]` without `--rootless=true`
-   - Docker works without extra config
+   - Docker is used instead of Podman to avoid gVisor cleanup issues (stale filestore files, overlay mount races on Ctrl+C)
 5. Security tests: `bun run playground/security-tests.ts sandbox` (requires running sandbox)
 6. Troubleshooting sandbox:
    - Stale gVisor state after failed starts: clean up with `sudo rm -rf /var/run/runsc/*` then retry
-   - `podman exec` does not work with gVisor's `runsc` runtime — use the HTTP API instead
-   - Port already in use: run `sudo podman rm -af` to clean up before restarting
+   - `docker exec` does not work with gVisor's `runsc` runtime — use the HTTP API instead
+   - Port already in use: run `sudo docker rm -af` to clean up before restarting
    - The seccomp BPF filter is arch-specific and must be at `/etc/seccomp/{arch}/net-block.bpf` inside the container (handled by Containerfile)
    - DNS: gVisor doesn't work with Docker/Podman's embedded DNS proxy (`127.0.0.11`). The `docker-compose.yml` has explicit `dns: [8.8.8.8, 8.8.4.4]` to work around this — do not remove it
    - If git clone fails with "could not resolve host" inside the container, check that the `dns` entries in `docker-compose.yml` are present and reachable
-   - CNI firewall plugin: Podman's CNI `firewall` plugin may be too old for CNI spec 1.0.0, causing `plugin firewall does not support config version "1.0.0"` warnings and broken networking. Fix by upgrading CNI plugins: `curl -L https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-arm64-v1.6.2.tgz | sudo tar -xz -C /usr/lib/cni/`
 
 # Before Committing
 

@@ -1,3 +1,5 @@
+compose := "docker-compose"
+
 # Install dependencies
 install:
     bun install
@@ -15,24 +17,24 @@ sandbox-tests: sandbox-up
     @echo "Waiting for sandbox..."
     @sleep 2
     bun test test/sandbox/sandbox.integration.test.ts || true
-    podman-compose --in-pod=false down
+    {{ compose }} down
 
 # Run all sandbox tests (isolation + integration)
 sandbox-all-tests: isolation-tests sandbox-tests
 
 # Build sandbox container
 sandbox-build:
-    podman-compose --in-pod=false build
+    {{ compose }} build
 
 # Start sandbox container
 sandbox-up: sandbox-build
-    podman-compose --in-pod=false up -d
+    {{ compose }} up -d
 
 # Stop sandbox container
 sandbox-down:
-    podman-compose --in-pod=false down
+    {{ compose }} down
 
 # View sandbox logs
 sandbox-logs:
-    podman-compose --in-pod=false logs -f
+    {{ compose }} logs -f
 
