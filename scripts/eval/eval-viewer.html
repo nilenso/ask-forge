@@ -112,15 +112,6 @@
     --shadow-lg: 0 12px 16px -4px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
   }
 
-  /* Form controls need explicit colour in dark mode — browsers don't inherit it */
-  [data-theme="dark"] .filter-input,
-  [data-theme="dark"] .filter-select {
-    color: var(--gray-900);
-    background: var(--gray-100);
-  }
-  [data-theme="dark"] .filter-input::placeholder { color: var(--gray-500); }
-  [data-theme="dark"] .left-panel { box-shadow: 8px 0 14px -14px rgba(0, 0, 0, 0.75); }
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -329,6 +320,14 @@
     color: var(--indigo-600);
     margin-right: 2px;
   }
+  .reasoning-chip {
+    background: var(--amber-50, #fffbeb);
+    color: var(--amber-700, #b45309);
+    border-color: var(--amber-100, #fef3c7);
+  }
+  .reasoning-chip .model-chip-label {
+    color: var(--amber-600, #d97706);
+  }
 
   /* ─── Summary Stats ─── */
   .stats-bar {
@@ -457,6 +456,15 @@
     flex-shrink: 0;
     margin-left: auto;
   }
+
+  /* Form controls need explicit colour in dark mode — browsers don't inherit it */
+  [data-theme="dark"] .filter-input,
+  [data-theme="dark"] .filter-select {
+    color: var(--gray-900);
+    background: var(--gray-100);
+  }
+  [data-theme="dark"] .filter-input::placeholder { color: var(--gray-500); }
+  [data-theme="dark"] .left-panel { box-shadow: 8px 0 14px -14px rgba(0, 0, 0, 0.75); }
 
   .card-list {
     flex: 1;
@@ -787,15 +795,15 @@
   }
   .answer-raw-md.visible { display: block; }
   .detail-collapsible-md.hidden { display: none; }
-  .detail-collapsible.bordered .detail-collapsible-body,
-  .detail-collapsible.bordered .detail-collapsible-md {
-    border-top: 1px solid var(--gray-100);
-    padding: 10px 0 12px;
-  }
   .detail-collapsible-md {
     font-size: 13px;
     line-height: 1.65;
     color: var(--gray-600);
+  }
+  .detail-collapsible.bordered .detail-collapsible-body,
+  .detail-collapsible.bordered .detail-collapsible-md {
+    border-top: 1px solid var(--gray-100);
+    padding: 10px 0 12px;
   }
 
   /* ─── Analyse with AI ─── */
@@ -1039,7 +1047,7 @@
  *   inferenceTimeMs: string,
  * }} EvalRow
  *
- * @typedef {{ rows: EvalRow[], name: string, askModel: string, judgeModel: string }} EvalRun
+ * @typedef {{ rows: EvalRow[], name: string, askModel: string, judgeModel: string, reasoningLevel: string }} EvalRun
  *
  * @typedef {{
  *   key: string,
@@ -1138,6 +1146,7 @@ const COLUMN_ALIASES = {
   cache_write_tokens: 'cacheWriteTokens',
   ask_system_prompt: 'askSystemPrompt',
   judge_prompt: 'judgePrompt',
+  reasoning_level: 'reasoningLevel',
 };
 
 function makeEmptyRow() {
@@ -1151,6 +1160,7 @@ function makeEmptyRow() {
     cacheReadTokens: '', cacheWriteTokens: '',
     askModel: '', judgeModel: '',
     askSystemPrompt: '', judgePrompt: '',
+    reasoningLevel: '',
   };
 }
 
@@ -1191,8 +1201,9 @@ function parseCsv(content, fileName) {
   // so we treat the first row's values as canonical for the whole run.
   const askModel = rows.length > 0 ? (rows[0].askModel || '') : '';
   const judgeModel = rows.length > 0 ? (rows[0].judgeModel || '') : '';
+  const reasoningLevel = rows.length > 0 ? (rows[0].reasoningLevel || '') : '';
 
-  return { ok: true, run: { rows, name: fileName, askModel, judgeModel } };
+  return { ok: true, run: { rows, name: fileName, askModel, judgeModel, reasoningLevel } };
 }
 
 // ─── Row Matching & Comparison ───────────────────────────────────────────
@@ -1566,6 +1577,8 @@ function renderModelChips(row) {
   let html = '<div class="model-bar">';
   if (askModel) html += `<span class="model-chip"><span class="model-chip-label">Ask</span>${esc(askModel)}</span>`;
   if (judgeModel) html += `<span class="model-chip"><span class="model-chip-label">Judge</span>${esc(judgeModel)}</span>`;
+  const reasoning = row.reasoningLevel?.trim() || '';
+  if (reasoning) html += `<span class="model-chip reasoning-chip"><span class="model-chip-label">Reasoning</span>${esc(reasoning)}</span>`;
   html += '</div>';
   return html;
 }
