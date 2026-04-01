@@ -140,10 +140,7 @@ export class SandboxClient {
 			);
 
 			if (statusRes.status === 404) {
-				this.logger.warn(
-					"sandbox:client",
-					`clone job not found for ${slug}, re-triggering clone for ${url}`,
-				);
+				this.logger.warn("sandbox:client", `clone job not found for ${slug}, re-triggering clone for ${url}`);
 				onProgress?.("Re-cloning repository…");
 
 				const retryRes = await fetch(`${this.config.baseUrl}/clone`, {
