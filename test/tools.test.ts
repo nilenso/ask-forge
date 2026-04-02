@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
+	ALLOWED_GIT_COMMANDS,
 	buildFdCommand,
 	buildFindCommand,
 	buildGrepCommand,
 	buildRgCommand,
+	type CommandRunner,
 	executeTool,
 	overrideToolAvailability,
+	tools,
 } from "../src/tools";
 
 let repoDir: string;
@@ -703,5 +706,106 @@ describe("fd fallback to find", () => {
 		expect(result).toContain("hello.ts");
 		expect(result).not.toContain("app.ts");
 		expect(result).not.toContain("file.txt");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// CommandRunner injection
+// ---------------------------------------------------------------------------
+describe("CommandRunner injection", () => {
+	function createMockRunner(): { runner: CommandRunner; calls: Array<{ cmd: string[]; cwd: string }> } {
+		const calls: Array<{ cmd: string[]; cwd: string }> = [];
+		const runner: CommandRunner = async (cmd, cwd) => {
+			calls.push({ cmd, cwd });
+			return "(mocked)";
+		};
+		return { runner, calls };
+	}
+
+	test("default runner (no arg) produces same results as explicit undefined", async () => {
+		const withDefault = await executeTool("rg", { pattern: "greeting" }, repoDir);
+		const withUndefined = await executeTool("rg", { pattern: "greeting" }, repoDir, undefined);
+		expect(withDefault).toBe(withUndefined);
+	});
+
+	test("mock runner receives rg command", async () => {
+		const { runner, calls } = createMockRunner();
+		await executeTool("rg", { pattern: "foo", glob: "*.ts", word: true }, repoDir, runner);
+		expect(calls).toHaveLength(1);
+		const call = calls[0] as (typeof calls)[0];
+		expect(call.cmd).toEqual(["rg", "--line-number", "--max-count", "50", "foo", "--glob", "*.ts", "-w"]);
+		expect(call.cwd).toBe(repoDir);
+	});
+
+	test("mock runner receives fd command", async () => {
+		const { runner, calls } = createMockRunner();
+		await executeTool("fd", { pattern: "bar", type: "f" }, repoDir, runner);
+		expect(calls).toHaveLength(1);
+		const call = calls[0] as (typeof calls)[0];
+		// fd is available locally, so should get fd command
+		expect(call.cmd[0]).toBe("fd");
+		expect(call.cmd).toContain("--type");
+		expect(call.cmd).toContain("f");
+		expect(call.cmd).toContain("bar");
+	});
+
+	test("mock runner receives ls command", async () => {
+		const { runner, calls } = createMockRunner();
+		await executeTool("ls", { path: "src" }, repoDir, runner);
+		expect(calls).toHaveLength(1);
+		const call = calls[0] as (typeof calls)[0];
+		expect(call.cmd).toEqual(["ls", "-la", resolve(repoDir, "src")]);
+	});
+
+	test("mock runner receives read (cat -n) command", async () => {
+		const { runner, calls } = createMockRunner();
+		const result = await executeTool("read", { path: "hello.ts" }, repoDir, runner);
+		expect(calls).toHaveLength(1);
+		const call = calls[0] as (typeof calls)[0];
+		expect(call.cmd).toEqual(["cat", "-n", resolve(repoDir, "hello.ts")]);
+		// Should prepend [File:] header to runner output
+		expect(result).toContain("[File: hello.ts]");
+		expect(result).toContain("(mocked)");
+	});
+
+	test("mock runner receives git command", async () => {
+		const { runner, calls } = createMockRunner();
+		await executeTool("git", { command: "log", args: ["--oneline"] }, repoDir, runner);
+		expect(calls).toHaveLength(1);
+		const call = calls[0] as (typeof calls)[0];
+		expect(call.cmd).toEqual(["git", "log", "--oneline"]);
+	});
+
+	test("read path validation runs before runner is called", async () => {
+		const { runner, calls } = createMockRunner();
+		const result = await executeTool("read", { path: "../../etc/passwd" }, repoDir, runner);
+		// Runner must NEVER be called — path rejected before reaching it
+		expect(calls).toHaveLength(0);
+		expect(result).toContain("Error: invalid project path");
+	});
+
+	test("ls path validation runs before runner is called", async () => {
+		const { runner, calls } = createMockRunner();
+		const result = await executeTool("ls", { path: "/etc" }, repoDir, runner);
+		expect(calls).toHaveLength(0);
+		expect(result).toContain("Error: invalid project path");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ALLOWED_GIT_COMMANDS
+// ---------------------------------------------------------------------------
+describe("ALLOWED_GIT_COMMANDS", () => {
+	test("matches the git tool TypeBox schema literals", () => {
+		const gitTool = tools.find((t) => t.name === "git");
+		expect(gitTool).toBeDefined();
+		if (!gitTool) return; // unreachable after expect, satisfies lint
+
+		// Extract literal values from the TypeBox Union in the command field
+		const commandSchema = gitTool.parameters.properties.command;
+		const schemaLiterals: string[] = commandSchema.anyOf.map((s: { const: string }) => s.const);
+
+		expect(ALLOWED_GIT_COMMANDS).toEqual(new Set(schemaLiterals));
+		expect(ALLOWED_GIT_COMMANDS.size).toBe(schemaLiterals.length);
 	});
 });

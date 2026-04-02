@@ -4,6 +4,22 @@ import { Type } from "@sinclair/typebox";
 
 const RG_MAX_MATCHES_PER_FILE = 50;
 
+/** Function signature for running a subprocess command. */
+export type CommandRunner = (cmd: string[], cwd: string) => Promise<string>;
+
+/** Allowed read-only git subcommands, shared with the sandbox worker. */
+export const ALLOWED_GIT_COMMANDS: ReadonlySet<string> = new Set([
+	"log",
+	"show",
+	"blame",
+	"diff",
+	"shortlog",
+	"describe",
+	"rev-parse",
+	"ls-tree",
+	"cat-file",
+]);
+
 // ---------------------------------------------------------------------------
 // Tool availability detection
 // ---------------------------------------------------------------------------
@@ -186,12 +202,12 @@ export function buildGrepCommand(args: Record<string, unknown>): string[] {
 	return cmd;
 }
 
-async function executeRg(args: Record<string, unknown>, repoPath: string): Promise<string> {
+async function executeRg(args: Record<string, unknown>, repoPath: string, runner: CommandRunner): Promise<string> {
 	const maxResults = args.max_results as number | undefined;
 	const rgAvailable = await isAvailable("rg");
 	const cmd = rgAvailable ? buildRgCommand(args) : buildGrepCommand(args);
 
-	const result = await runCommand(cmd, repoPath);
+	const result = await runner(cmd, repoPath);
 
 	if (maxResults && !result.startsWith("Error")) {
 		const lines = result.split("\n").filter((l) => l.trim().length > 0);
@@ -300,12 +316,12 @@ function stripFindPrefix(output: string): string {
 		.join("\n");
 }
 
-async function executeFd(args: Record<string, unknown>, repoPath: string): Promise<string> {
+async function executeFd(args: Record<string, unknown>, repoPath: string, runner: CommandRunner): Promise<string> {
 	const maxResults = args.max_results as number | undefined;
 	const fdAvailable = await isAvailable("fd");
 	const cmd = fdAvailable ? buildFdCommand(args) : buildFindCommand(args);
 
-	const result = await runCommand(cmd, repoPath);
+	const result = await runner(cmd, repoPath);
 
 	if (result.startsWith("Error")) return result;
 
@@ -321,50 +337,55 @@ async function executeFd(args: Record<string, unknown>, repoPath: string): Promi
 	return result;
 }
 
-async function executeLs(args: Record<string, unknown>, repoPath: string): Promise<string> {
+async function executeLs(args: Record<string, unknown>, repoPath: string, runner: CommandRunner): Promise<string> {
 	const path = (args.path as string | undefined) || ".";
 	const fullPath = validateProjectPath(repoPath, path);
 	if (!fullPath) {
 		return `Error: invalid project path: ${path}`;
 	}
 
-	return runCommand(["ls", "-la", fullPath], repoPath);
+	return runner(["ls", "-la", fullPath], repoPath);
 }
 
-async function executeRead(args: Record<string, unknown>, repoPath: string): Promise<string> {
+async function executeRead(args: Record<string, unknown>, repoPath: string, runner: CommandRunner): Promise<string> {
 	const filePath = args.path as string;
 	const fullPath = validateProjectPath(repoPath, filePath);
 	if (!fullPath) {
 		return `Error: invalid project path: ${filePath}`;
 	}
 
-	const content = await runCommand(["cat", "-n", fullPath], repoPath);
+	const content = await runner(["cat", "-n", fullPath], repoPath);
 	if (content.startsWith("Error")) {
 		return content;
 	}
 	return `[File: ${filePath}]\n\n${content}`;
 }
 
-async function executeGit(args: Record<string, unknown>, repoPath: string): Promise<string> {
+async function executeGit(args: Record<string, unknown>, repoPath: string, runner: CommandRunner): Promise<string> {
 	const command = args.command as string;
 	const gitArgs = (args.args as string[]) || [];
 
 	const cmd = ["git", command, ...gitArgs];
-	return runCommand(cmd, repoPath);
+	return runner(cmd, repoPath);
 }
 
-export async function executeTool(toolName: string, args: Record<string, unknown>, repoPath: string): Promise<string> {
+export async function executeTool(
+	toolName: string,
+	args: Record<string, unknown>,
+	repoPath: string,
+	runner: CommandRunner = runCommand,
+): Promise<string> {
 	switch (toolName) {
 		case "rg":
-			return executeRg(args, repoPath);
+			return executeRg(args, repoPath, runner);
 		case "fd":
-			return executeFd(args, repoPath);
+			return executeFd(args, repoPath, runner);
 		case "ls":
-			return executeLs(args, repoPath);
+			return executeLs(args, repoPath, runner);
 		case "read":
-			return executeRead(args, repoPath);
+			return executeRead(args, repoPath, runner);
 		case "git":
-			return executeGit(args, repoPath);
+			return executeGit(args, repoPath, runner);
 		default:
 			return `Unknown tool: ${toolName}`;
 	}
