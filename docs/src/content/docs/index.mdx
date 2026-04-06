@@ -19,6 +19,15 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+<div class="install-command">
+  <code>
+    <span class="install-prompt">$</span> npx jsr add @nilenso/megasthenes
+  </code>
+  <button class="install-copy" onclick="navigator.clipboard.writeText('npx jsr add @nilenso/megasthenes')" aria-label="Copy install command">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+  </button>
+</div>
+
 <div class="home-card-grid">
   <CardGrid>
     <Card title="Any Repo" icon="external">
