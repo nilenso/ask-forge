@@ -80,3 +80,47 @@
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
+
+/* Install command block */
+.install-command {
+	display: inline-flex;
+	align-items: center;
+	gap: 1.5rem;
+	margin: 0 0 1.5rem;
+	padding: 0.85rem 1.25rem;
+	border-radius: 0.5rem;
+	background: transparent;
+	border: 1px solid var(--sl-color-gray-4);
+	font-family: var(--sl-font-mono);
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-1);
+}
+
+.install-command code {
+	background: none;
+	padding: 0;
+	border: none;
+	font-size: inherit;
+	color: inherit;
+}
+
+.install-prompt {
+	color: var(--sl-color-gray-3);
+	margin-right: 0.5em;
+	user-select: none;
+}
+
+.install-copy {
+	background: none;
+	border: none;
+	padding: 0.25rem;
+	color: var(--sl-color-gray-3);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	transition: color 0.15s;
+}
+
+.install-copy:hover {
+	color: var(--sl-color-white);
+}
