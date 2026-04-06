@@ -124,3 +124,8 @@
 .install-copy:hover {
 	color: var(--sl-color-white);
 }
+
+/* Hide redundant site title in header (already shown in hero) */
+.site-title > span {
+	display: none;
+}
