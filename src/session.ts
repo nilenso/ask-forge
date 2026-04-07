@@ -16,6 +16,7 @@ import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { type ParsedLink, validateLinks } from "./response-validation";
 import { processStream, type StreamFn } from "./stream-processor";
+import { validateRequiredTools } from "./tools";
 import {
 	endAskSpan,
 	endAskSpanWithError,
@@ -363,6 +364,16 @@ export class Session {
 			startTime: Date.now(),
 		};
 
+		// Validate required tools before making any LLM call
+		const missing = await validateRequiredTools();
+		if (missing.length > 0) {
+			const names = missing.join(", ");
+			return buildResult(
+				ctx,
+				`[ERROR: Required tools not installed: ${names}. Install them before using ask-forge locally (e.g. \`brew install ripgrep fd-find\`)]`,
+			);
+		}
+
 		const modelId = `${this.#config.model.provider}/${this.#config.model.id}`;
 		const askSpan = startAskSpan({
 			question,
@@ -529,6 +540,8 @@ export class Session {
 		}
 
 		// Execute tool calls as children of this gen_ai.chat span
+		// Unknown tool names flow through executeTool, which returns an error string
+		// as a tool result — giving the model a chance to self-correct on the next iteration.
 		await this.#executeToolCalls(responseToolCalls, ctx.toolCalls, genSpan);
 
 		endGenerationSpan(genSpan, {
