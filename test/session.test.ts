@@ -941,4 +941,62 @@ describe("Session", () => {
 			expect(() => session.askStream("test")).toThrow(`Session ${session.id} is closed`);
 		});
 	});
+
+	describe("getTurns / getTurn", () => {
+		test("getTurns() returns empty array initially", () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			expect(session.getTurns()).toEqual([]);
+		});
+
+		test("after one askStream, getTurns() has one TurnResult", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(1);
+			expect(turns[0]?.prompt).toBe("Hello");
+			expect(turns[0]?.id).toBeTruthy();
+		});
+
+		test("after multiple asks, getTurns() accumulates in order", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("First").result();
+			await session.askStream("Second").result();
+			await session.askStream("Third").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(3);
+			expect(turns[0]?.prompt).toBe("First");
+			expect(turns[1]?.prompt).toBe("Second");
+			expect(turns[2]?.prompt).toBe("Third");
+		});
+
+		test("getTurn(id) finds the right turn", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			const turns = session.getTurns();
+			const id = turns[0]?.id ?? "";
+			expect(session.getTurn(id)?.prompt).toBe("Hello");
+		});
+
+		test("getTurn() returns undefined for unknown id", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			expect(session.getTurn("nonexistent")).toBeUndefined();
+		});
+
+		test("turns are recorded after iteration without .result()", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			const stream = session.askStream("Hello");
+			for await (const _event of stream) {
+				// consume all events
+			}
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(1);
+			expect(turns[0]?.prompt).toBe("Hello");
+		});
+	});
 });

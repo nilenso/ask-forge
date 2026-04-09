@@ -31,7 +31,7 @@ import {
 	startGenerationSpan,
 	startToolSpan,
 } from "./tracing";
-import type { AskStream, NewAskOptions, StreamEvent, TurnMetadata } from "./types";
+import type { AskStream, NewAskOptions, StreamEvent, TurnMetadata, TurnResult } from "./types";
 
 // =============================================================================
 // Types
@@ -278,6 +278,9 @@ export class Session {
 	#streamPending: Promise<unknown> = Promise.resolve();
 	#closed = false;
 	#compactionSummary: string | undefined = undefined;
+	#turns: TurnResult[] = [];
+	/** Messages snapshot at the end of each turn, keyed by turn ID. Used for afterTurn branching. */
+	#turnMessages = new Map<string, Message[]>();
 
 	constructor(repo: Repo, config: SessionConfig) {
 		this.id = randomUUID();
@@ -367,7 +370,13 @@ export class Session {
 		this.#streamPending = new Promise<void>((resolve) => {
 			resolveStreamDone = resolve;
 		});
-		return new AskStreamImpl(() => this.#doAskStream(prompt, prevPending, resolveStreamDone));
+		return new AskStreamImpl(
+			() => this.#doAskStream(prompt, prevPending, resolveStreamDone),
+			(turn) => {
+				this.#turns.push(turn);
+				this.#turnMessages.set(turn.id, [...this.#context.messages]);
+			},
+		);
 	}
 
 	/**
@@ -404,6 +413,16 @@ export class Session {
 		if (!success) {
 			this.#logger.error("Failed to cleanup worktree", { path: this.repo.localPath });
 		}
+	}
+
+	/** Get all completed turns in chronological order. */
+	getTurns(): readonly TurnResult[] {
+		return [...this.#turns];
+	}
+
+	/** Get a specific turn by ID. Returns undefined if not found. */
+	getTurn(id: string): TurnResult | undefined {
+		return this.#turns.find((t) => t.id === id);
 	}
 
 	async *#doAskStream(prompt: string, prevPending: Promise<unknown>, onDone: () => void): AsyncGenerator<StreamEvent> {

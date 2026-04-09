@@ -11,13 +11,15 @@ import type { AskStream, StreamEvent, TurnResult } from "./types";
 
 export class AskStreamImpl implements AskStream {
 	#producer: () => AsyncGenerator<StreamEvent>;
+	#onComplete?: (result: TurnResult) => void;
 	#generator: AsyncGenerator<StreamEvent> | null = null;
 	#resultPromise: Promise<TurnResult> | null = null;
 	#builder = new TurnResultBuilder();
 	#done = false;
 
-	constructor(producer: () => AsyncGenerator<StreamEvent>) {
+	constructor(producer: () => AsyncGenerator<StreamEvent>, onComplete?: (result: TurnResult) => void) {
 		this.#producer = producer;
+		this.#onComplete = onComplete;
 	}
 
 	#ensureStarted(): AsyncGenerator<StreamEvent> {
@@ -35,7 +37,7 @@ export class AskStreamImpl implements AskStream {
 			yield event;
 		}
 
-		this.#done = true;
+		this.#markDone();
 	}
 
 	result(): Promise<TurnResult> {
@@ -43,6 +45,14 @@ export class AskStreamImpl implements AskStream {
 
 		this.#resultPromise = this.#resolveResult();
 		return this.#resultPromise;
+	}
+
+	#markDone(): void {
+		if (this.#done) return;
+		this.#done = true;
+		const result = this.#builder.build();
+		this.#onComplete?.(result);
+		this.#onComplete = undefined;
 	}
 
 	async #resolveResult(): Promise<TurnResult> {
@@ -55,7 +65,7 @@ export class AskStreamImpl implements AskStream {
 		for await (const event of gen) {
 			this.#builder.process(event);
 		}
-		this.#done = true;
+		this.#markDone();
 
 		return this.#builder.build();
 	}
