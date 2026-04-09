@@ -358,9 +358,17 @@ export class Session {
 	 *
 	 * @throws Error (synchronous) if the session is closed
 	 */
-	askStream(prompt: string, _options?: NewAskOptions): AskStream {
+	askStream(prompt: string, options?: NewAskOptions): AskStream {
 		if (this.#closed) {
 			throw new Error(`Session ${this.id} is closed`);
+		}
+
+		// Validate afterTurn synchronously
+		if (options?.afterTurn) {
+			const found = this.#turns.find((t) => t.id === options.afterTurn);
+			if (!found) {
+				throw new Error(`Turn not found: ${options.afterTurn}`);
+			}
 		}
 
 		// Capture the current pending promise for serialization
@@ -371,7 +379,7 @@ export class Session {
 			resolveStreamDone = resolve;
 		});
 		return new AskStreamImpl(
-			() => this.#doAskStream(prompt, prevPending, resolveStreamDone),
+			() => this.#doAskStream(prompt, prevPending, resolveStreamDone, options?.afterTurn),
 			(turn) => {
 				this.#turns.push(turn);
 				this.#turnMessages.set(turn.id, [...this.#context.messages]);
@@ -425,10 +433,23 @@ export class Session {
 		return this.#turns.find((t) => t.id === id);
 	}
 
-	async *#doAskStream(prompt: string, prevPending: Promise<unknown>, onDone: () => void): AsyncGenerator<StreamEvent> {
+	async *#doAskStream(
+		prompt: string,
+		prevPending: Promise<unknown>,
+		onDone: () => void,
+		afterTurn?: string,
+	): AsyncGenerator<StreamEvent> {
 		try {
 			// Serialize with any previous askStream call
 			await prevPending;
+
+			// If afterTurn is specified, rebuild context from that turn's snapshot
+			if (afterTurn) {
+				const snapshot = this.#turnMessages.get(afterTurn);
+				if (snapshot) {
+					this.#context.messages = [...snapshot];
+				}
+			}
 
 			const turnId = randomUUID();
 			const startedAt = Date.now();

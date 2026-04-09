@@ -987,6 +987,43 @@ describe("Session", () => {
 			expect(session.getTurn("nonexistent")).toBeUndefined();
 		});
 
+		test("afterTurn branches from the specified turn", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("First").result();
+			await session.askStream("Second").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(2);
+
+			// Branch from first turn — context should be restored to after turn 1
+			const firstTurnId = turns[0]?.id ?? "";
+			await session.askStream("Branched", { afterTurn: firstTurnId }).result();
+
+			const allTurns = session.getTurns();
+			expect(allTurns).toHaveLength(3);
+			expect(allTurns[2]?.prompt).toBe("Branched");
+		});
+
+		test("afterTurn with unknown id throws synchronously", () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+
+			expect(() => session.askStream("test", { afterTurn: "nonexistent" })).toThrow("Turn not found: nonexistent");
+		});
+
+		test("all turns are preserved after branching (append-only)", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Turn 1").result();
+			await session.askStream("Turn 2").result();
+			await session.askStream("Turn 3").result();
+
+			const t1Id = session.getTurns()[0]?.id ?? "";
+			await session.askStream("Branch from 1", { afterTurn: t1Id }).result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(4);
+			expect(turns.map((t) => t.prompt)).toEqual(["Turn 1", "Turn 2", "Turn 3", "Branch from 1"]);
+		});
+
 		test("turns are recorded after iteration without .result()", async () => {
 			const session = new Session(createMockRepo(), createMockConfig());
 			const stream = session.askStream("Hello");
