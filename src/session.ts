@@ -38,10 +38,18 @@ import {
 
 /** Record of a tool call made during a session */
 export interface ToolCallRecord {
+	/** Unique identifier for this tool call (from the model response) */
+	id: string;
 	/** Name of the tool that was called */
 	name: string;
 	/** Arguments passed to the tool */
 	arguments: Record<string, unknown>;
+	/** Output returned by the tool */
+	output: string;
+	/** Whether the tool execution resulted in an error */
+	isError: boolean;
+	/** Time taken to execute the tool in milliseconds */
+	durationMs: number;
 }
 
 /** Result returned from Session.ask() */
@@ -600,14 +608,16 @@ export class Session {
 				const t0 = Date.now();
 				try {
 					const result = await this.#config.executeTool(call.name, call.arguments, this.repo.localPath);
+					const durationMs = Date.now() - t0;
 					endToolSpan(toolSpan, result);
-					this.#logger.log(`TOOL_DONE: ${call.name}`, `${Date.now() - t0}ms`);
-					return { text: result, isError: false };
+					this.#logger.log(`TOOL_DONE: ${call.name}`, `${durationMs}ms`);
+					return { text: result, isError: false, durationMs };
 				} catch (error) {
+					const durationMs = Date.now() - t0;
 					const errorText = formatToolExecutionError(call.name, error);
 					endToolSpanWithError(toolSpan, error, errorText);
-					this.#logger.warn(`TOOL_ERROR: ${call.name}`, `${Date.now() - t0}ms ${errorText}`);
-					return { text: errorText, isError: true };
+					this.#logger.warn(`TOOL_ERROR: ${call.name}`, `${durationMs}ms ${errorText}`);
+					return { text: errorText, isError: true, durationMs };
 				}
 			}),
 		);
@@ -615,16 +625,21 @@ export class Session {
 
 		// Push results back in request order to preserve conversation context
 		toolCalls.forEach((call, j) => {
+			const r = results[j];
 			toolCallRecords.push({
+				id: call.id,
 				name: call.name,
 				arguments: call.arguments,
+				output: r?.text ?? "",
+				isError: r?.isError ?? false,
+				durationMs: r?.durationMs ?? 0,
 			});
 			this.#context.messages.push({
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: results[j]?.text ?? "" }],
-				isError: results[j]?.isError ?? false,
+				content: [{ type: "text", text: r?.text ?? "" }],
+				isError: r?.isError ?? false,
 				timestamp: Date.now(),
 			});
 		});

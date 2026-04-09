@@ -541,7 +541,7 @@ describe("Session", () => {
 			expect(toolResults[0]?.isError).toBe(false);
 		});
 
-		test("result.toolCalls records all tool calls", async () => {
+		test("result.toolCalls records all tool calls with enriched fields", async () => {
 			let streamCalls = 0;
 			const customStream = (() => {
 				streamCalls++;
@@ -558,14 +558,57 @@ describe("Session", () => {
 				createMockRepo(),
 				createMockConfig({
 					stream: customStream,
-					executeTool: async () => "result",
+					executeTool: async () => "tool output",
 				}),
 			);
 
 			const result = await session.ask("Find files");
 			expect(result.toolCalls).toHaveLength(2);
-			expect(result.toolCalls[0]?.name).toBe("rg");
-			expect(result.toolCalls[1]?.name).toBe("fd");
+
+			const tc0 = result.toolCalls[0]!;
+			expect(tc0.id).toBe("tc0");
+			expect(tc0.name).toBe("rg");
+			expect(tc0.arguments).toEqual({ pattern: "foo" });
+			expect(tc0.output).toBe("tool output");
+			expect(tc0.isError).toBe(false);
+			expect(typeof tc0.durationMs).toBe("number");
+			expect(tc0.durationMs).toBeGreaterThanOrEqual(0);
+
+			const tc1 = result.toolCalls[1]!;
+			expect(tc1.id).toBe("tc1");
+			expect(tc1.name).toBe("fd");
+			expect(tc1.isError).toBe(false);
+		});
+
+		test("failed tool call records have isError=true and error output", async () => {
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "test" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(
+				createMockRepo(),
+				createMockConfig({
+					stream: customStream,
+					executeTool: async () => {
+						throw new Error("tool crashed");
+					},
+				}),
+			);
+
+			const result = await session.ask("Search");
+			expect(result.toolCalls).toHaveLength(1);
+
+			const tc = result.toolCalls[0]!;
+			expect(tc.id).toBe("tc0");
+			expect(tc.name).toBe("rg");
+			expect(tc.isError).toBe(true);
+			expect(tc.output).toContain("tool crashed");
+			expect(tc.durationMs).toBeGreaterThanOrEqual(0);
 		});
 
 		test("multiple tool calls execute in parallel", async () => {
