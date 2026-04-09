@@ -297,8 +297,11 @@ export class Session {
 	}
 
 	/** Resolves which stream function and options to use based on thinking config. */
-	#resolveStreamCall(): { streamFn: StreamFn; streamOptions?: Record<string, unknown> } {
-		const thinking = this.#config.thinking;
+	#resolveStreamCall(thinkingOverride?: ThinkingConfig): {
+		streamFn: StreamFn;
+		streamOptions?: Record<string, unknown>;
+	} {
+		const thinking = thinkingOverride ?? this.#config.thinking;
 		if (!thinking) return { streamFn: this.#stream };
 
 		if (thinking.type === "adaptive") {
@@ -379,7 +382,7 @@ export class Session {
 			resolveStreamDone = resolve;
 		});
 		return new AskStreamImpl(
-			() => this.#doAskStream(prompt, prevPending, resolveStreamDone, options?.afterTurn),
+			() => this.#doAskStream(prompt, prevPending, resolveStreamDone, options),
 			(turn) => {
 				this.#turns.push(turn);
 				this.#turnMessages.set(turn.id, [...this.#context.messages]);
@@ -437,18 +440,24 @@ export class Session {
 		prompt: string,
 		prevPending: Promise<unknown>,
 		onDone: () => void,
-		afterTurn?: string,
+		options?: NewAskOptions,
 	): AsyncGenerator<StreamEvent> {
 		try {
 			// Serialize with any previous askStream call
 			await prevPending;
 
 			// If afterTurn is specified, rebuild context from that turn's snapshot
-			if (afterTurn) {
-				const snapshot = this.#turnMessages.get(afterTurn);
+			if (options?.afterTurn) {
+				const snapshot = this.#turnMessages.get(options.afterTurn);
 				if (snapshot) {
 					this.#context.messages = [...snapshot];
 				}
+			}
+
+			// Check for abort before starting
+			if (options?.signal?.aborted) {
+				yield { type: "error", message: "Aborted" };
+				return;
 			}
 
 			const turnId = randomUUID();
@@ -480,13 +489,20 @@ export class Session {
 				this.#context.messages.push(newQuestionMessage);
 			}
 
-			const maxIterations = this.#config.maxIterations;
+			const maxIterations = options?.maxIterations ?? this.#config.maxIterations;
 			let iterations = 0;
 
 			for (let iteration = 0; iteration < maxIterations; iteration++) {
+				// Check for abort before each iteration
+				if (options?.signal?.aborted) {
+					yield { type: "error", message: "Aborted" };
+					yield { type: "turn_end", turnId, metadata: this.#buildTurnMetadata(iterations, startedAt) };
+					return;
+				}
+
 				iterations = iteration + 1;
 
-				const { streamFn, streamOptions } = this.#resolveStreamCall();
+				const { streamFn, streamOptions } = this.#resolveStreamCall(options?.thinking);
 				const { events, response: getResponse } = processStreamToEvents(
 					streamFn,
 					this.#config.model,

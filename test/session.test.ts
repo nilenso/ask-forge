@@ -1036,4 +1036,68 @@ describe("Session", () => {
 			expect(turns[0]?.prompt).toBe("Hello");
 		});
 	});
+
+	describe("per-turn overrides", () => {
+		test("maxIterations override limits iterations for this turn", async () => {
+			const customStream = (() =>
+				createToolCallStreamResult([
+					{ name: "rg", arguments: { pattern: "test" } },
+				])) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ maxIterations: 10, stream: customStream }));
+
+			const result = await session.askStream("Do something", { maxIterations: 1 }).result();
+
+			// Should hit max iterations with just 1 iteration
+			const errorSteps = result.steps.filter((s) => s.type === "error");
+			expect(errorSteps.length).toBeGreaterThan(0);
+		});
+
+		test("thinking override changes stream function used", async () => {
+			let streamSimpleCalled = false;
+			const customStreamSimple = ((_model: unknown, _context: unknown, _options?: unknown) => {
+				streamSimpleCalled = true;
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["streamSimple"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ streamSimple: customStreamSimple }));
+
+			// Session has no thinking config, but override with effort-based
+			await session.askStream("Test", { thinking: { effort: "high" } }).result();
+
+			expect(streamSimpleCalled).toBe(true);
+		});
+
+		test("signal abort cancels the turn before first iteration", async () => {
+			const controller = new AbortController();
+			controller.abort();
+
+			const session = new Session(createMockRepo(), createMockConfig());
+			const result = await session.askStream("Test", { signal: controller.signal }).result();
+
+			expect(result.error).not.toBeNull();
+			expect(result.error?.message).toBe("Aborted");
+		});
+
+		test("signal abort cancels the turn between iterations", async () => {
+			const controller = new AbortController();
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					// After first iteration, abort
+					controller.abort();
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "test" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ stream: customStream }));
+
+			const result = await session.askStream("Test", { signal: controller.signal }).result();
+
+			const errorSteps = result.steps.filter((s) => s.type === "error");
+			expect(errorSteps.length).toBeGreaterThan(0);
+		});
+	});
 });
