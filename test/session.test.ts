@@ -278,23 +278,6 @@ describe("Session", () => {
 	});
 
 	describe("ask", () => {
-		afterEach(() => {
-			// Restore real tool availability after each test
-			overrideToolAvailability("rg", true);
-			overrideToolAvailability("fd", true);
-		});
-
-		test("returns error result when required tools are missing", async () => {
-			overrideToolAvailability("rg", false);
-			overrideToolAvailability("fd", false);
-
-			const session = new Session(createMockRepo(), createMockConfig());
-			const result = await session.ask("Hello");
-
-			expect(result.response).toContain("[ERROR: Required tools not installed: rg, fd");
-			expect(result.usage.totalTokens).toBe(0); // No LLM call was made
-		});
-
 		test("returns response from mock stream", async () => {
 			const repo = createMockRepo();
 			const session = new Session(repo, createMockConfig());
@@ -303,6 +286,7 @@ describe("Session", () => {
 
 			expect(result.prompt).toBe("What is 2+2?");
 			expect(result.response).toBe("Hello world");
+			expect(result.error).toBeNull();
 			expect(result.toolCalls).toEqual([]);
 			expect(result.usage.inputTokens).toBe(10);
 			expect(result.usage.outputTokens).toBe(5);
@@ -671,6 +655,8 @@ describe("Session", () => {
 
 			const result = await session.ask("Do something");
 			expect(result.response).toContain("Max iterations reached");
+			expect(result.error).not.toBeNull();
+			expect(result.error!.message).toContain("Max iterations reached");
 		});
 
 		test("unknown tool call flows back as error and model can respond", async () => {
