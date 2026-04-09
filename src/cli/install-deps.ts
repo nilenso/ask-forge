@@ -38,8 +38,19 @@ function detectPackageManager(): PackageManager | null {
 	return null;
 }
 
+function buildInstallArgs(pm: PackageManager, pkg: string): string[] {
+	switch (pm) {
+		case "brew":
+			return ["install", pkg];
+		case "pacman":
+			return ["-S", "--noconfirm", pkg];
+		default:
+			return ["install", "-y", pkg];
+	}
+}
+
 function installPackage(pm: PackageManager, pkg: string): boolean {
-	const args = pm === "pacman" ? ["-S", "--noconfirm", pkg] : ["install", "-y", pkg];
+	const args = buildInstallArgs(pm, pkg);
 	const needsSudo = pm !== "brew";
 	const command = needsSudo ? "sudo" : pm;
 	const fullArgs = needsSudo ? [pm, ...args] : args;
