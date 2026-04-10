@@ -1,5 +1,5 @@
 import { getModel, type KnownProvider, type Message, stream, streamSimple } from "@mariozechner/pi-ai";
-import { type CompactionSettings, MODEL_NAME, MODEL_PROVIDER, type ThinkingConfig } from "./config";
+import type { CompactionSettings, ThinkingConfig } from "./config";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { buildDefaultSystemPrompt } from "./prompt";
@@ -10,6 +10,7 @@ import type {
 	AskStream,
 	ModelConfig,
 	NewAskOptions,
+	RepoConfig,
 	Step,
 	StreamEvent,
 	TokenUsage,
@@ -21,7 +22,6 @@ import type {
 export type {
 	AskStream,
 	CompactionSettings,
-	ConnectOptions,
 	Forge,
 	ForgeName,
 	KnownProvider,
@@ -30,6 +30,7 @@ export type {
 	ModelConfig,
 	NewAskOptions as AskOptions,
 	Repo,
+	RepoConfig,
 	SandboxClientConfig,
 	Session,
 	Step,
@@ -41,103 +42,92 @@ export type {
 };
 export { buildDefaultSystemPrompt, consoleLogger, nullLogger };
 
-/** Base configuration fields */
-interface ForgeConfigBase {
-	/** System prompt that defines the assistant's behavior (has a sensible default) */
-	systemPrompt?: string;
-	/** Maximum number of tool-use iterations before stopping (default: 20) */
-	maxIterations?: number;
-	/**
-	 * Optional sandbox configuration.
-	 * If provided, repository cloning and tool execution happen in an isolated sandbox.
-	 * If omitted, operations run locally.
-	 */
+// =============================================================================
+// ClientConfig — infrastructure only
+// =============================================================================
+
+/** Client configuration. Holds shared infrastructure, no behavioral config. */
+export interface ClientConfig {
+	/** Sandbox configuration. If omitted, runs locally. */
 	sandbox?: SandboxClientConfig;
-	/**
-	 * Optional context compaction settings.
-	 * When context grows too large, older messages are summarized to stay within limits.
-	 * If omitted, uses sensible defaults (enabled with 200K context window).
-	 */
-	compaction?: Partial<CompactionSettings>;
-	/**
-	 * Optional reasoning/thinking level.
-	 * Controls the model's thinking effort across providers (Anthropic, OpenAI, Google, etc.).
-	 * If omitted, thinking is off (default).
-	 */
-	thinking?: ThinkingConfig;
+	/** Logger. If omitted, uses consoleLogger. */
+	logger?: Logger;
 }
+
+// =============================================================================
+// SessionConfig — behavioral config for a single session
+// =============================================================================
+
+/** Configuration for a single session. Required at connect() time. Immutable after creation. */
+export interface SessionConfig {
+	/** Repository to connect to. Required. */
+	repo: RepoConfig;
+	/** Model to use. Required. */
+	model: ModelConfig;
+	/** System prompt. If omitted, a default code-analysis prompt is built. */
+	systemPrompt?: string;
+	/** Max tool-use iterations per turn. Required. */
+	maxIterations: number;
+	/** Thinking/reasoning configuration. If omitted, thinking is off. */
+	thinking?: ThinkingConfig;
+	/** Context compaction settings. If omitted, compaction is off. */
+	compaction?: CompactionSettings;
+}
+
+// =============================================================================
+// Client
+// =============================================================================
 
 /**
- * Configuration for the megasthenes library.
+ * Client for connecting to repositories and creating sessions.
  *
- * Provider and model must either both be specified or both omitted.
- * If omitted, defaults to anthropic with claude-sonnet-4.6.
+ * The client holds shared infrastructure (sandbox, logging). Behavioral
+ * configuration (model, thinking, iterations) is set per-session at
+ * connect() time.
+ *
+ * @example
+ * ```ts
+ * const client = new Client();
+ * const session = await client.connect({
+ *   repo: { url: "https://github.com/owner/repo" },
+ *   model: { provider: "anthropic", id: "claude-sonnet-4-6" },
+ *   maxIterations: 20,
+ * });
+ * ```
  */
-export type ForgeConfig = ForgeConfigBase &
-	(
-		| {
-				/** Model provider (e.g., "openrouter", "anthropic", "google") */
-				provider: KnownProvider;
-				/** Model name (must be compatible with the provider) */
-				model: string;
-		  }
-		| {
-				provider?: undefined;
-				model?: undefined;
-		  }
-	);
-
-/** Resolved configuration with all defaults applied */
-interface ResolvedConfig {
-	provider: KnownProvider;
-	model: string;
-	/** Custom system prompt override. When undefined, a default prompt with repo links is built at connect() time. */
-	systemPrompt: string | undefined;
-	maxIterations: number;
-	sandbox?: SandboxClientConfig;
-	compaction?: Partial<CompactionSettings>;
-	thinking?: ThinkingConfig;
-}
-
 export class Client {
-	/** The configuration used by this client (with defaults applied) */
-	readonly config: ResolvedConfig;
-
 	readonly #logger: Logger;
 	readonly #sandboxClient?: SandboxClient;
 
-	constructor(config: ForgeConfig = {}, logger: Logger = consoleLogger) {
-		this.config = {
-			provider: config.provider ?? MODEL_PROVIDER,
-			model: config.model ?? MODEL_NAME,
-			systemPrompt: config.systemPrompt,
-			maxIterations: config.maxIterations ?? 20,
-			sandbox: config.sandbox,
-			compaction: config.compaction,
-			thinking: config.thinking,
-		};
-		this.#logger = logger;
+	constructor(config: ClientConfig = {}) {
+		this.#logger = config.logger ?? consoleLogger;
 
-		if (this.config.sandbox) {
-			this.#sandboxClient = new SandboxClient(this.config.sandbox, this.#logger);
+		if (config.sandbox) {
+			this.#sandboxClient = new SandboxClient(config.sandbox, this.#logger);
 		}
 	}
 
-	async connect(
-		repoUrl: string,
-		options: ConnectOptions = {},
-		onProgress?: (message: string) => void,
-	): Promise<Session> {
-		const { config } = this;
+	/**
+	 * Connect to a repository and create a session.
+	 *
+	 * @param config - Session configuration (repo, model, iterations, etc.)
+	 * @param onProgress - Optional callback for clone progress messages
+	 * @returns A Session for asking questions about the repository
+	 */
+	async connect(config: SessionConfig, onProgress?: (message: string) => void): Promise<Session> {
+		const { repo: repoConfig, model: modelConfig } = config;
 
 		// getModel has strict generics tying provider to model IDs - cast for flexibility
-		const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(config.provider, config.model);
+		const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
+			modelConfig.provider,
+			modelConfig.id,
+		);
 
 		if (this.#sandboxClient) {
-			const cloneResult = await this.#sandboxClient.clone(repoUrl, options.commitish, onProgress);
+			const cloneResult = await this.#sandboxClient.clone(repoConfig.url, repoConfig.commitish, onProgress);
 
 			const repo: Repo = {
-				url: repoUrl,
+				url: repoConfig.url,
 				localPath: cloneResult.worktree,
 				forge: { name: "github", buildCloneUrl: (url) => url },
 				commitish: cloneResult.sha,
@@ -149,7 +139,7 @@ export class Client {
 				return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
 			};
 
-			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
 
 			return new Session(repo, {
 				model,
@@ -165,8 +155,14 @@ export class Client {
 			});
 		}
 
-		const repo = await connectRepo(repoUrl, options);
-		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoUrl, repo.commitish);
+		// Local mode
+		const connectOptions: ConnectOptions = {
+			token: repoConfig.token,
+			commitish: repoConfig.commitish,
+			forge: repoConfig.forge,
+		};
+		const repo = await connectRepo(repoConfig.url, connectOptions);
+		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
 
 		return new Session(repo, {
 			model,
@@ -182,6 +178,10 @@ export class Client {
 		});
 	}
 
+	/**
+	 * Reset the sandbox, deleting all cloned repositories.
+	 * Only available when sandbox mode is enabled.
+	 */
 	async resetSandbox(): Promise<void> {
 		if (!this.#sandboxClient) {
 			throw new Error("Sandbox mode is not enabled");

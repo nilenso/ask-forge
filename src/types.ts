@@ -246,7 +246,23 @@ export interface AskStream extends AsyncIterable<StreamEvent> {
 }
 
 // =============================================================================
-// AskOptions (new)
+// Config types
+// =============================================================================
+
+/** Repository connection configuration. */
+export interface RepoConfig {
+	/** Repository URL. Required. */
+	url: string;
+	/** Auth token for the repository host. */
+	token?: string;
+	/** Git commitish to checkout (branch, tag, SHA). If omitted, defaults to HEAD. */
+	commitish?: string;
+	/** Forge type override. Auto-detected from URL if not specified. */
+	forge?: "github" | "gitlab";
+}
+
+// =============================================================================
+// AskOptions
 // =============================================================================
 
 /** Per-turn overrides for ask(). */
