@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { type Api, type Context, type Message, type Model, stream, streamSimple, type Tool } from "@mariozechner/pi-ai";
+import {
+	type Api,
+	type Context,
+	getModel,
+	type Message,
+	type Model,
+	stream,
+	streamSimple,
+	type Tool,
+} from "@mariozechner/pi-ai";
 import { AskStreamImpl } from "./ask-stream";
 import { type CompactionSettings, maybeCompact } from "./compaction";
 import type { ThinkingConfig } from "./config";
@@ -272,6 +281,11 @@ export class Session {
 				this.#context.messages.push(newQuestionMessage);
 			}
 
+			// Resolve model for this turn (per-turn override or session default)
+			const turnModel = options?.model
+				? (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(options.model.provider, options.model.id)
+				: this.#config.model;
+
 			const maxIterations = options?.maxIterations ?? this.#config.maxIterations;
 			let iterations = 0;
 
@@ -288,7 +302,7 @@ export class Session {
 				const { streamFn, streamOptions } = this.#resolveStreamCall(options?.thinking);
 				const { events, response: getResponse } = processStreamToEvents(
 					streamFn,
-					this.#config.model,
+					turnModel,
 					this.#context,
 					streamOptions,
 				);
