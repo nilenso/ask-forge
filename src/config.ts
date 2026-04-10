@@ -36,19 +36,6 @@ export type ThinkingConfig =
 export type { ThinkingBudgets, ThinkingLevel };
 
 // =============================================================================
-// MODEL CONFIGURATION
-// =============================================================================
-
-/** Model provider (e.g., "openrouter", "anthropic") */
-export const MODEL_PROVIDER = "anthropic" as const;
-
-/** Model identifier */
-export const MODEL_NAME = "claude-sonnet-4-6" as const;
-
-/** Maximum tool-use iterations (how many tool calls the agent can make before giving a final answer) */
-export const MAX_TOOL_ITERATIONS = 20;
-
-// =============================================================================
 // CONTEXT COMPACTION CONFIGURATION
 // =============================================================================
 

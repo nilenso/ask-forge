@@ -6,7 +6,7 @@ import type { ThinkingConfig } from "./config";
 import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { processStreamToEvents, type StreamFn } from "./stream-processor";
-import type { AskStream, NewAskOptions, StreamEvent, TurnMetadata, TurnResult } from "./types";
+import type { AskStream, ModelConfig, NewAskOptions, RepoConfig, StreamEvent, TurnMetadata, TurnResult } from "./types";
 
 export type { Message };
 
@@ -71,11 +71,23 @@ export interface SessionConfig {
  * const result = await stream.result();
  * ```
  */
+/** Public session configuration snapshot, exposed via session.config. */
+export interface PublicSessionConfig {
+	readonly repo: RepoConfig;
+	readonly model: ModelConfig;
+	readonly systemPrompt: string;
+	readonly maxIterations: number;
+	readonly thinking?: ThinkingConfig;
+	readonly compaction?: Partial<CompactionSettings>;
+}
+
 export class Session {
 	/** Unique identifier for this session */
 	readonly id: string;
 	/** The repository this session is connected to */
 	readonly repo: Repo;
+	/** The session's immutable configuration */
+	readonly config: PublicSessionConfig;
 
 	#config: SessionConfig;
 	#logger: Logger;
@@ -92,6 +104,14 @@ export class Session {
 	constructor(repo: Repo, config: SessionConfig) {
 		this.id = randomUUID();
 		this.repo = repo;
+		this.config = {
+			repo: { url: repo.url },
+			model: { provider: String(config.model.provider), id: String(config.model.id) },
+			systemPrompt: config.systemPrompt,
+			maxIterations: config.maxIterations,
+			thinking: config.thinking,
+			compaction: config.compaction,
+		};
 		this.#config = config;
 		this.#logger = config.logger ?? consoleLogger;
 		this.#stream = (config.stream ?? stream) as StreamFn;
