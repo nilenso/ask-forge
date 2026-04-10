@@ -826,4 +826,278 @@ describe("Session", () => {
 			expect(order).toEqual(["stream-start-1", "stream-end-1", "stream-start-2", "stream-end-2"]);
 		});
 	});
+
+	describe("askStream", () => {
+		test(".result() returns a valid TurnResult with correct prompt and text", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			const result = await session.askStream("What is 2+2?").result();
+
+			expect(result.prompt).toBe("What is 2+2?");
+			expect(result.id).toBeTruthy();
+			expect(result.startedAt).toBeGreaterThan(0);
+			expect(result.endedAt).toBeGreaterThanOrEqual(result.startedAt);
+			expect(result.error).toBeNull();
+			// Should have at least a text step
+			const textSteps = result.steps.filter((s) => s.type === "text");
+			expect(textSteps.length).toBeGreaterThan(0);
+		});
+
+		test("iterating yields turn_start and turn_end events", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			const stream = session.askStream("Hello");
+
+			const events: { type: string }[] = [];
+			for await (const event of stream) {
+				events.push({ type: event.type });
+			}
+
+			expect(events[0]?.type).toBe("turn_start");
+			expect(events[events.length - 1]?.type).toBe("turn_end");
+		});
+
+		test("tool calls produce tool_result events", async () => {
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "test" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(
+				createMockRepo(),
+				createMockConfig({
+					stream: customStream,
+					executeTool: async () => "search results",
+				}),
+			);
+
+			const result = await session.askStream("Search").result();
+
+			const toolSteps = result.steps.filter((s) => s.type === "tool_call");
+			expect(toolSteps.length).toBeGreaterThan(0);
+			if (toolSteps[0]?.type === "tool_call") {
+				expect(toolSteps[0].name).toBe("rg");
+				expect(toolSteps[0].output).toBe("search results");
+			}
+		});
+
+		test("error conditions produce TurnResult with .error set", async () => {
+			const customStream = (() => ({
+				[Symbol.asyncIterator]: async function* () {
+					yield { type: "error", error: { errorMessage: "API error" } };
+				},
+				result: async () => createMockStreamResult().result(),
+			})) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ stream: customStream }));
+			const result = await session.askStream("Test").result();
+
+			expect(result.error).not.toBeNull();
+			expect(result.error?.message).toContain("API");
+		});
+
+		test("concurrent askStream calls are serialized", async () => {
+			const order: string[] = [];
+			let streamCalls = 0;
+
+			const customStream = (() => {
+				streamCalls++;
+				const n = streamCalls;
+				return {
+					[Symbol.asyncIterator]: async function* () {
+						order.push(`start-${n}`);
+						await Bun.sleep(30);
+						order.push(`end-${n}`);
+						yield { type: "text_delta", delta: `r${n}` };
+					},
+					result: async () => ({
+						role: "assistant" as const,
+						content: [{ type: "text" as const, text: `r${n}` }],
+						usage: { input: 10, output: 5, totalTokens: 15 },
+						timestamp: Date.now(),
+						api: "test",
+						provider: "test",
+						model: "test",
+						stopReason: "end_turn",
+					}),
+				};
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ stream: customStream }));
+
+			const s1 = session.askStream("q1");
+			const s2 = session.askStream("q2");
+			await Promise.all([s1.result(), s2.result()]);
+
+			expect(order).toEqual(["start-1", "end-1", "start-2", "end-2"]);
+		});
+
+		test("askStream throws synchronously after close", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.close();
+
+			expect(() => session.askStream("test")).toThrow(`Session ${session.id} is closed`);
+		});
+	});
+
+	describe("getTurns / getTurn", () => {
+		test("getTurns() returns empty array initially", () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			expect(session.getTurns()).toEqual([]);
+		});
+
+		test("after one askStream, getTurns() has one TurnResult", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(1);
+			expect(turns[0]?.prompt).toBe("Hello");
+			expect(turns[0]?.id).toBeTruthy();
+		});
+
+		test("after multiple asks, getTurns() accumulates in order", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("First").result();
+			await session.askStream("Second").result();
+			await session.askStream("Third").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(3);
+			expect(turns[0]?.prompt).toBe("First");
+			expect(turns[1]?.prompt).toBe("Second");
+			expect(turns[2]?.prompt).toBe("Third");
+		});
+
+		test("getTurn(id) finds the right turn", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			const turns = session.getTurns();
+			const id = turns[0]?.id ?? "";
+			expect(session.getTurn(id)?.prompt).toBe("Hello");
+		});
+
+		test("getTurn() returns null for unknown id", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Hello").result();
+
+			expect(session.getTurn("nonexistent")).toBeNull();
+		});
+
+		test("afterTurn branches from the specified turn", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("First").result();
+			await session.askStream("Second").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(2);
+
+			// Branch from first turn — context should be restored to after turn 1
+			const firstTurnId = turns[0]?.id ?? "";
+			await session.askStream("Branched", { afterTurn: firstTurnId }).result();
+
+			const allTurns = session.getTurns();
+			expect(allTurns).toHaveLength(3);
+			expect(allTurns[2]?.prompt).toBe("Branched");
+		});
+
+		test("afterTurn with unknown id throws synchronously", () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+
+			expect(() => session.askStream("test", { afterTurn: "nonexistent" })).toThrow("Turn not found: nonexistent");
+		});
+
+		test("all turns are preserved after branching (append-only)", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			await session.askStream("Turn 1").result();
+			await session.askStream("Turn 2").result();
+			await session.askStream("Turn 3").result();
+
+			const t1Id = session.getTurns()[0]?.id ?? "";
+			await session.askStream("Branch from 1", { afterTurn: t1Id }).result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(4);
+			expect(turns.map((t) => t.prompt)).toEqual(["Turn 1", "Turn 2", "Turn 3", "Branch from 1"]);
+		});
+
+		test("turns are recorded after iteration without .result()", async () => {
+			const session = new Session(createMockRepo(), createMockConfig());
+			const stream = session.askStream("Hello");
+			for await (const _event of stream) {
+				// consume all events
+			}
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(1);
+			expect(turns[0]?.prompt).toBe("Hello");
+		});
+	});
+
+	describe("per-turn overrides", () => {
+		test("maxIterations override limits iterations for this turn", async () => {
+			const customStream = (() =>
+				createToolCallStreamResult([
+					{ name: "rg", arguments: { pattern: "test" } },
+				])) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ maxIterations: 10, stream: customStream }));
+
+			const result = await session.askStream("Do something", { maxIterations: 1 }).result();
+
+			// Should hit max iterations with just 1 iteration
+			const errorSteps = result.steps.filter((s) => s.type === "error");
+			expect(errorSteps.length).toBeGreaterThan(0);
+		});
+
+		test("thinking override changes stream function used", async () => {
+			let streamSimpleCalled = false;
+			const customStreamSimple = ((_model: unknown, _context: unknown, _options?: unknown) => {
+				streamSimpleCalled = true;
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["streamSimple"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ streamSimple: customStreamSimple }));
+
+			// Session has no thinking config, but override with effort-based
+			await session.askStream("Test", { thinking: { effort: "high" } }).result();
+
+			expect(streamSimpleCalled).toBe(true);
+		});
+
+		test("signal abort cancels the turn before first iteration", async () => {
+			const controller = new AbortController();
+			controller.abort();
+
+			const session = new Session(createMockRepo(), createMockConfig());
+			const result = await session.askStream("Test", { signal: controller.signal }).result();
+
+			expect(result.error).not.toBeNull();
+			expect(result.error?.message).toBe("Aborted");
+		});
+
+		test("signal abort cancels the turn between iterations", async () => {
+			const controller = new AbortController();
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					// After first iteration, abort
+					controller.abort();
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "test" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(createMockRepo(), createMockConfig({ stream: customStream }));
+
+			const result = await session.askStream("Test", { signal: controller.signal }).result();
+
+			const errorSteps = result.steps.filter((s) => s.type === "error");
+			expect(errorSteps.length).toBeGreaterThan(0);
+		});
+	});
 });
