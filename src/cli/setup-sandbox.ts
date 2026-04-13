@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
-import { platform } from "node:os";
 import { resolve } from "node:path";
 import jsrConfig from "../../jsr.json" with { type: "json" };
+import { requireValue } from "./args.ts";
+import { checkSandboxPrerequisites } from "./prerequisites.ts";
 
 interface Options {
 	port: number;
@@ -22,24 +22,26 @@ function parseArgs(args: string[]): Options {
 
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
-			case "--port":
-				options.port = Number(args[++i]);
+			case "--port": {
+				const value = requireValue(args, ++i, "--port");
+				options.port = Number(value);
 				if (Number.isNaN(options.port)) {
 					console.error("Error: --port requires a numeric value.");
 					process.exit(1);
 				}
 				break;
+			}
 			case "--secret":
-				options.secret = args[++i];
+				options.secret = requireValue(args, ++i, "--secret");
 				break;
 			case "--generate-secret":
 				options.secret = randomBytes(16).toString("hex");
 				break;
 			case "--output":
-				options.output = args[++i];
+				options.output = requireValue(args, ++i, "--output");
 				break;
 			case "--image-tag":
-				options.imageTag = args[++i];
+				options.imageTag = requireValue(args, ++i, "--image-tag");
 				break;
 			case "--help":
 			case "-h":
@@ -63,48 +65,6 @@ Options:
 	}
 
 	return options;
-}
-
-function checkDocker(): boolean {
-	const result = spawnSync("docker", ["--version"], { stdio: "pipe" });
-	if (result.status !== 0) {
-		console.warn("Warning: docker not found on PATH. The sandbox requires Docker with gVisor runtime (runsc).");
-		return false;
-	}
-	return true;
-}
-
-function checkDockerCompose(): void {
-	const result = spawnSync("docker-compose", ["version"], { stdio: "pipe" });
-	if (result.status !== 0) {
-		console.warn(
-			"Warning: docker-compose not found. Install it to start the sandbox (e.g. brew install docker-compose).",
-		);
-	}
-}
-
-function checkGvisor(): void {
-	const result = spawnSync("docker", ["info", "--format", "{{json .Runtimes}}"], {
-		stdio: "pipe",
-	});
-	const output = result.stdout?.toString() ?? "";
-	if (!output.includes("runsc")) {
-		console.warn(`Warning: gVisor runtime (runsc) not detected in Docker.
-The sandbox requires gVisor for full isolation.
-Install: https://gvisor.dev/docs/user_guide/install/
-After installing, add to /etc/docker/daemon.json:
-  { "runtimes": { "runsc": { "path": "/usr/local/bin/runsc" } } }
-Then: sudo systemctl restart docker
-`);
-	}
-}
-
-function checkPlatform(): void {
-	if (platform() !== "linux") {
-		console.warn(
-			"Note: gVisor only runs on Linux. You will need Docker running in a Linux VM with gVisor installed as a runtime. See: https://gvisor.dev/docs/user_guide/install/",
-		);
-	}
 }
 
 function composeTemplate(options: Options): string {
@@ -145,17 +105,7 @@ services:
 export async function setupSandbox(args: string[]): Promise<void> {
 	const options = parseArgs(args);
 
-	const isLinux = platform() === "linux";
-	if (!isLinux) {
-		checkPlatform();
-	}
-	const hasDocker = checkDocker();
-	if (hasDocker) {
-		checkDockerCompose();
-		if (isLinux) {
-			checkGvisor();
-		}
-	}
+	checkSandboxPrerequisites();
 
 	const outputPath = resolve(options.output);
 	if (existsSync(outputPath)) {
@@ -163,6 +113,10 @@ export async function setupSandbox(args: string[]): Promise<void> {
 	}
 
 	writeFileSync(outputPath, composeTemplate(options));
+
+	if (options.secret) {
+		console.log(`\nSandbox secret: ${options.secret}\nSave this — it is not stored elsewhere.`);
+	}
 
 	const secretLine = options.secret ? `\n        secret: "${options.secret}",` : "";
 

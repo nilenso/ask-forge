@@ -100,6 +100,10 @@ Detects your package manager automatically.`);
 		process.exit(1);
 	}
 
+	if (pm !== "brew") {
+		console.log(`\nNote: ${pm} requires sudo. You may be prompted for your password.`);
+	}
+
 	console.log(`\nInstalling with ${pm}:\n`);
 
 	const failed: string[] = [];
