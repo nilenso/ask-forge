@@ -47,7 +47,7 @@ Generate a docker-compose file and start the sandbox:
 bunx megasthenes setup-sandbox
 
 # Start the sandbox
-docker compose -f docker-compose.sandbox.yml up -d
+docker-compose -f docker-compose.sandbox.yml up -d
 ```
 
 Prerequisites: Docker with [gVisor runtime](https://gvisor.dev/docs/user_guide/install/).

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
+import { platform } from "node:os";
 import { resolve } from "node:path";
 import jsrConfig from "../../jsr.json" with { type: "json" };
 
@@ -67,10 +68,17 @@ Options:
 function checkDocker(): boolean {
 	const result = spawnSync("docker", ["--version"], { stdio: "pipe" });
 	if (result.status !== 0) {
-		console.error("Error: docker not found on PATH. Install Docker to use the sandbox.");
+		console.warn("Warning: docker not found on PATH. The sandbox requires Docker with gVisor runtime (runsc).");
 		return false;
 	}
 	return true;
+}
+
+function checkDockerCompose(): void {
+	const result = spawnSync("docker-compose", ["version"], { stdio: "pipe" });
+	if (result.status !== 0) {
+		console.warn("Warning: docker-compose not found. Install it to start the sandbox (e.g. brew install docker-compose).");
+	}
 }
 
 function checkGvisor(): void {
@@ -86,6 +94,14 @@ After installing, add to /etc/docker/daemon.json:
   { "runtimes": { "runsc": { "path": "/usr/local/bin/runsc" } } }
 Then: sudo systemctl restart docker
 `);
+	}
+}
+
+function checkPlatform(): void {
+	if (platform() !== "linux") {
+		console.warn(
+			"Note: gVisor only runs on Linux. You will need Docker running in a Linux VM with gVisor installed as a runtime. See: https://gvisor.dev/docs/user_guide/install/",
+		);
 	}
 }
 
@@ -127,10 +143,17 @@ services:
 export async function setupSandbox(args: string[]): Promise<void> {
 	const options = parseArgs(args);
 
-	if (!checkDocker()) {
-		process.exit(1);
+	const isLinux = platform() === "linux";
+	if (!isLinux) {
+		checkPlatform();
 	}
-	checkGvisor();
+	const hasDocker = checkDocker();
+	if (hasDocker) {
+		checkDockerCompose();
+		if (isLinux) {
+			checkGvisor();
+		}
+	}
 
 	const outputPath = resolve(options.output);
 	if (existsSync(outputPath)) {
@@ -141,10 +164,10 @@ export async function setupSandbox(args: string[]): Promise<void> {
 
 	const secretLine = options.secret ? `\n        secret: "${options.secret}",` : "";
 
-	console.log(`Created ${options.output}
+	console.log(`\nCreated ${options.output}
 
 Start the sandbox:
-  docker compose -f ${options.output} up -d
+  docker-compose -f ${options.output} up -d
 
 Use in your code:
   const client = new Client({
