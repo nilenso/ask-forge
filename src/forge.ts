@@ -199,7 +199,7 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 			}
 			await mkdir(cachePath, { recursive: true });
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-			const proc = Bun.spawn(["git", "clone", "--bare", cloneUrl, cachePath], {
+			const proc = Bun.spawn(["git", "clone", "--bare", "--filter=blob:none", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
 			});
