@@ -257,7 +257,7 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
 			}
 		} else {
 			const { exitCode, stderr } = await runGitIsolated(
-				["clone", "--bare", url, bareDir],
+				["clone", "--bare", "--filter=blob:none", url, bareDir],
 				undefined,
 				baseDir,
 				CLONE_TIMEOUT_MS,
