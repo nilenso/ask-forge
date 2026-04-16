@@ -85,6 +85,8 @@ export interface SessionConfig {
 	thinking?: ThinkingConfig;
 	/** Prior turns to seed the session with. Restores LLM context from previous conversation. */
 	initialTurns?: TurnResult[];
+	/** Last compaction summary from a prior session. Required for compaction continuity when restoring with initialTurns. */
+	lastCompactionSummary?: string;
 }
 
 /**
@@ -163,6 +165,7 @@ export class Session {
 			this.#context.messages = messages;
 			this.#turns = [...config.initialTurns];
 			this.#turnMessages = turnSnapshots;
+			this.#compactionSummary = config.lastCompactionSummary;
 		}
 	}
 
@@ -255,6 +258,11 @@ export class Session {
 	/** Get all completed turns in chronological order. */
 	getTurns(): readonly TurnResult[] {
 		return [...this.#turns];
+	}
+
+	/** Get the current compaction summary. Persist this alongside getTurns() for session restoration. */
+	getCompactionSummary(): string | undefined {
+		return this.#compactionSummary;
 	}
 
 	/** Get a specific turn by ID. Returns null if not found. */

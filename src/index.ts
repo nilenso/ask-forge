@@ -78,6 +78,8 @@ export interface SessionConfig {
 	compaction?: CompactionSettings;
 	/** Prior turns to seed the session with. Restores LLM context from previous conversation. */
 	initialTurns?: TurnResult[];
+	/** Last compaction summary from a prior session. Required for compaction continuity when restoring with initialTurns. */
+	lastCompactionSummary?: string;
 }
 
 // =============================================================================
@@ -159,6 +161,7 @@ export class Client {
 				compaction: config.compaction,
 				thinking: config.thinking,
 				initialTurns: config.initialTurns,
+				lastCompactionSummary: config.lastCompactionSummary,
 			});
 		}
 
@@ -183,6 +186,7 @@ export class Client {
 			compaction: config.compaction,
 			thinking: config.thinking,
 			initialTurns: config.initialTurns,
+			lastCompactionSummary: config.lastCompactionSummary,
 		});
 	}
 

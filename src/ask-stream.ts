@@ -43,12 +43,14 @@ export class AskStreamImpl implements AskStream {
 		this.#consuming = true;
 		const gen = this.#ensureStarted();
 
-		for await (const event of gen) {
-			this.#builder.process(event);
-			yield event;
+		try {
+			for await (const event of gen) {
+				this.#builder.process(event);
+				yield event;
+			}
+		} finally {
+			this.#markDone();
 		}
-
-		this.#markDone();
 	}
 
 	result(): Promise<TurnResult> {

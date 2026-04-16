@@ -181,6 +181,35 @@ describe("AskStream", () => {
 		expect(result.steps[0]).toEqual({ type: "text", text: "A", role: "assistant" });
 	});
 
+	test("early break from iterator — .result() still resolves", async () => {
+		const events: StreamEvent[] = [
+			{ type: "turn_start", turnId: "t-1", prompt: "Q", timestamp: 1000 },
+			{ type: "text_delta", delta: "A" },
+			{ type: "text", text: "A" },
+			{
+				type: "turn_end",
+				turnId: "t-1",
+				metadata: {
+					iterations: 1,
+					latencyMs: 50,
+					model: { provider: "test", id: "m" },
+					repo: { url: "", commitish: "" },
+					config: { maxIterations: 5 },
+				},
+			},
+		];
+		const stream = new AskStreamImpl(makeProducer(events));
+
+		// Consume only the first event, then break
+		for await (const _event of stream) {
+			break;
+		}
+
+		// .result() must not hang — should resolve with partial result
+		const result = await stream.result();
+		expect(result).toBeDefined();
+	});
+
 	test("lazy start — producer not called until consumed", async () => {
 		let started = false;
 		const producer = async function* () {
