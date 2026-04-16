@@ -29,6 +29,7 @@ import {
 	startGenerationSpan,
 	startToolSpan,
 } from "./tracing";
+import { reconstructContext } from "./turns-to-messages";
 import type { AskOptions, AskStream, ModelConfig, RepoConfig, StreamEvent, TurnMetadata, TurnResult } from "./types";
 
 export type { Message };
@@ -72,6 +73,8 @@ export interface SessionConfig {
 	compaction?: Partial<CompactionSettings>;
 	/** Thinking configuration. If omitted, thinking is off. */
 	thinking?: ThinkingConfig;
+	/** Prior turns to seed the session with. Restores LLM context from previous conversation. */
+	initialTurns?: TurnResult[];
 }
 
 /**
@@ -144,6 +147,13 @@ export class Session {
 			messages: [],
 			tools: config.tools,
 		};
+
+		if (config.initialTurns?.length) {
+			const { messages, turnSnapshots } = reconstructContext(config.initialTurns);
+			this.#context.messages = messages;
+			this.#turns = [...config.initialTurns];
+			this.#turnMessages = turnSnapshots;
+		}
 	}
 
 	/** Resolves which stream function and options to use based on thinking config. */

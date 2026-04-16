@@ -488,4 +488,79 @@ describe("Session", () => {
 			expect(errorSteps.length).toBeGreaterThan(0);
 		});
 	});
+
+	describe("initialTurns", () => {
+		/** Helper to create a TurnResult for seeding. */
+		function makeSeedTurn(
+			id: string,
+			prompt: string,
+			steps: import("../src/types").Step[] = [{ type: "text", text: `Response to: ${prompt}`, role: "assistant" }],
+		): import("../src/types").TurnResult {
+			return {
+				id,
+				prompt,
+				steps,
+				usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+				metadata: {
+					iterations: 1,
+					latencyMs: 100,
+					model: { provider: "test", id: "test-model" },
+					repo: { url: "https://github.com/test/repo", commitish: "abc123" },
+					config: { maxIterations: 10 },
+				},
+				error: null,
+				startedAt: Date.now() - 10000,
+				endedAt: Date.now() - 9000,
+			};
+		}
+
+		test("getTurns() returns initial turns", () => {
+			const seedTurns = [makeSeedTurn("seed-1", "Hello"), makeSeedTurn("seed-2", "World")];
+			const session = new Session(createMockRepo(), createMockConfig({ initialTurns: seedTurns }));
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(2);
+			expect(turns[0]?.id).toBe("seed-1");
+			expect(turns[0]?.prompt).toBe("Hello");
+			expect(turns[1]?.id).toBe("seed-2");
+			expect(turns[1]?.prompt).toBe("World");
+		});
+
+		test("getTurn(id) finds initial turns by ID", () => {
+			const seedTurns = [makeSeedTurn("seed-1", "Hello")];
+			const session = new Session(createMockRepo(), createMockConfig({ initialTurns: seedTurns }));
+
+			expect(session.getTurn("seed-1")?.prompt).toBe("Hello");
+			expect(session.getTurn("nonexistent")).toBeNull();
+		});
+
+		test("ask() after initialTurns accumulates turns", async () => {
+			const seedTurns = [makeSeedTurn("seed-1", "Prior question")];
+			const session = new Session(createMockRepo(), createMockConfig({ initialTurns: seedTurns }));
+
+			await session.ask("New question").result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(2);
+			expect(turns[0]?.prompt).toBe("Prior question");
+			expect(turns[1]?.prompt).toBe("New question");
+		});
+
+		test("afterTurn branching works with initial turn IDs", async () => {
+			const seedTurns = [makeSeedTurn("seed-1", "First"), makeSeedTurn("seed-2", "Second")];
+			const session = new Session(createMockRepo(), createMockConfig({ initialTurns: seedTurns }));
+
+			// Branch from the first seed turn
+			await session.ask("Branched", { afterTurn: "seed-1" }).result();
+
+			const turns = session.getTurns();
+			expect(turns).toHaveLength(3);
+			expect(turns[2]?.prompt).toBe("Branched");
+		});
+
+		test("empty initialTurns is equivalent to no initialTurns", () => {
+			const session = new Session(createMockRepo(), createMockConfig({ initialTurns: [] }));
+			expect(session.getTurns()).toEqual([]);
+		});
+	});
 });

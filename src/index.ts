@@ -73,6 +73,8 @@ export interface SessionConfig {
 	thinking?: ThinkingConfig;
 	/** Context compaction settings. If omitted, compaction is off. */
 	compaction?: CompactionSettings;
+	/** Prior turns to seed the session with. Restores LLM context from previous conversation. */
+	initialTurns?: TurnResult[];
 }
 
 // =============================================================================
@@ -153,6 +155,7 @@ export class Client {
 				streamSimple,
 				compaction: config.compaction,
 				thinking: config.thinking,
+				initialTurns: config.initialTurns,
 			});
 		}
 
@@ -176,6 +179,7 @@ export class Client {
 			streamSimple,
 			compaction: config.compaction,
 			thinking: config.thinking,
+			initialTurns: config.initialTurns,
 		});
 	}
 
