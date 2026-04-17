@@ -13,7 +13,6 @@ import type { Repo } from "../src/forge";
 import { nullLogger } from "../src/logger";
 import { Session, type SessionConfig } from "../src/session";
 import { annotateRootAskSpan, startRootAskSpan } from "../src/tracing";
-import type { Step, TurnResult } from "../src/types";
 
 // =============================================================================
 // In-memory OTel span recorder
@@ -334,29 +333,6 @@ function createTracedSession(overrides?: Partial<SessionConfig>): Session {
 		localPath: repo.localPath,
 	});
 	return session;
-}
-
-function makeSeedTurn(
-	id: string,
-	prompt: string,
-	steps: Step[] = [{ type: "text", text: `Response to: ${prompt}`, role: "assistant" }],
-): TurnResult {
-	return {
-		id,
-		prompt,
-		steps,
-		usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-		metadata: {
-			iterations: 1,
-			latencyMs: 100,
-			model: { provider: "test", id: "test-model" },
-			repo: { url: "https://github.com/test/repo", commitish: "abc123" },
-			config: { maxIterations: 10 },
-		},
-		error: null,
-		startedAt: Date.now() - 10000,
-		endedAt: Date.now() - 9000,
-	};
 }
 
 function expectSpanErrorDetails(
@@ -701,7 +677,22 @@ describe("OTel tracing", () => {
 				createMockRepo(),
 				createMockConfig({
 					initialTurns: [
-						makeSeedTurn("seed-1", "Earlier question", [{ type: "text", text: "Earlier answer", role: "assistant" }]),
+						{
+							id: "seed-1",
+							prompt: "Earlier question",
+							steps: [{ type: "text", text: "Earlier answer", role: "assistant" }],
+							usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+							metadata: {
+								iterations: 1,
+								latencyMs: 100,
+								model: { provider: "test", id: "test-model" },
+								repo: { url: "https://github.com/test/repo", commitish: "abc123" },
+								config: { maxIterations: 10 },
+							},
+							error: null,
+							startedAt: Date.now() - 10000,
+							endedAt: Date.now() - 9000,
+						},
 					],
 				}),
 			);
