@@ -425,11 +425,7 @@ export class Session {
 				for await (const event of events) {
 					if (event.type === "error") {
 						hadError = true;
-						endGenerationSpanWithError(genSpan, {
-							errorType: event.errorType,
-							error: event.message,
-							fallbackMessage: event.message,
-						});
+						endGenerationSpanWithError(genSpan, event.errorType, event.message);
 						yield event;
 						endAskSpanWithError(askSpan, event.errorType, event.message);
 						askSpanEnded = true;
@@ -471,11 +467,7 @@ export class Session {
 
 					if (!responseText.trim()) {
 						const emptyResponseMessage = "Model returned an empty response";
-						endGenerationSpanWithError(genSpan, {
-							errorType: "empty_response",
-							error: emptyResponseMessage,
-							fallbackMessage: emptyResponseMessage,
-						});
+						endGenerationSpanWithError(genSpan, "empty_response", emptyResponseMessage);
 						yield {
 							type: "error",
 							errorType: "empty_response",

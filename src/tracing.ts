@@ -21,7 +21,14 @@
  *
  * @see https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
  */
-import { context, type Context as OtelContext, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
+import {
+	type Attributes,
+	context,
+	type Context as OtelContext,
+	type Span,
+	SpanStatusCode,
+	trace,
+} from "@opentelemetry/api";
 import type { ErrorType } from "./types";
 
 const tracer = trace.getTracer("megasthenes");
@@ -221,41 +228,6 @@ export function endRootAskSpanWithError(span: Span, errorType: ErrorType, error?
 	span.end();
 }
 
-/** Start the connect child span under the root ask span. */
-export function startConnectSpan(
-	parent: AskTraceRoot,
-	params: { repoUrl: string; requestedCommitish: string; mode: "local" | "sandbox" },
-): Span {
-	return tracer.startSpan(
-		"connect",
-		{
-			attributes: {
-				[ATTR.REPO_URL]: params.repoUrl,
-				[ATTR.REQUESTED_COMMITISH]: params.requestedCommitish,
-				[ATTR.CONNECT_MODE]: params.mode,
-			},
-		},
-		parent.rootContext,
-	);
-}
-
-/** End the connect span. */
-export function endConnectSpan(span: Span): void {
-	span.setStatus({ code: SpanStatusCode.OK });
-	span.end();
-}
-
-/** End the connect span with an error. */
-export function endConnectSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
-	annotateErrorSpan(span, {
-		error,
-		fallbackMessage: errorType,
-		errorType,
-		stage: "connect",
-	});
-	span.end();
-}
-
 /** Start the root span for an ask() call when no session root exists. */
 export function startAskSpan(params: {
 	question: string;
@@ -351,23 +323,29 @@ export function endAskSpanWithError(span: Span, errorType: ErrorType, error?: un
 	span.end();
 }
 
-/** Start a repo clone/fetch child span. */
-export function startCloneOrFetchSpan(parentSpan: Span): Span {
-	const ctx = trace.setSpan(context.active(), parentSpan);
-	return tracer.startSpan("repo.clone_or_fetch", {}, ctx);
+/**
+ * Start a child span under the connect/clone hierarchy.
+ *
+ * Accepts either a Span (for sub-operation children) or an AskTraceRoot
+ * (for the top-level connect span). Optional start-time attributes are
+ * set on creation.
+ */
+export function startChildSpan(parent: Span | AskTraceRoot, name: string, attributes?: Attributes): Span {
+	const ctx = "rootContext" in parent ? parent.rootContext : trace.setSpan(context.active(), parent);
+	return tracer.startSpan(name, attributes ? { attributes } : {}, ctx);
 }
 
-/** End the repo clone/fetch span. */
-export function endCloneOrFetchSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
+/** End a connect-hierarchy child span with success, optionally setting final attributes. */
+export function endChildSpan(span: Span | undefined, attrs?: Attributes): void {
 	if (!span) return;
 	if (attrs) span.setAttributes(attrs);
 	span.setStatus({ code: SpanStatusCode.OK });
 	span.end();
 }
 
-/** End the repo clone/fetch span with an error. */
-export function endCloneOrFetchSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
-	if (!span) return;
+/** End a connect-hierarchy child span with a terminal error. No-op if already ended. */
+export function endChildSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span?.isRecording()) return;
 	annotateErrorSpan(span, {
 		error,
 		fallbackMessage: errorType,
@@ -377,82 +355,27 @@ export function endCloneOrFetchSpanWithError(span: Span | undefined, errorType: 
 	span.end();
 }
 
-/** Start a repo resolve-commitish child span. */
-export function startResolveCommitishSpan(parentSpan: Span): Span {
-	const ctx = trace.setSpan(context.active(), parentSpan);
-	return tracer.startSpan("repo.resolve_commitish", {}, ctx);
-}
-
-/** End the repo resolve-commitish span. */
-export function endResolveCommitishSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
-	if (!span) return;
-	if (attrs) span.setAttributes(attrs);
-	span.setStatus({ code: SpanStatusCode.OK });
-	span.end();
-}
-
-/** End the repo resolve-commitish span with an error. */
-export function endResolveCommitishSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
-	if (!span) return;
-	annotateErrorSpan(span, {
-		error,
-		fallbackMessage: errorType,
-		errorType,
-		stage: "connect",
-	});
-	span.end();
-}
-
-/** Start a repo create-worktree child span. */
-export function startCreateWorktreeSpan(parentSpan: Span): Span {
-	const ctx = trace.setSpan(context.active(), parentSpan);
-	return tracer.startSpan("repo.create_worktree", {}, ctx);
-}
-
-/** End the repo create-worktree span. */
-export function endCreateWorktreeSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
-	if (!span) return;
-	if (attrs) span.setAttributes(attrs);
-	span.setStatus({ code: SpanStatusCode.OK });
-	span.end();
-}
-
-/** End the repo create-worktree span with an error. */
-export function endCreateWorktreeSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
-	if (!span) return;
-	annotateErrorSpan(span, {
-		error,
-		fallbackMessage: errorType,
-		errorType,
-		stage: "connect",
-	});
-	span.end();
-}
-
-/** Start a sandbox clone child span. */
-export function startSandboxCloneSpan(parentSpan: Span): Span {
-	const ctx = trace.setSpan(context.active(), parentSpan);
-	return tracer.startSpan("sandbox.clone", {}, ctx);
-}
-
-/** End the sandbox clone span. */
-export function endSandboxCloneSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
-	if (!span) return;
-	if (attrs) span.setAttributes(attrs);
-	span.setStatus({ code: SpanStatusCode.OK });
-	span.end();
-}
-
-/** End the sandbox clone span with an error. */
-export function endSandboxCloneSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
-	if (!span) return;
-	annotateErrorSpan(span, {
-		error,
-		fallbackMessage: errorType,
-		errorType,
-		stage: "connect",
-	});
-	span.end();
+/**
+ * Run `fn` under a connect-hierarchy child span.
+ *
+ * Starts the span (only if `parentSpan` is set), invokes `fn` with the span,
+ * and on thrown error ends the span with `errorType` before rethrowing. The
+ * caller is responsible for ending the span on success paths via `endChildSpan`
+ * — success-path attributes typically depend on inner control flow.
+ */
+export async function withChildSpan<T>(
+	parentSpan: Span | undefined,
+	name: string,
+	errorType: ErrorType,
+	fn: (span: Span | undefined) => Promise<T>,
+): Promise<T> {
+	const span = parentSpan ? startChildSpan(parentSpan, name) : undefined;
+	try {
+		return await fn(span);
+	} catch (error) {
+		endChildSpanWithError(span, errorType, error);
+		throw error;
+	}
 }
 
 /** Start a compaction child span. */
@@ -537,14 +460,11 @@ export function endGenerationSpan(
 }
 
 /** End a generation span with an error. */
-export function endGenerationSpanWithError(
-	span: Span,
-	params: { errorType: ErrorType; error?: unknown; fallbackMessage?: string },
-): void {
+export function endGenerationSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
 	annotateErrorSpan(span, {
-		error: params.error,
-		fallbackMessage: params.fallbackMessage ?? params.errorType,
-		errorType: params.errorType,
+		error,
+		fallbackMessage: errorType,
+		errorType,
 		stage: "generation",
 	});
 	span.end();

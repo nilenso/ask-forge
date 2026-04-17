@@ -3,17 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Span } from "@opentelemetry/api";
 import { MegasthenesError } from "./errors";
-import {
-	endCloneOrFetchSpan,
-	endCloneOrFetchSpanWithError,
-	endCreateWorktreeSpan,
-	endCreateWorktreeSpanWithError,
-	endResolveCommitishSpan,
-	endResolveCommitishSpanWithError,
-	startCloneOrFetchSpan,
-	startCreateWorktreeSpan,
-	startResolveCommitishSpan,
-} from "./tracing";
+import { endChildSpan, withChildSpan } from "./tracing";
 
 /**
  * Lock map to prevent race conditions when cloning the same repo in parallel.
@@ -197,8 +187,7 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 	const cachePath = join(basePath, "repo");
 	const commitish = options.commitish ?? "HEAD";
 
-	const cloneOrFetchSpan = parentSpan ? startCloneOrFetchSpan(parentSpan) : undefined;
-	try {
+	await withChildSpan(parentSpan, "repo.clone_or_fetch", "clone_failed", async (span) => {
 		await withCloneLock(cachePath, async () => {
 			// Check if bare repo exists (bare repos have HEAD directly in the directory)
 			const headFile = join(cachePath, "HEAD");
@@ -213,8 +202,8 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 						stderr: "inherit",
 					});
 					await proc.exited;
-					cloneOrFetchSpan?.addEvent("repo.fetch.started");
-					endCloneOrFetchSpan(cloneOrFetchSpan, {
+					span?.addEvent("repo.fetch.started");
+					endChildSpan(span, {
 						"megasthenes.repo.cache_path": cachePath,
 						"megasthenes.repo.cache_exists": true,
 						"megasthenes.repo.commitish_present_locally": false,
@@ -222,8 +211,8 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 					});
 					return;
 				}
-				cloneOrFetchSpan?.addEvent("repo.cache.hit");
-				endCloneOrFetchSpan(cloneOrFetchSpan, {
+				span?.addEvent("repo.cache.hit");
+				endChildSpan(span, {
 					"megasthenes.repo.cache_path": cachePath,
 					"megasthenes.repo.cache_exists": true,
 					"megasthenes.repo.commitish_present_locally": true,
@@ -237,7 +226,7 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 			}
 			await mkdir(cachePath, { recursive: true });
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-			cloneOrFetchSpan?.addEvent("repo.clone.started");
+			span?.addEvent("repo.clone.started");
 			const proc = Bun.spawn(["git", "clone", "--bare", "--filter=blob:none", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
@@ -248,54 +237,42 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 					isRetryable: true,
 				});
 			}
-			endCloneOrFetchSpan(cloneOrFetchSpan, {
+			endChildSpan(span, {
 				"megasthenes.repo.cache_path": cachePath,
 				"megasthenes.repo.cache_exists": false,
 				"megasthenes.git.operation": "clone",
 				"megasthenes.git.clone.filter": "blob:none",
 			});
 		});
-	} catch (error) {
-		if (cloneOrFetchSpan?.isRecording()) {
-			endCloneOrFetchSpanWithError(cloneOrFetchSpan, "clone_failed", error);
-		}
-		throw error;
-	}
+	});
 
-	const resolveCommitishSpan = parentSpan ? startResolveCommitishSpan(parentSpan) : undefined;
-	let sha: string;
-	try {
+	const sha = await withChildSpan(parentSpan, "repo.resolve_commitish", "invalid_commitish", async (span) => {
 		const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
 			cwd: cachePath,
 			stdout: "pipe",
 			stderr: "pipe",
 		});
-		sha = (await new Response(revParseProc.stdout).text()).trim();
+		const resolved = (await new Response(revParseProc.stdout).text()).trim();
 		const revParseExit = await revParseProc.exited;
 		if (revParseExit !== 0) {
 			throw new MegasthenesError("invalid_commitish", `Failed to resolve commitish: ${commitish}`, {
 				isRetryable: false,
 			});
 		}
-		endResolveCommitishSpan(resolveCommitishSpan, {
+		endChildSpan(span, {
 			"megasthenes.repo.requested_commitish": commitish,
-			"megasthenes.repo.commitish": sha,
+			"megasthenes.repo.commitish": resolved,
 		});
-	} catch (error) {
-		if (resolveCommitishSpan?.isRecording()) {
-			endResolveCommitishSpanWithError(resolveCommitishSpan, "invalid_commitish", error);
-		}
-		throw error;
-	}
+		return resolved;
+	});
 
 	const shortSha = sha.slice(0, 12);
 	const worktreePath = resolve(basePath, "trees", shortSha);
-	const createWorktreeSpan = parentSpan ? startCreateWorktreeSpan(parentSpan) : undefined;
-	try {
-		if (await exists(worktreePath)) {
-			endCreateWorktreeSpan(createWorktreeSpan, {
+	return withChildSpan(parentSpan, "repo.create_worktree", "clone_failed", async (span) => {
+		const makeRepo = (reused: boolean): Repo => {
+			endChildSpan(span, {
 				"megasthenes.repo.worktree_path": worktreePath,
-				"megasthenes.connect.worktree_reused": true,
+				"megasthenes.connect.worktree_reused": reused,
 			});
 			return {
 				url: repoUrl,
@@ -304,6 +281,10 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 				commitish: sha,
 				cachePath: resolve(cachePath),
 			};
+		};
+
+		if (await exists(worktreePath)) {
+			return makeRepo(true);
 		}
 
 		await mkdir(resolve(basePath, "trees"), { recursive: true });
@@ -317,38 +298,12 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 			// Another concurrent call may have created the worktree between our exists()
 			// check and the worktree add. If so, just return it.
 			if (await exists(worktreePath)) {
-				endCreateWorktreeSpan(createWorktreeSpan, {
-					"megasthenes.repo.worktree_path": worktreePath,
-					"megasthenes.connect.worktree_reused": true,
-				});
-				return {
-					url: repoUrl,
-					localPath: worktreePath,
-					forge,
-					commitish: sha,
-					cachePath: resolve(cachePath),
-				};
+				return makeRepo(true);
 			}
 			throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
 				isRetryable: true,
 			});
 		}
-		endCreateWorktreeSpan(createWorktreeSpan, {
-			"megasthenes.repo.worktree_path": worktreePath,
-			"megasthenes.connect.worktree_reused": false,
-		});
-
-		return {
-			url: repoUrl,
-			localPath: worktreePath,
-			forge,
-			commitish: sha,
-			cachePath: resolve(cachePath),
-		};
-	} catch (error) {
-		if (createWorktreeSpan?.isRecording()) {
-			endCreateWorktreeSpanWithError(createWorktreeSpan, "clone_failed", error);
-		}
-		throw error;
-	}
+		return makeRepo(false);
+	});
 }

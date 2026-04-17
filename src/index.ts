@@ -10,10 +10,10 @@ import { type PublicSessionConfig, Session } from "./session";
 import { executeTool, tools } from "./tools";
 import {
 	annotateRootAskSpan,
-	endConnectSpan,
-	endConnectSpanWithError,
+	endChildSpan,
+	endChildSpanWithError,
 	endRootAskSpanWithError,
-	startConnectSpan,
+	startChildSpan,
 	startRootAskSpan,
 } from "./tracing";
 import type {
@@ -148,10 +148,10 @@ export class Client {
 			requestedCommitish,
 			mode: connectMode,
 		});
-		const connectSpan = startConnectSpan(traceRoot, {
-			repoUrl: repoConfig.url,
-			requestedCommitish,
-			mode: connectMode,
+		const connectSpan = startChildSpan(traceRoot, "connect", {
+			"megasthenes.repo.url": repoConfig.url,
+			"megasthenes.repo.requested_commitish": requestedCommitish,
+			"megasthenes.connect.mode": connectMode,
 		});
 
 		try {
@@ -206,7 +206,7 @@ export class Client {
 					commitish: repo.commitish,
 					localPath: repo.localPath,
 				});
-				endConnectSpan(connectSpan);
+				endChildSpan(connectSpan);
 				return session;
 			}
 
@@ -241,11 +241,11 @@ export class Client {
 				commitish: repo.commitish,
 				localPath: repo.localPath,
 			});
-			endConnectSpan(connectSpan);
+			endChildSpan(connectSpan);
 			return session;
 		} catch (error) {
 			const errorType = classifyConnectError(error);
-			endConnectSpanWithError(connectSpan, errorType, error);
+			endChildSpanWithError(connectSpan, errorType, error);
 			endRootAskSpanWithError(traceRoot.rootSpan, errorType, error);
 			throw error;
 		}

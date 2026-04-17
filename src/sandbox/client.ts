@@ -8,7 +8,7 @@
 import type { Span } from "@opentelemetry/api";
 import { classifyThrownError } from "../error-classification";
 import { type Logger, nullLogger } from "../logger";
-import { endSandboxCloneSpan, endSandboxCloneSpanWithError, startSandboxCloneSpan } from "../tracing";
+import { endChildSpan, endChildSpanWithError, startChildSpan } from "../tracing";
 
 /** Configuration for connecting to a sandbox worker. */
 export interface SandboxClientConfig {
@@ -95,7 +95,7 @@ export class SandboxClient {
 		const commit = commitish ?? "HEAD";
 		this.logger.debug("sandbox:client", `POST /clone url=${url} commitish=${commit}`);
 		const t0 = Date.now();
-		const cloneSpan = parentSpan ? startSandboxCloneSpan(parentSpan) : undefined;
+		const cloneSpan = parentSpan ? startChildSpan(parentSpan, "sandbox.clone") : undefined;
 
 		try {
 			cloneSpan?.addEvent("sandbox.clone.started", { url, commitish: commit });
@@ -131,7 +131,7 @@ export class SandboxClient {
 				);
 				cloneSpan?.addEvent("sandbox.clone.cached_ready", { elapsed_ms: duration });
 				onProgress?.("Repository ready");
-				endSandboxCloneSpan(cloneSpan, {
+				endChildSpan(cloneSpan, {
 					"megasthenes.sandbox.slug": startBody.slug,
 					"megasthenes.repo.commitish": startBody.sha,
 					"megasthenes.repo.local_path": startBody.worktree,
@@ -200,7 +200,7 @@ export class SandboxClient {
 						);
 						cloneSpan?.addEvent("sandbox.clone.ready", { elapsed_ms: duration, slug: retryBody.slug });
 						onProgress?.("Repository ready");
-						endSandboxCloneSpan(cloneSpan, {
+						endChildSpan(cloneSpan, {
 							"megasthenes.sandbox.slug": retryBody.slug,
 							"megasthenes.repo.commitish": retryBody.sha,
 							"megasthenes.repo.local_path": retryBody.worktree,
@@ -230,7 +230,7 @@ export class SandboxClient {
 					);
 					cloneSpan?.addEvent("sandbox.clone.ready", { elapsed_ms: duration, slug });
 					onProgress?.("Repository ready");
-					endSandboxCloneSpan(cloneSpan, {
+					endChildSpan(cloneSpan, {
 						"megasthenes.sandbox.slug": statusBody.slug ?? slug,
 						"megasthenes.repo.commitish": statusBody.sha,
 						"megasthenes.repo.local_path": statusBody.worktree,
@@ -257,7 +257,7 @@ export class SandboxClient {
 		} catch (error) {
 			const classified = classifyThrownError(error);
 			const errorType = classified.errorType === "network_error" ? "network_error" : "clone_failed";
-			endSandboxCloneSpanWithError(cloneSpan, errorType, error);
+			endChildSpanWithError(cloneSpan, errorType, error);
 			throw error;
 		}
 	}
