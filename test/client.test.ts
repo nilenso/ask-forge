@@ -74,8 +74,19 @@ async function createTestRepo(baseDir: string): Promise<TestRepo> {
 	return { url: `file://${barePath}`, barePath, commits, tags };
 }
 
+const testModel = { provider: "anthropic", id: "claude-sonnet-4-6" };
+
 function createTestClient() {
-	return new Client({}, nullLogger);
+	return new Client({ logger: nullLogger });
+}
+
+function sessionConfig(repoUrl: string, overrides: Record<string, unknown> = {}) {
+	return {
+		repo: { url: repoUrl, forge: "github" as const },
+		model: testModel,
+		maxIterations: 20,
+		...overrides,
+	};
 }
 
 // =============================================================================
@@ -118,7 +129,7 @@ describe("Client", () => {
 	test("connects to repository and creates session", async () => {
 		const client = createTestClient();
 
-		const session = await client.connect(testRepo.url, { forge: "github" });
+		const session = await client.connect(sessionConfig(testRepo.url));
 
 		expect(session.id).toBeDefined();
 		expect(session.repo.url).toBe(testRepo.url);
@@ -134,10 +145,9 @@ describe("Client", () => {
 	test("connects to specific commitish", async () => {
 		const client = createTestClient();
 
-		const session = await client.connect(testRepo.url, {
-			forge: "github",
-			commitish: "v1.0.0",
-		});
+		const session = await client.connect(
+			sessionConfig(testRepo.url, { repo: { url: testRepo.url, forge: "github" as const, commitish: "v1.0.0" } }),
+		);
 
 		expect(session.repo.commitish).toBe(testRepo.commits[0] ?? "");
 
@@ -155,8 +165,12 @@ describe("Client", () => {
 
 		// Connect to same repo with different commits
 		const [session1, session2] = await Promise.all([
-			client.connect(testRepo.url, { forge: "github", commitish: "v1.0.0" }),
-			client.connect(testRepo.url, { forge: "github", commitish: "v2.0.0" }),
+			client.connect(
+				sessionConfig(testRepo.url, { repo: { url: testRepo.url, forge: "github" as const, commitish: "v1.0.0" } }),
+			),
+			client.connect(
+				sessionConfig(testRepo.url, { repo: { url: testRepo.url, forge: "github" as const, commitish: "v2.0.0" } }),
+			),
 		]);
 
 		// Different sessions

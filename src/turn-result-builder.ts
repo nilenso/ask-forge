@@ -8,7 +8,8 @@
  * agent did during the turn.
  */
 
-import type { Step, StreamEvent, TokenUsage, TurnMetadata, TurnResult } from "./types";
+import { errorSource } from "./error-classification";
+import type { ErrorType, Step, StreamEvent, TokenUsage, TurnMetadata, TurnResult } from "./types";
 
 /** Mutable state for a tool call being assembled from stream events. */
 interface PendingToolCall {
@@ -29,7 +30,7 @@ export class TurnResultBuilder {
 		cacheReadTokens: 0,
 		cacheWriteTokens: 0,
 	};
-	#error: { message: string; details?: unknown } | null = null;
+	#error: { code: ErrorType; message: string; isRetryable: boolean | null; details?: unknown } | null = null;
 	#startedAt = 0;
 	#endedAt = 0;
 	#metadata: TurnMetadata | null = null;
@@ -46,6 +47,15 @@ export class TurnResultBuilder {
 			case "turn_end":
 				this.#endedAt = Date.now();
 				this.#metadata = event.metadata;
+				if (event.usage) {
+					this.#usage = {
+						inputTokens: event.usage.inputTokens,
+						outputTokens: event.usage.outputTokens,
+						totalTokens: event.usage.totalTokens,
+						cacheReadTokens: event.usage.cacheReadTokens,
+						cacheWriteTokens: event.usage.cacheWriteTokens,
+					};
+				}
 				break;
 
 			// --- Content completion events become steps ---
@@ -60,6 +70,12 @@ export class TurnResultBuilder {
 
 			case "text":
 				this.#steps.push({ type: "text", text: event.text, role: "assistant" });
+				break;
+
+			// --- Iteration lifecycle ---
+
+			case "iteration_start":
+				this.#steps.push({ type: "iteration_start", index: event.index });
 				break;
 
 			// --- Streaming deltas are not steps (they're intermediate) ---
@@ -117,11 +133,18 @@ export class TurnResultBuilder {
 			// --- Errors ---
 
 			case "error":
-				this.#error = { message: event.message, details: event.details };
+				this.#error = {
+					code: event.code,
+					message: event.message,
+					isRetryable: event.isRetryable,
+					details: event.details,
+				};
 				this.#steps.push({
 					type: "error",
-					source: "provider",
+					code: event.code,
+					source: errorSource(event.code),
 					message: event.message,
+					isRetryable: event.isRetryable,
 					details: event.details,
 					recoverable: false,
 				});
@@ -135,9 +158,17 @@ export class TurnResultBuilder {
 	}
 
 	/** Set the turn error (called by the session layer). */
-	setError(message: string, details?: unknown): void {
-		this.#error = { message, details };
-		this.#steps.push({ type: "error", source: "library", message, details, recoverable: false });
+	setError(code: ErrorType, message: string, isRetryable: boolean | null, details?: unknown): void {
+		this.#error = { code, message, isRetryable, details };
+		this.#steps.push({
+			type: "error",
+			code,
+			source: errorSource(code),
+			message,
+			isRetryable,
+			details,
+			recoverable: false,
+		});
 	}
 
 	/** Accumulate token usage (called by the session layer after each iteration). */
