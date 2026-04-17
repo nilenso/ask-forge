@@ -41,6 +41,16 @@ bunx jsr add @nilenso/megasthenes
 npx jsr add @nilenso/megasthenes
 ```
 
+For Docker or manual setup, add to `package.json`:
+```json
+"@nilenso/megasthenes": "npm:@jsr/nilenso__megasthenes@0.0.19"
+```
+
+And create `.npmrc`:
+```
+@jsr:registry=https://npm.jsr.io
+```
+
 ## Usage
 
 ```typescript
