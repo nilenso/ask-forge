@@ -17,15 +17,19 @@ import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { processStreamToEvents, type StreamFn } from "./stream-processor";
 import {
+	type AskTraceRoot,
 	endAskSpan,
 	endAskSpanWithError,
 	endCompactionSpan,
 	endCompactionSpanWithError,
 	endGenerationSpan,
 	endGenerationSpanWithError,
+	endRootAskSpan,
+	endRootAskSpanWithError,
 	endToolSpan,
 	endToolSpanWithError,
 	startAskSpan,
+	startAskTurnSpan,
 	startCompactionSpan,
 	startGenerationSpan,
 	startToolSpan,
@@ -138,8 +142,9 @@ export class Session {
 	#turns: TurnResult[] = [];
 	/** Messages snapshot at the end of each turn, keyed by turn ID. Used for afterTurn branching. */
 	#turnMessages = new Map<string, Message[]>();
+	#traceRoot?: AskTraceRoot;
 
-	constructor(repo: Repo, config: SessionConfig) {
+	constructor(repo: Repo, config: SessionConfig, traceRoot?: AskTraceRoot) {
 		this.id = randomUUID();
 		this.repo = repo;
 		this.config = {
@@ -151,6 +156,7 @@ export class Session {
 			compaction: config.compaction,
 		};
 		this.#config = config;
+		this.#traceRoot = traceRoot;
 		this.#logger = config.logger ?? consoleLogger;
 		this.#stream = (config.stream ?? stream) as StreamFn;
 		this.#streamSimple = (config.streamSimple ?? streamSimple) as StreamFn;
@@ -248,10 +254,20 @@ export class Session {
 		if (this.#closed) return;
 		this.#closed = true;
 
-		// Clean up worktree, log if it fails
-		const success = await cleanupWorktree(this.repo);
-		if (!success) {
-			this.#logger.error("Failed to cleanup worktree", { path: this.repo.localPath });
+		try {
+			// Clean up worktree, log if it fails
+			const success = await cleanupWorktree(this.repo);
+			if (!success) {
+				this.#logger.error("Failed to cleanup worktree", { path: this.repo.localPath });
+			}
+			if (this.#traceRoot?.rootSpan.isRecording()) {
+				endRootAskSpan(this.#traceRoot.rootSpan);
+			}
+		} catch (error) {
+			if (this.#traceRoot?.rootSpan.isRecording()) {
+				endRootAskSpanWithError(this.#traceRoot.rootSpan, "internal_error", error);
+			}
+			throw error;
 		}
 	}
 
@@ -313,15 +329,27 @@ export class Session {
 			const startedAt = Date.now();
 			yield { type: "turn_start", turnId, prompt, timestamp: startedAt };
 
-			// Start ask span after turn_start yield
-			askSpan = startAskSpan({
-				question: prompt,
-				sessionId: this.id,
-				repoUrl: this.repo.url,
-				commitish: this.repo.commitish,
-				model: modelId,
-				systemPrompt: this.#context.systemPrompt,
-			});
+			// Start a per-turn span after turn_start yield. Sessions created through
+			// Client.connect() attach this to the long-lived root ask span so connect
+			// and later turns share one end-to-end trace. Direct Session() tests keep
+			// the older per-turn root span behavior as a fallback.
+			askSpan = this.#traceRoot
+				? startAskTurnSpan(this.#traceRoot, {
+						question: prompt,
+						sessionId: this.id,
+						repoUrl: this.repo.url,
+						commitish: this.repo.commitish,
+						model: modelId,
+						systemPrompt: this.#context.systemPrompt,
+					})
+				: startAskSpan({
+						question: prompt,
+						sessionId: this.id,
+						repoUrl: this.repo.url,
+						commitish: this.repo.commitish,
+						model: modelId,
+						systemPrompt: this.#context.systemPrompt,
+					});
 
 			// Compaction (uses the turn model, not the session default)
 			const newQuestionMessage: Message = { role: "user", content: prompt, timestamp: Date.now() };

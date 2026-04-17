@@ -1,11 +1,20 @@
 import { getModel, type KnownProvider, type Message, stream, streamSimple } from "@mariozechner/pi-ai";
 import type { CompactionSettings, ThinkingConfig } from "./config";
+import { classifyThrownError } from "./error-classification";
 import { MegasthenesError } from "./errors";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { buildDefaultSystemPrompt } from "./prompt";
 import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
 import { type PublicSessionConfig, Session } from "./session";
+import {
+	annotateRootAskSpan,
+	endConnectSpan,
+	endConnectSpanWithError,
+	endRootAskSpanWithError,
+	startConnectSpan,
+	startRootAskSpan,
+} from "./tracing";
 import { executeTool, tools } from "./tools";
 import type {
 	AskOptions,
@@ -103,6 +112,14 @@ export interface SessionConfig {
  * });
  * ```
  */
+function classifyConnectError(error: unknown): ErrorType {
+	if (error instanceof MegasthenesError) {
+		return error.errorType;
+	}
+	const classified = classifyThrownError(error);
+	return classified.errorType === "network_error" ? "network_error" : "internal_error";
+}
+
 export class Client {
 	readonly #logger: Logger;
 	readonly #sandboxClient?: SandboxClient;
@@ -124,70 +141,114 @@ export class Client {
 	 */
 	async connect(config: SessionConfig, onProgress?: (message: string) => void): Promise<Session> {
 		const { repo: repoConfig, model: modelConfig } = config;
-
-		// getModel has strict generics tying provider to model IDs - cast for flexibility
-		const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
-			modelConfig.provider,
-			modelConfig.id,
-		);
-
-		if (this.#sandboxClient) {
-			const cloneResult = await this.#sandboxClient.clone(repoConfig.url, repoConfig.commitish, onProgress);
-
-			const repo: Repo = {
-				url: repoConfig.url,
-				localPath: cloneResult.worktree,
-				forge: { name: "github", buildCloneUrl: (url) => url },
-				commitish: cloneResult.sha,
-				cachePath: "",
-			};
-
-			const sandboxClient = this.#sandboxClient;
-			const sandboxExecuteTool = async (name: string, args: Record<string, unknown>, _cwd: string) => {
-				return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
-			};
-
-			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
-
-			return new Session(repo, {
-				model,
-				systemPrompt,
-				tools,
-				maxIterations: config.maxIterations,
-				executeTool: sandboxExecuteTool,
-				logger: this.#logger,
-				stream,
-				streamSimple,
-				compaction: config.compaction,
-				thinking: config.thinking,
-				initialTurns: config.initialTurns,
-				lastCompactionSummary: config.lastCompactionSummary,
-			});
-		}
-
-		// Local mode
-		const connectOptions: ConnectOptions = {
-			token: repoConfig.token,
-			commitish: repoConfig.commitish,
-			forge: repoConfig.forge,
-		};
-		const repo = await connectRepo(repoConfig.url, connectOptions);
-		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
-
-		return new Session(repo, {
-			model,
-			systemPrompt,
-			tools,
-			maxIterations: config.maxIterations,
-			executeTool,
-			logger: this.#logger,
-			stream,
-			streamSimple,
-			compaction: config.compaction,
-			thinking: config.thinking,
-			initialTurns: config.initialTurns,
-			lastCompactionSummary: config.lastCompactionSummary,
+		const requestedCommitish = repoConfig.commitish ?? "HEAD";
+		const connectMode = this.#sandboxClient ? "sandbox" : "local";
+		const traceRoot = startRootAskSpan({
+			repoUrl: repoConfig.url,
+			requestedCommitish,
+			mode: connectMode,
 		});
+		const connectSpan = startConnectSpan(traceRoot, {
+			repoUrl: repoConfig.url,
+			requestedCommitish,
+			mode: connectMode,
+		});
+
+		try {
+			// getModel has strict generics tying provider to model IDs - cast for flexibility
+			const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
+				modelConfig.provider,
+				modelConfig.id,
+			);
+
+			if (this.#sandboxClient) {
+				const cloneResult = await this.#sandboxClient.clone(
+					repoConfig.url,
+					repoConfig.commitish,
+					onProgress,
+					connectSpan,
+				);
+
+				const repo: Repo = {
+					url: repoConfig.url,
+					localPath: cloneResult.worktree,
+					forge: { name: "github", buildCloneUrl: (url) => url },
+					commitish: cloneResult.sha,
+					cachePath: "",
+				};
+
+				const sandboxClient = this.#sandboxClient;
+				const sandboxExecuteTool = async (name: string, args: Record<string, unknown>, _cwd: string) => {
+					return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
+				};
+
+				const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
+				const session = new Session(
+					repo,
+					{
+						model,
+						systemPrompt,
+						tools,
+						maxIterations: config.maxIterations,
+						executeTool: sandboxExecuteTool,
+						logger: this.#logger,
+						stream,
+						streamSimple,
+						compaction: config.compaction,
+						thinking: config.thinking,
+						initialTurns: config.initialTurns,
+						lastCompactionSummary: config.lastCompactionSummary,
+					},
+					traceRoot,
+				);
+				annotateRootAskSpan(traceRoot.rootSpan, {
+					sessionId: session.id,
+					commitish: repo.commitish,
+					localPath: repo.localPath,
+				});
+				endConnectSpan(connectSpan);
+				return session;
+			}
+
+			// Local mode
+			const connectOptions: ConnectOptions = {
+				token: repoConfig.token,
+				commitish: repoConfig.commitish,
+				forge: repoConfig.forge,
+			};
+			const repo = await connectRepo(repoConfig.url, connectOptions, connectSpan);
+			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
+			const session = new Session(
+				repo,
+				{
+					model,
+					systemPrompt,
+					tools,
+					maxIterations: config.maxIterations,
+					executeTool,
+					logger: this.#logger,
+					stream,
+					streamSimple,
+					compaction: config.compaction,
+					thinking: config.thinking,
+					initialTurns: config.initialTurns,
+					lastCompactionSummary: config.lastCompactionSummary,
+				},
+				traceRoot,
+			);
+			annotateRootAskSpan(traceRoot.rootSpan, {
+				sessionId: session.id,
+				commitish: repo.commitish,
+				localPath: repo.localPath,
+			});
+			endConnectSpan(connectSpan);
+			return session;
+		} catch (error) {
+			const errorType = classifyConnectError(error);
+			endConnectSpanWithError(connectSpan, errorType, error);
+			endRootAskSpanWithError(traceRoot.rootSpan, errorType, error);
+			throw error;
+		}
 	}
 
 	/**

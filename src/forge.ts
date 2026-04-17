@@ -1,7 +1,19 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import type { Span } from "@opentelemetry/api";
 import { MegasthenesError } from "./errors";
+import {
+	endCloneOrFetchSpan,
+	endCloneOrFetchSpanWithError,
+	endCreateWorktreeSpan,
+	endCreateWorktreeSpanWithError,
+	endResolveCommitishSpan,
+	endResolveCommitishSpanWithError,
+	startCloneOrFetchSpan,
+	startCreateWorktreeSpan,
+	startResolveCommitishSpan,
+} from "./tracing";
 
 /**
  * Lock map to prevent race conditions when cloning the same repo in parallel.
@@ -167,7 +179,7 @@ export async function cleanupWorktree(repo: Repo): Promise<boolean> {
  * @returns A Repo object with paths and metadata
  * @throws Error if the forge cannot be inferred or git operations fail
  */
-export async function connectRepo(repoUrl: string, options: ConnectOptions = {}): Promise<Repo> {
+export async function connectRepo(repoUrl: string, options: ConnectOptions = {}, parentSpan?: Span): Promise<Repo> {
 	const forgeName = options.forge ?? inferForge(repoUrl);
 	if (!forgeName) {
 		throw new MegasthenesError(
@@ -185,27 +197,47 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 	const cachePath = join(basePath, "repo");
 	const commitish = options.commitish ?? "HEAD";
 
-	await withCloneLock(cachePath, async () => {
-		// Check if bare repo exists (bare repos have HEAD directly in the directory)
-		const headFile = join(cachePath, "HEAD");
-		if (await exists(headFile)) {
-			// Valid bare repo exists - fetch if needed
-			const hasCommitish = await commitishExistsLocally(cachePath, commitish);
-			if (!hasCommitish) {
-				const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
-					cwd: cachePath,
-					stdout: "inherit",
-					stderr: "inherit",
+	const cloneOrFetchSpan = parentSpan ? startCloneOrFetchSpan(parentSpan) : undefined;
+	try {
+		await withCloneLock(cachePath, async () => {
+			// Check if bare repo exists (bare repos have HEAD directly in the directory)
+			const headFile = join(cachePath, "HEAD");
+			const cacheExists = await exists(headFile);
+			if (cacheExists) {
+				// Valid bare repo exists - fetch if needed
+				const hasCommitish = await commitishExistsLocally(cachePath, commitish);
+				if (!hasCommitish) {
+					const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
+						cwd: cachePath,
+						stdout: "inherit",
+						stderr: "inherit",
+					});
+					await proc.exited;
+					cloneOrFetchSpan?.addEvent("repo.fetch.started");
+					endCloneOrFetchSpan(cloneOrFetchSpan, {
+						"megasthenes.repo.cache_path": cachePath,
+						"megasthenes.repo.cache_exists": true,
+						"megasthenes.repo.commitish_present_locally": false,
+						"megasthenes.git.operation": "fetch",
+					});
+					return;
+				}
+				cloneOrFetchSpan?.addEvent("repo.cache.hit");
+				endCloneOrFetchSpan(cloneOrFetchSpan, {
+					"megasthenes.repo.cache_path": cachePath,
+					"megasthenes.repo.cache_exists": true,
+					"megasthenes.repo.commitish_present_locally": true,
+					"megasthenes.git.operation": "reuse_cache",
 				});
-				await proc.exited;
+				return;
 			}
-		} else {
 			// Clean up incomplete clone if directory exists but HEAD doesn't
 			if (await exists(cachePath)) {
 				await rm(cachePath, { recursive: true, force: true });
 			}
 			await mkdir(cachePath, { recursive: true });
 			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
+			cloneOrFetchSpan?.addEvent("repo.clone.started");
 			const proc = Bun.spawn(["git", "clone", "--bare", "--filter=blob:none", cloneUrl, cachePath], {
 				stdout: "inherit",
 				stderr: "inherit",
@@ -216,46 +248,55 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 					isRetryable: true,
 				});
 			}
-		}
-	});
-
-	const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
-		cwd: cachePath,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const sha = (await new Response(revParseProc.stdout).text()).trim();
-	const revParseExit = await revParseProc.exited;
-	if (revParseExit !== 0) {
-		throw new MegasthenesError("invalid_commitish", `Failed to resolve commitish: ${commitish}`, {
-			isRetryable: false,
+			endCloneOrFetchSpan(cloneOrFetchSpan, {
+				"megasthenes.repo.cache_path": cachePath,
+				"megasthenes.repo.cache_exists": false,
+				"megasthenes.git.operation": "clone",
+				"megasthenes.git.clone.filter": "blob:none",
+			});
 		});
+	} catch (error) {
+		if (cloneOrFetchSpan?.isRecording()) {
+			endCloneOrFetchSpanWithError(cloneOrFetchSpan, "clone_failed", error);
+		}
+		throw error;
+	}
+
+	const resolveCommitishSpan = parentSpan ? startResolveCommitishSpan(parentSpan) : undefined;
+	let sha: string;
+	try {
+		const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
+			cwd: cachePath,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		sha = (await new Response(revParseProc.stdout).text()).trim();
+		const revParseExit = await revParseProc.exited;
+		if (revParseExit !== 0) {
+			throw new MegasthenesError("invalid_commitish", `Failed to resolve commitish: ${commitish}`, {
+				isRetryable: false,
+			});
+		}
+		endResolveCommitishSpan(resolveCommitishSpan, {
+			"megasthenes.repo.requested_commitish": commitish,
+			"megasthenes.repo.commitish": sha,
+		});
+	} catch (error) {
+		if (resolveCommitishSpan?.isRecording()) {
+			endResolveCommitishSpanWithError(resolveCommitishSpan, "invalid_commitish", error);
+		}
+		throw error;
 	}
 
 	const shortSha = sha.slice(0, 12);
 	const worktreePath = resolve(basePath, "trees", shortSha);
-
-	if (await exists(worktreePath)) {
-		return {
-			url: repoUrl,
-			localPath: worktreePath,
-			forge,
-			commitish: sha,
-			cachePath: resolve(cachePath),
-		};
-	}
-
-	await mkdir(resolve(basePath, "trees"), { recursive: true });
-	const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
-		cwd: cachePath,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const worktreeExit = await worktreeProc.exited;
-	if (worktreeExit !== 0) {
-		// Another concurrent call may have created the worktree between our exists()
-		// check and the worktree add. If so, just return it.
+	const createWorktreeSpan = parentSpan ? startCreateWorktreeSpan(parentSpan) : undefined;
+	try {
 		if (await exists(worktreePath)) {
+			endCreateWorktreeSpan(createWorktreeSpan, {
+				"megasthenes.repo.worktree_path": worktreePath,
+				"megasthenes.connect.worktree_reused": true,
+			});
 			return {
 				url: repoUrl,
 				localPath: worktreePath,
@@ -264,16 +305,50 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {})
 				cachePath: resolve(cachePath),
 			};
 		}
-		throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
-			isRetryable: true,
-		});
-	}
 
-	return {
-		url: repoUrl,
-		localPath: worktreePath,
-		forge,
-		commitish: sha,
-		cachePath: resolve(cachePath),
-	};
+		await mkdir(resolve(basePath, "trees"), { recursive: true });
+		const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
+			cwd: cachePath,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const worktreeExit = await worktreeProc.exited;
+		if (worktreeExit !== 0) {
+			// Another concurrent call may have created the worktree between our exists()
+			// check and the worktree add. If so, just return it.
+			if (await exists(worktreePath)) {
+				endCreateWorktreeSpan(createWorktreeSpan, {
+					"megasthenes.repo.worktree_path": worktreePath,
+					"megasthenes.connect.worktree_reused": true,
+				});
+				return {
+					url: repoUrl,
+					localPath: worktreePath,
+					forge,
+					commitish: sha,
+					cachePath: resolve(cachePath),
+				};
+			}
+			throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
+				isRetryable: true,
+			});
+		}
+		endCreateWorktreeSpan(createWorktreeSpan, {
+			"megasthenes.repo.worktree_path": worktreePath,
+			"megasthenes.connect.worktree_reused": false,
+		});
+
+		return {
+			url: repoUrl,
+			localPath: worktreePath,
+			forge,
+			commitish: sha,
+			cachePath: resolve(cachePath),
+		};
+	} catch (error) {
+		if (createWorktreeSpan?.isRecording()) {
+			endCreateWorktreeSpanWithError(createWorktreeSpan, "clone_failed", error);
+		}
+		throw error;
+	}
 }

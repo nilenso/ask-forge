@@ -191,8 +191,13 @@ To send traces to any OTel-compatible backend (Jaeger, Honeycomb, Langfuse, etc.
 2. Create and start a `NodeSDK` instance **before** creating any `Client`
 3. All `session.ask()` calls will automatically emit spans to your backend
 
-Tracing currently covers the `session.ask()` execution path. The spans emitted today are:
+Tracing currently covers the connected session lifecycle. The main spans emitted today are:
 - `ask`
+- `connect`
+- `repo.clone_or_fetch`
+- `repo.resolve_commitish`
+- `repo.create_worktree`
+- `ask.turn`
 - `compaction`
 - `gen_ai.chat`
 - `gen_ai.execute_tool`

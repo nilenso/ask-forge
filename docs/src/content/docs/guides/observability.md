@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-megasthenes instruments `session.ask()` with [OpenTelemetry](https://opentelemetry.io/) spans using the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/), plus a small set of `megasthenes.*` attributes for repository- and agent-specific details.
+megasthenes instruments session setup and turns with [OpenTelemetry](https://opentelemetry.io/) spans using the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/), plus a small set of `megasthenes.*` attributes for repository- and agent-specific details.
 
 The library depends only on `@opentelemetry/api`. If your application does not install and register an OTel SDK, tracing is a no-op.
 
@@ -23,23 +23,32 @@ provider.addSpanProcessor(new SimpleSpanProcessor(new OTLPTraceExporter()));
 provider.register();
 ```
 
-Once registered, every `session.ask()` call automatically emits spans.
+Once registered, `client.connect(...)` and later `session.ask()` calls automatically emit spans.
 
 ## Trace structure
 
-A traced turn currently looks like this:
+A traced session currently looks like this:
 
 ```text
 ask
-├── compaction
-├── gen_ai.chat
-│   ├── gen_ai.execute_tool
-│   └── gen_ai.execute_tool
-├── gen_ai.chat
-└── gen_ai.chat
+├── connect
+│   ├── repo.clone_or_fetch
+│   ├── repo.resolve_commitish
+│   └── repo.create_worktree
+├── ask.turn
+│   ├── compaction
+│   ├── gen_ai.chat
+│   │   └── gen_ai.execute_tool
+│   └── gen_ai.chat
+└── ask.turn
 ```
 
-- `ask`: root span for one `session.ask()` call
+- `ask`: long-lived root span for one connected session
+- `connect`: repository setup for that session
+- `repo.clone_or_fetch`: local bare clone / fetch / cache reuse
+- `repo.resolve_commitish`: commit resolution via `git rev-parse`
+- `repo.create_worktree`: worktree creation or reuse
+- `ask.turn`: one span per `session.ask()` call
 - `compaction`: emitted once per turn, even if no compaction happens
 - `gen_ai.chat`: one span per LLM iteration
 - `gen_ai.execute_tool`: one span per tool execution
@@ -48,7 +57,41 @@ ask
 
 ### `ask`
 
-Root span for a single `session.ask()` call.
+Long-lived root span for a connected session.
+
+**Always includes**
+- `megasthenes.repo.url`
+- `megasthenes.repo.requested_commitish`
+- `megasthenes.connect.mode`
+- `megasthenes.session.id` once the session has been created
+- `megasthenes.repo.commitish` once the repo has been resolved
+
+Use this span for end-to-end session duration and to correlate setup and later turns in one trace.
+
+### `connect`
+
+Child span for repository setup during `client.connect(...)`.
+
+This span is where local clone/fetch/worktree work or sandbox clone work is recorded.
+
+### `repo.clone_or_fetch`
+
+Local child span covering:
+- cache hit / cache reuse
+- `git fetch` when the requested commitish is missing locally
+- fresh `git clone --bare --filter=blob:none`
+
+### `repo.resolve_commitish`
+
+Local child span covering `git rev-parse` for the requested commitish.
+
+### `repo.create_worktree`
+
+Local child span covering worktree reuse or `git worktree add`.
+
+### `ask.turn`
+
+Child span for a single `session.ask()` call.
 
 **Always includes**
 - `gen_ai.operation.name = "chat"`
@@ -128,6 +171,7 @@ When a span fails, megasthenes records both standard span status and structured 
 
 **Stages**
 - `ask`
+- `connect`
 - `generation`
 - `compaction`
 - `tool_execution`
@@ -174,36 +218,41 @@ When a span fails, megasthenes records both standard span status and structured 
 
 ## Example failing trace
 
-A provider failure typically looks like:
+A provider failure in one turn typically looks like:
 
 ```text
-ask [ERROR]
-├── compaction [OK]
-└── gen_ai.chat [ERROR]
+ask [OK]
+├── connect [OK]
+└── ask.turn [ERROR]
+    ├── compaction [OK]
+    └── gen_ai.chat [ERROR]
 ```
 
 A tool failure that the model recovers from may look like:
 
 ```text
 ask [OK]
-├── compaction [OK]
-├── gen_ai.chat [OK]
-│   └── gen_ai.execute_tool [ERROR]
-└── gen_ai.chat [OK]
+├── connect [OK]
+└── ask.turn [OK]
+    ├── compaction [OK]
+    ├── gen_ai.chat [OK]
+    │   └── gen_ai.execute_tool [ERROR]
+    └── gen_ai.chat [OK]
 ```
 
 ## What is currently traced
 
-Today, tracing covers the runtime `ask()` path:
-- root ask span
+Today, tracing covers the connected session lifecycle:
+- root `ask` session span
+- `connect`
+- local clone/fetch/rev-parse/worktree spans
+- per-turn `ask.turn`
 - compaction
 - per-iteration generation
 - per-tool execution
 
 ## Current limitations
 
-The following flows are **not** currently traced:
-- repository connect / clone / worktree setup
-- pre-start aborts that happen before the `ask` span is created
-
-If you need visibility into connection/setup failures, add application-level spans around `client.connect(...)` until megasthenes exposes those directly.
+The following flows still have gaps:
+- sandbox clone tracing is present, but other sandbox lifecycle operations are still less detailed than local git setup
+- a turn aborted before its `ask.turn` span starts will not produce a turn span, though the session root span still exists

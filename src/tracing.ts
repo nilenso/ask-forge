@@ -21,12 +21,17 @@
  *
  * @see https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
  */
-import { context, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
+import { context, type Context as OtelContext, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { ErrorType } from "./types";
 
 const tracer = trace.getTracer("megasthenes");
 
-type TraceErrorStage = "ask" | "generation" | "compaction" | "tool_execution";
+type TraceErrorStage = "ask" | "generation" | "compaction" | "tool_execution" | "connect";
+
+export interface AskTraceRoot {
+	readonly rootSpan: Span;
+	readonly rootContext: OtelContext;
+}
 
 // =============================================================================
 // Attribute keys (GenAI semantic conventions + megasthenes extensions)
@@ -50,6 +55,10 @@ const ATTR = {
 	SESSION_ID: "megasthenes.session.id",
 	REPO_URL: "megasthenes.repo.url",
 	REPO_COMMITISH: "megasthenes.repo.commitish",
+	REQUESTED_COMMITISH: "megasthenes.repo.requested_commitish",
+	CONNECT_MODE: "megasthenes.connect.mode",
+	LOCAL_PATH: "megasthenes.repo.local_path",
+	CACHE_HIT: "megasthenes.connect.cache_hit",
 	ITERATION: "megasthenes.iteration",
 	TOTAL_ITERATIONS: "megasthenes.total_iterations",
 	TOTAL_TOOL_CALLS: "megasthenes.total_tool_calls",
@@ -163,7 +172,91 @@ function annotateErrorSpan(
 // Span helpers — thin wrappers that return OTel Span objects
 // =============================================================================
 
-/** Start the root span for an ask() call. */
+/** Start the long-lived root span for a connected session. */
+export function startRootAskSpan(params: {
+	repoUrl: string;
+	requestedCommitish: string;
+	mode: "local" | "sandbox";
+}): AskTraceRoot {
+	const rootSpan = tracer.startSpan("ask", {
+		attributes: {
+			[ATTR.REPO_URL]: params.repoUrl,
+			[ATTR.REQUESTED_COMMITISH]: params.requestedCommitish,
+			[ATTR.CONNECT_MODE]: params.mode,
+		},
+	});
+	return {
+		rootSpan,
+		rootContext: trace.setSpan(context.active(), rootSpan),
+	};
+}
+
+/** Add session metadata to the long-lived root ask span once the Session exists. */
+export function annotateRootAskSpan(
+	span: Span,
+	params: { sessionId: string; commitish: string; localPath?: string; cacheHit?: boolean },
+): void {
+	span.setAttributes({
+		[ATTR.SESSION_ID]: params.sessionId,
+		[ATTR.REPO_COMMITISH]: params.commitish,
+		...(params.localPath ? { [ATTR.LOCAL_PATH]: params.localPath } : {}),
+		...(params.cacheHit !== undefined ? { [ATTR.CACHE_HIT]: params.cacheHit } : {}),
+	});
+}
+
+/** End the long-lived root ask span. */
+export function endRootAskSpan(span: Span): void {
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the long-lived root ask span with a terminal error. */
+export function endRootAskSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start the connect child span under the root ask span. */
+export function startConnectSpan(
+	parent: AskTraceRoot,
+	params: { repoUrl: string; requestedCommitish: string; mode: "local" | "sandbox" },
+): Span {
+	return tracer.startSpan(
+		"connect",
+		{
+			attributes: {
+				[ATTR.REPO_URL]: params.repoUrl,
+				[ATTR.REQUESTED_COMMITISH]: params.requestedCommitish,
+				[ATTR.CONNECT_MODE]: params.mode,
+			},
+		},
+		parent.rootContext,
+	);
+}
+
+/** End the connect span. */
+export function endConnectSpan(span: Span): void {
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the connect span with an error. */
+export function endConnectSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start the root span for an ask() call when no session root exists. */
 export function startAskSpan(params: {
 	question: string;
 	sessionId: string;
@@ -192,7 +285,43 @@ export function startAskSpan(params: {
 	return span;
 }
 
-/** End the root ask span with final result metadata. */
+/** Start an ask-turn span under the long-lived root ask span. */
+export function startAskTurnSpan(
+	parent: AskTraceRoot,
+	params: {
+		question: string;
+		sessionId: string;
+		repoUrl: string;
+		commitish: string;
+		model: string;
+		systemPrompt?: string;
+	},
+): Span {
+	const span = tracer.startSpan(
+		"ask.turn",
+		{
+			attributes: {
+				[ATTR.OPERATION_NAME]: "chat",
+				[ATTR.REQUEST_MODEL]: params.model,
+				[ATTR.SESSION_ID]: params.sessionId,
+				[ATTR.REPO_URL]: params.repoUrl,
+				[ATTR.REPO_COMMITISH]: params.commitish,
+			},
+		},
+		parent.rootContext,
+	);
+	if (params.systemPrompt) {
+		span.addEvent(EVENT.SYSTEM_INSTRUCTIONS, {
+			content: params.systemPrompt,
+		});
+	}
+	span.addEvent(EVENT.INPUT_MESSAGES, {
+		content: params.question,
+	});
+	return span;
+}
+
+/** End an ask/ask.turn span with final result metadata. */
 export function endAskSpan(
 	span: Span,
 	result: {
@@ -211,15 +340,117 @@ export function endAskSpan(
 	span.end();
 }
 
-/** End the root ask span with an error. */
+/** End an ask/ask.turn span with an error. */
 export function endAskSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
-	// Keep trace error.type aligned with the public ErrorType union so SDK
-	// consumers can query traces using the same values they see in TurnResult.
 	annotateErrorSpan(span, {
 		error,
 		fallbackMessage: errorType,
 		errorType,
 		stage: "ask",
+	});
+	span.end();
+}
+
+/** Start a repo clone/fetch child span. */
+export function startCloneOrFetchSpan(parentSpan: Span): Span {
+	const ctx = trace.setSpan(context.active(), parentSpan);
+	return tracer.startSpan("repo.clone_or_fetch", {}, ctx);
+}
+
+/** End the repo clone/fetch span. */
+export function endCloneOrFetchSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
+	if (!span) return;
+	if (attrs) span.setAttributes(attrs);
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the repo clone/fetch span with an error. */
+export function endCloneOrFetchSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span) return;
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start a repo resolve-commitish child span. */
+export function startResolveCommitishSpan(parentSpan: Span): Span {
+	const ctx = trace.setSpan(context.active(), parentSpan);
+	return tracer.startSpan("repo.resolve_commitish", {}, ctx);
+}
+
+/** End the repo resolve-commitish span. */
+export function endResolveCommitishSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
+	if (!span) return;
+	if (attrs) span.setAttributes(attrs);
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the repo resolve-commitish span with an error. */
+export function endResolveCommitishSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span) return;
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start a repo create-worktree child span. */
+export function startCreateWorktreeSpan(parentSpan: Span): Span {
+	const ctx = trace.setSpan(context.active(), parentSpan);
+	return tracer.startSpan("repo.create_worktree", {}, ctx);
+}
+
+/** End the repo create-worktree span. */
+export function endCreateWorktreeSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
+	if (!span) return;
+	if (attrs) span.setAttributes(attrs);
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the repo create-worktree span with an error. */
+export function endCreateWorktreeSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span) return;
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start a sandbox clone child span. */
+export function startSandboxCloneSpan(parentSpan: Span): Span {
+	const ctx = trace.setSpan(context.active(), parentSpan);
+	return tracer.startSpan("sandbox.clone", {}, ctx);
+}
+
+/** End the sandbox clone span. */
+export function endSandboxCloneSpan(span: Span | undefined, attrs?: Record<string, unknown>): void {
+	if (!span) return;
+	if (attrs) span.setAttributes(attrs);
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the sandbox clone span with an error. */
+export function endSandboxCloneSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span) return;
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
 	});
 	span.end();
 }

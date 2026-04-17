@@ -12,6 +12,7 @@ import {
 import type { Repo } from "../src/forge";
 import { nullLogger } from "../src/logger";
 import { Session, type SessionConfig } from "../src/session";
+import { annotateRootAskSpan, startRootAskSpan } from "../src/tracing";
 import type { Step, TurnResult } from "../src/types";
 
 // =============================================================================
@@ -315,6 +316,22 @@ function createMockConfig(overrides?: Partial<SessionConfig>): SessionConfig {
 	};
 }
 
+function createTracedSession(overrides?: Partial<SessionConfig>): Session {
+	const repo = createMockRepo();
+	const traceRoot = startRootAskSpan({
+		repoUrl: repo.url,
+		requestedCommitish: repo.commitish,
+		mode: "local",
+	});
+	const session = new Session(repo, createMockConfig(overrides), traceRoot);
+	annotateRootAskSpan(traceRoot.rootSpan, {
+		sessionId: session.id,
+		commitish: repo.commitish,
+		localPath: repo.localPath,
+	});
+	return session;
+}
+
 function makeSeedTurn(
 	id: string,
 	prompt: string,
@@ -438,6 +455,43 @@ describe("OTel tracing", () => {
 			const askSpans = recorder.getSpans("ask");
 			expect(askSpans.length).toBe(2);
 			expect(askSpans[0]?.attributes["megasthenes.session.id"]).toBe(askSpans[1]?.attributes["megasthenes.session.id"]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// Session-root ask tracing
+	// -------------------------------------------------------------------------
+
+	describe("session-root ask tracing", () => {
+		test("connect-scoped root ask span stays open across turns and closes with the session", async () => {
+			const session = createTracedSession();
+
+			const rootBefore = recorder.getSpan("ask");
+			expect(rootBefore?.attributes["megasthenes.session.id"]).toBe(session.id);
+			expect(rootBefore?.ended).toBe(false);
+
+			await session.ask("Hello?").result();
+			const rootAfterTurn = recorder.getSpan("ask");
+			expect(rootAfterTurn?.ended).toBe(false);
+
+			await session.close();
+			const rootAfterClose = recorder.getSpan("ask");
+			expect(rootAfterClose?.ended).toBe(true);
+			expect(rootAfterClose?.status.code).toBe(SpanStatusCode.OK);
+		});
+
+		test("session-backed turns emit ask.turn spans under the long-lived ask root", async () => {
+			const session = createTracedSession();
+
+			await session.ask("First").result();
+			await session.ask("Second").result();
+
+			const askRoot = recorder.getSpan("ask");
+			const turnSpans = recorder.getSpans("ask.turn");
+			expect(turnSpans).toHaveLength(2);
+			expect(turnSpans[0]?.parentSpanId).toBe(askRoot?.spanId);
+			expect(turnSpans[1]?.parentSpanId).toBe(askRoot?.spanId);
+			expect(turnSpans[0]?.attributes["gen_ai.request.model"]).toBe("test-provider/test-model");
 		});
 	});
 
