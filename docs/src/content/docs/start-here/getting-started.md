@@ -13,7 +13,7 @@ megasthenes is a TypeScript library that lets you programmatically ask questions
 - **Query any point in history** — Pin your question to a specific branch, tag, or commit.
 - **Configurable** — Choose any model and provider supported by [pi-ai](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts) (OpenRouter, Anthropic, Google, and more). Customize the system prompt, tool iteration limits, and context compaction settings.
 - **Sandboxed execution** — Run tool execution in an isolated container for exploring untrusted repositories safely.
-- **Rich answer metadata** — Every response comes with token usage, inference time, and a list of all the sources the model consulted.
+- **Rich answer metadata** — Every response includes token usage, timing, and a complete record of all tool calls the model made.
 - **OpenTelemetry observability** — All LLM calls and tool invocations are traced with GenAI semantic conventions.
 
 ## Requirements
@@ -43,19 +43,23 @@ bunx megasthenes install-deps
 ```ts
 import { Client } from "@nilenso/megasthenes";
 
-const client = new Client({
-  provider: "openrouter",
-  model: "anthropic/claude-sonnet-4-20250514",
+const client = new Client();
+const session = await client.connect({
+  repo: { url: "https://github.com/owner/repo" },
+  model: { provider: "openrouter", id: "anthropic/claude-sonnet-4-6" },
+  maxIterations: 20,
 });
 
-const session = await client.connect("https://github.com/owner/repo");
+// Stream events as they arrive
+const stream = session.ask("What does this repo do?");
+for await (const event of stream) {
+  if (event.type === "text_delta") process.stdout.write(event.delta);
+}
 
-const result = await session.ask("What does this repo do?");
-console.log(result.response);       // The LLM's answer
-console.log(result.toolCalls);      // Tools invoked (rg, fd, read, etc.)
-console.log(result.invalidLinks);   // Any invalid links detected
+// Or wait for the complete result
+const result = await session.ask("How are the tests structured?").result();
+console.log(result.steps);   // All steps: text, tool calls, thinking, etc.
+console.log(result.usage);   // Token usage across all iterations
 
-// Every subsequent call to `session.ask()` continues the
-// conversation with full context
-await session.ask("Tell me more about how the tests are structured");
+await session.close();
 ```
