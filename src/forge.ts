@@ -269,41 +269,35 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 	const shortSha = sha.slice(0, 12);
 	const worktreePath = resolve(basePath, "trees", shortSha);
 	return withChildSpan(parentSpan, "repo.create_worktree", "clone_failed", async (span) => {
-		const makeRepo = (reused: boolean): Repo => {
-			endChildSpan(span, {
-				"megasthenes.repo.worktree_path": worktreePath,
-				"megasthenes.connect.worktree_reused": reused,
+		let reused = await exists(worktreePath);
+		if (!reused) {
+			await mkdir(resolve(basePath, "trees"), { recursive: true });
+			const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
+				cwd: cachePath,
+				stdout: "pipe",
+				stderr: "pipe",
 			});
-			return {
-				url: repoUrl,
-				localPath: worktreePath,
-				forge,
-				commitish: sha,
-				cachePath: resolve(cachePath),
-			};
-		};
-
-		if (await exists(worktreePath)) {
-			return makeRepo(true);
-		}
-
-		await mkdir(resolve(basePath, "trees"), { recursive: true });
-		const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
-			cwd: cachePath,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const worktreeExit = await worktreeProc.exited;
-		if (worktreeExit !== 0) {
-			// Another concurrent call may have created the worktree between our exists()
-			// check and the worktree add. If so, just return it.
-			if (await exists(worktreePath)) {
-				return makeRepo(true);
+			const worktreeExit = await worktreeProc.exited;
+			// If `git worktree add` failed, it may be because a concurrent call won the race.
+			// Re-check the path: if still missing, it's a real failure.
+			if (worktreeExit !== 0 && !(await exists(worktreePath))) {
+				throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
+					isRetryable: true,
+				});
 			}
-			throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
-				isRetryable: true,
-			});
+			reused = worktreeExit !== 0;
 		}
-		return makeRepo(false);
+
+		endChildSpan(span, {
+			"megasthenes.repo.worktree_path": worktreePath,
+			"megasthenes.connect.worktree_reused": reused,
+		});
+		return {
+			url: repoUrl,
+			localPath: worktreePath,
+			forge,
+			commitish: sha,
+			cachePath: resolve(cachePath),
+		};
 	});
 }
