@@ -17,15 +17,18 @@ import { cleanupWorktree, type Repo } from "./forge";
 import { consoleLogger, type Logger } from "./logger";
 import { processStreamToEvents, type StreamFn } from "./stream-processor";
 import {
+	type AskTraceRoot,
 	endAskSpan,
 	endAskSpanWithError,
 	endCompactionSpan,
 	endCompactionSpanWithError,
 	endGenerationSpan,
 	endGenerationSpanWithError,
+	endRootAskSpan,
 	endToolSpan,
 	endToolSpanWithError,
 	startAskSpan,
+	startAskTurnSpan,
 	startCompactionSpan,
 	startGenerationSpan,
 	startToolSpan,
@@ -138,8 +141,9 @@ export class Session {
 	#turns: TurnResult[] = [];
 	/** Messages snapshot at the end of each turn, keyed by turn ID. Used for afterTurn branching. */
 	#turnMessages = new Map<string, Message[]>();
+	#traceRoot?: AskTraceRoot;
 
-	constructor(repo: Repo, config: SessionConfig) {
+	constructor(repo: Repo, config: SessionConfig, traceRoot?: AskTraceRoot) {
 		this.id = randomUUID();
 		this.repo = repo;
 		this.config = {
@@ -151,6 +155,7 @@ export class Session {
 			compaction: config.compaction,
 		};
 		this.#config = config;
+		this.#traceRoot = traceRoot;
 		this.#logger = config.logger ?? consoleLogger;
 		this.#stream = (config.stream ?? stream) as StreamFn;
 		this.#streamSimple = (config.streamSimple ?? streamSimple) as StreamFn;
@@ -240,18 +245,37 @@ export class Session {
 	/**
 	 * Close the session and clean up resources.
 	 *
-	 * This removes the git worktree associated with the session.
-	 * The session cannot be used after closing.
-	 * Safe to call multiple times.
+	 * **This MUST be called when the caller is done with the session.** The root
+	 * OTel "ask" span is started in `Client.connect()` and only ended here; if
+	 * `close()` is never called (early return, thrown `ask()`, caller forgets,
+	 * session is GC'd), the root span never terminates and the OTel SDK silently
+	 * drops the entire trace tree on shutdown — every turn, generation, and
+	 * tool span for this session is lost from your observability backend.
+	 *
+	 * Always pair `connect()` with `close()` via try/finally:
+	 *
+	 * ```ts
+	 * const session = await client.connect(config);
+	 * try {
+	 *   for await (const ev of session.ask("...")) { ... }
+	 * } finally {
+	 *   await session.close();
+	 * }
+	 * ```
+	 *
+	 * Also removes the git worktree associated with the session.
+	 * The session cannot be used after closing. Safe to call multiple times.
 	 */
 	async close(): Promise<void> {
 		if (this.#closed) return;
 		this.#closed = true;
 
-		// Clean up worktree, log if it fails
 		const success = await cleanupWorktree(this.repo);
 		if (!success) {
 			this.#logger.error("Failed to cleanup worktree", { path: this.repo.localPath });
+		}
+		if (this.#traceRoot) {
+			endRootAskSpan(this.#traceRoot.rootSpan);
 		}
 	}
 
@@ -313,15 +337,27 @@ export class Session {
 			const startedAt = Date.now();
 			yield { type: "turn_start", turnId, prompt, timestamp: startedAt };
 
-			// Start ask span after turn_start yield
-			askSpan = startAskSpan({
-				question: prompt,
-				sessionId: this.id,
-				repoUrl: this.repo.url,
-				commitish: this.repo.commitish,
-				model: modelId,
-				systemPrompt: this.#context.systemPrompt,
-			});
+			// Start a per-turn span after turn_start yield. Sessions created through
+			// Client.connect() attach this to the long-lived root ask span so connect
+			// and later turns share one end-to-end trace. Direct Session() tests keep
+			// the older per-turn root span behavior as a fallback.
+			askSpan = this.#traceRoot
+				? startAskTurnSpan(this.#traceRoot, {
+						question: prompt,
+						sessionId: this.id,
+						repoUrl: this.repo.url,
+						commitish: this.repo.commitish,
+						model: modelId,
+						systemPrompt: this.#context.systemPrompt,
+					})
+				: startAskSpan({
+						question: prompt,
+						sessionId: this.id,
+						repoUrl: this.repo.url,
+						commitish: this.repo.commitish,
+						model: modelId,
+						systemPrompt: this.#context.systemPrompt,
+					});
 
 			// Compaction (uses the turn model, not the session default)
 			const newQuestionMessage: Message = { role: "user", content: prompt, timestamp: Date.now() };
@@ -362,7 +398,7 @@ export class Session {
 				// Check for abort before each iteration
 				if (options?.signal?.aborted) {
 					yield { type: "error", errorType: "aborted", message: "Aborted", isRetryable: false };
-					endAskSpanWithError(askSpan, "aborted");
+					endAskSpanWithError(askSpan, "aborted", "Aborted");
 					askSpanEnded = true;
 					yield {
 						type: "turn_end",
@@ -397,9 +433,9 @@ export class Session {
 				for await (const event of events) {
 					if (event.type === "error") {
 						hadError = true;
-						endGenerationSpanWithError(genSpan, event.message);
+						endGenerationSpanWithError(genSpan, event.errorType, event.message);
 						yield event;
-						endAskSpanWithError(askSpan, "generation_failed", event.message);
+						endAskSpanWithError(askSpan, event.errorType, event.message);
 						askSpanEnded = true;
 						yield {
 							type: "turn_end",
@@ -438,14 +474,15 @@ export class Session {
 					const responseText = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("\n");
 
 					if (!responseText.trim()) {
-						endGenerationSpanWithError(genSpan, "Empty response from API");
+						const emptyResponseMessage = "Model returned an empty response";
+						endGenerationSpanWithError(genSpan, "empty_response", emptyResponseMessage);
 						yield {
 							type: "error",
 							errorType: "empty_response",
-							message: "Model returned an empty response",
+							message: emptyResponseMessage,
 							isRetryable: true,
 						};
-						endAskSpanWithError(askSpan, "empty_response");
+						endAskSpanWithError(askSpan, "empty_response", emptyResponseMessage);
 						askSpanEnded = true;
 						yield {
 							type: "turn_end",
@@ -494,7 +531,7 @@ export class Session {
 				message: "Max iterations reached without a final answer.",
 				isRetryable: false,
 			};
-			endAskSpanWithError(askSpan, "max_iterations_reached");
+			endAskSpanWithError(askSpan, "max_iterations", "Max iterations reached without a final answer.");
 			askSpanEnded = true;
 			yield {
 				type: "turn_end",
@@ -504,7 +541,7 @@ export class Session {
 			};
 		} catch (error) {
 			if (askSpan && !askSpanEnded) {
-				endAskSpanWithError(askSpan, "unexpected_error", error);
+				endAskSpanWithError(askSpan, "internal_error", error);
 				askSpanEnded = true;
 			}
 			if (error instanceof MegasthenesError) throw error;

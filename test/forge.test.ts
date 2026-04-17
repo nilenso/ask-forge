@@ -208,6 +208,18 @@ describe("forge", () => {
 			expect(readme2).toContain("Version 2");
 		});
 
+		test("reuses existing worktree for same commitish", async () => {
+			const repo1 = await connectRepo(repoUrl, { forge: "github", commitish: "v1.0" });
+			const repo2 = await connectRepo(repoUrl, { forge: "github", commitish: "v1.0" });
+
+			expect(repo1.localPath).toBe(repo2.localPath);
+			expect(repo1.cachePath).toBe(repo2.cachePath);
+			expect(repo1.commitish).toBe(repo2.commitish);
+
+			const readme = await readFile(join(repo2.localPath, "README.md"), "utf-8");
+			expect(readme).toContain("Version 1");
+		});
+
 		test("parallel calls with different commitish share cache", async () => {
 			const results = await Promise.all([
 				connectRepo(repoUrl, { forge: "github", commitish: "v1.0" }),

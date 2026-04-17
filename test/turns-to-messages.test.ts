@@ -389,8 +389,11 @@ describe("reconstructContext", () => {
 
 		const { messages, turnSnapshots } = reconstructContext([turn1, turn2]);
 
-		const snap1 = turnSnapshots.get("t1")!;
-		const snap2 = turnSnapshots.get("t2")!;
+		const snap1 = turnSnapshots.get("t1");
+		const snap2 = turnSnapshots.get("t2");
+		if (!snap1 || !snap2) {
+			throw new Error("expected reconstructed snapshots for both turns");
+		}
 
 		// Mutating snap1 should not affect snap2 or messages
 		snap1.push({ role: "user", content: "injected", timestamp: 0 });

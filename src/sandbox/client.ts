@@ -5,7 +5,12 @@
  * to the isolated container. Communicates over HTTP on the compose internal network.
  */
 
+import type { Span } from "@opentelemetry/api";
+import { classifyThrownError } from "../error-classification";
+import { MegasthenesError } from "../errors";
 import { type Logger, nullLogger } from "../logger";
+import { endChildSpan, endChildSpanWithError, startChildSpan } from "../tracing";
+import type { ErrorType } from "../types";
 
 /** Configuration for connecting to a sandbox worker. */
 export interface SandboxClientConfig {
@@ -29,6 +34,40 @@ const CLONE_POLL_TIMEOUT_MS = 20 * 60 * 1000;
 const CLONE_POLL_INITIAL_INTERVAL_MS = 1_000;
 /** Maximum interval between clone status polls. */
 const CLONE_POLL_MAX_INTERVAL_MS = 5_000;
+
+interface CloneResponseBody {
+	ok: boolean;
+	status?: string;
+	slug?: string;
+	sha?: string;
+	worktree?: string;
+	error?: string;
+	errorType?: ErrorType;
+	elapsedMs?: number;
+}
+
+function sandboxCloneError(body: CloneResponseBody, fallbackMessage: string): MegasthenesError {
+	const errorType: ErrorType = body.errorType ?? "clone_failed";
+	const message = body.error ? `Sandbox clone failed: ${body.error}` : fallbackMessage;
+	return new MegasthenesError(errorType, message, { isRetryable: errorType !== "invalid_commitish" });
+}
+
+function completeClone(
+	cloneSpan: Span | undefined,
+	onProgress: ((message: string) => void) | undefined,
+	body: { slug?: string; sha: string; worktree: string },
+	slugFallback?: string,
+): CloneResult {
+	const slug = body.slug ?? slugFallback;
+	if (!slug) throw new Error("Sandbox clone: ready response missing slug");
+	onProgress?.("Repository ready");
+	endChildSpan(cloneSpan, {
+		"megasthenes.sandbox.slug": slug,
+		"megasthenes.repo.commitish": body.sha,
+		"megasthenes.repo.local_path": body.worktree,
+	});
+	return { slug, sha: body.sha, worktree: body.worktree };
+}
 
 export class SandboxClient {
 	private config: SandboxClientConfig;
@@ -83,140 +122,164 @@ export class SandboxClient {
 	 * Kicks off an async clone and polls until ready (up to 20 minutes).
 	 * @param onProgress - Optional callback invoked with status messages during polling
 	 */
-	async clone(url: string, commitish?: string, onProgress?: (message: string) => void): Promise<CloneResult> {
+	async clone(
+		url: string,
+		commitish?: string,
+		onProgress?: (message: string) => void,
+		parentSpan?: Span,
+	): Promise<CloneResult> {
 		const commit = commitish ?? "HEAD";
 		this.logger.debug("sandbox:client", `POST /clone url=${url} commitish=${commit}`);
 		const t0 = Date.now();
+		const cloneSpan = parentSpan ? startChildSpan(parentSpan, "sandbox.clone") : undefined;
 
-		// Step 1: Kick off clone
-		const startRes = await fetch(`${this.config.baseUrl}/clone`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json", ...this.authHeaders() },
-			body: JSON.stringify({ url, commitish }),
-			signal: AbortSignal.timeout(30_000), // Starting a clone should be fast
-		});
+		try {
+			cloneSpan?.addEvent("sandbox.clone.started", { url, commitish: commit });
 
-		const startBody = (await startRes.json()) as {
-			ok: boolean;
-			status?: string;
-			slug?: string;
-			sha?: string;
-			worktree?: string;
-			error?: string;
-		};
+			// Step 1: Kick off clone
+			const startRes = await fetch(`${this.config.baseUrl}/clone`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", ...this.authHeaders() },
+				body: JSON.stringify({ url, commitish }),
+				signal: AbortSignal.timeout(30_000), // Starting a clone should be fast
+			});
 
-		if (!startBody.ok) {
-			this.logger.error("sandbox:client", new Error(`POST /clone → ${startRes.status}: ${startBody.error}`));
-			throw new Error(`Sandbox clone failed: ${startBody.error}`);
-		}
+			const startBody = (await startRes.json()) as CloneResponseBody;
 
-		// Already ready (cached)
-		if (startBody.status === "ready" && startBody.slug && startBody.sha && startBody.worktree) {
-			const duration = Date.now() - t0;
-			this.logger.debug(
-				"sandbox:client",
-				`POST /clone → ready (cached) (${duration}ms) slug=${startBody.slug} sha=${startBody.sha.slice(0, 12)}`,
-			);
-			onProgress?.("Repository ready");
-			return { slug: startBody.slug, sha: startBody.sha, worktree: startBody.worktree };
-		}
-
-		const slug = startBody.slug;
-		if (!slug) {
-			throw new Error("Sandbox clone failed: no slug returned");
-		}
-
-		// Step 2: Poll until ready or failed
-		this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
-		onProgress?.("Cloning repository…");
-
-		const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
-		let pollInterval = CLONE_POLL_INITIAL_INTERVAL_MS;
-		while (Date.now() < deadline) {
-			await Bun.sleep(pollInterval);
-			pollInterval = Math.min(pollInterval * 1.5, CLONE_POLL_MAX_INTERVAL_MS);
-
-			const statusRes = await fetch(
-				`${this.config.baseUrl}/clone/status/${slug}?commitish=${encodeURIComponent(commit)}`,
-				{
-					headers: { ...this.authHeaders() },
-					signal: AbortSignal.timeout(10_000),
-				},
-			);
-
-			if (statusRes.status === 404) {
-				this.logger.warn("sandbox:client", `clone job not found for ${slug}, re-triggering clone for ${url}`);
-				onProgress?.("Re-cloning repository…");
-
-				const retryRes = await fetch(`${this.config.baseUrl}/clone`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json", ...this.authHeaders() },
-					body: JSON.stringify({ url, commitish }),
-					signal: AbortSignal.timeout(30_000),
-				});
-
-				const retryBody = (await retryRes.json()) as {
-					ok: boolean;
-					status?: string;
-					slug?: string;
-					sha?: string;
-					worktree?: string;
-					error?: string;
-				};
-
-				if (!retryBody.ok) {
-					throw new Error(`Sandbox clone failed on retry: ${retryBody.error}`);
-				}
-
-				// If the re-triggered clone is already cached/ready, return immediately
-				if (retryBody.status === "ready" && retryBody.slug && retryBody.sha && retryBody.worktree) {
-					const duration = Date.now() - t0;
-					this.logger.debug(
-						"sandbox:client",
-						`clone ready on retry (${duration}ms) slug=${retryBody.slug} sha=${retryBody.sha.slice(0, 12)}`,
-					);
-					onProgress?.("Repository ready");
-					return { slug: retryBody.slug, sha: retryBody.sha, worktree: retryBody.worktree };
-				}
-
-				// Otherwise continue polling for the re-triggered job
-				continue;
+			if (!startBody.ok) {
+				this.logger.error("sandbox:client", new Error(`POST /clone → ${startRes.status}: ${startBody.error}`));
+				throw sandboxCloneError(startBody, `Sandbox clone failed (HTTP ${startRes.status})`);
 			}
 
-			const statusBody = (await statusRes.json()) as {
-				ok: boolean;
-				status?: string;
-				slug?: string;
-				sha?: string;
-				worktree?: string;
-				error?: string;
-				elapsedMs?: number;
-			};
-
-			if (statusBody.status === "ready" && statusBody.sha && statusBody.worktree) {
+			// Already ready (cached)
+			if (startBody.status === "ready" && startBody.slug && startBody.sha && startBody.worktree) {
 				const duration = Date.now() - t0;
 				this.logger.debug(
 					"sandbox:client",
-					`clone ready (${duration}ms) slug=${slug} sha=${statusBody.sha.slice(0, 12)}`,
+					`POST /clone → ready (cached) (${duration}ms) slug=${startBody.slug} sha=${startBody.sha.slice(0, 12)}`,
 				);
-				onProgress?.("Repository ready");
-				return { slug: statusBody.slug ?? slug, sha: statusBody.sha, worktree: statusBody.worktree };
+				cloneSpan?.addEvent("sandbox.clone.cached_ready", { elapsed_ms: duration });
+				return completeClone(cloneSpan, onProgress, {
+					slug: startBody.slug,
+					sha: startBody.sha,
+					worktree: startBody.worktree,
+				});
 			}
 
-			if (statusBody.status === "failed") {
-				const duration = Date.now() - t0;
-				this.logger.error("sandbox:client", new Error(`clone failed after ${duration}ms: ${statusBody.error}`));
-				throw new Error(`Sandbox clone failed: ${statusBody.error}`);
+			const slug = startBody.slug;
+			if (!slug) {
+				throw new Error("Sandbox clone failed: no slug returned");
 			}
 
-			// Still cloning — log progress
-			const elapsed = statusBody.elapsedMs ?? Date.now() - t0;
-			const elapsedSec = Math.round(elapsed / 1000);
-			this.logger.debug("sandbox:client", `clone in progress for ${url} (${elapsedSec}s elapsed)`);
-			onProgress?.(`Cloning repository… ${elapsedSec}s`);
+			// Step 2: Poll until ready or failed
+			this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
+			onProgress?.("Cloning repository…");
+
+			const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
+			let pollInterval = CLONE_POLL_INITIAL_INTERVAL_MS;
+			let lastStatus: string | undefined;
+			while (Date.now() < deadline) {
+				await Bun.sleep(pollInterval);
+				pollInterval = Math.min(pollInterval * 1.5, CLONE_POLL_MAX_INTERVAL_MS);
+
+				const statusRes = await fetch(
+					`${this.config.baseUrl}/clone/status/${slug}?commitish=${encodeURIComponent(commit)}`,
+					{
+						headers: { ...this.authHeaders() },
+						signal: AbortSignal.timeout(10_000),
+					},
+				);
+
+				if (statusRes.status === 404) {
+					this.logger.warn("sandbox:client", `clone job not found for ${slug}, re-triggering clone for ${url}`);
+					cloneSpan?.addEvent("sandbox.clone.retry_after_404", { slug });
+					onProgress?.("Re-cloning repository…");
+
+					const retryRes = await fetch(`${this.config.baseUrl}/clone`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json", ...this.authHeaders() },
+						body: JSON.stringify({ url, commitish }),
+						signal: AbortSignal.timeout(30_000),
+					});
+
+					const retryBody = (await retryRes.json()) as CloneResponseBody;
+
+					if (!retryBody.ok) {
+						throw sandboxCloneError(retryBody, `Sandbox clone failed on retry (HTTP ${retryRes.status})`);
+					}
+
+					// If the re-triggered clone is already cached/ready, return immediately
+					if (retryBody.status === "ready" && retryBody.slug && retryBody.sha && retryBody.worktree) {
+						const duration = Date.now() - t0;
+						this.logger.debug(
+							"sandbox:client",
+							`clone ready on retry (${duration}ms) slug=${retryBody.slug} sha=${retryBody.sha.slice(0, 12)}`,
+						);
+						cloneSpan?.addEvent("sandbox.clone.ready", { elapsed_ms: duration, slug: retryBody.slug });
+						return completeClone(cloneSpan, onProgress, {
+							slug: retryBody.slug,
+							sha: retryBody.sha,
+							worktree: retryBody.worktree,
+						});
+					}
+
+					// Otherwise continue polling for the re-triggered job
+					continue;
+				}
+
+				const statusBody = (await statusRes.json()) as CloneResponseBody;
+
+				if (statusBody.status !== lastStatus) {
+					cloneSpan?.addEvent("sandbox.clone.poll", {
+						elapsed_ms: Date.now() - t0,
+						status: statusBody.status ?? "unknown",
+						previous_status: lastStatus ?? "none",
+					});
+					lastStatus = statusBody.status;
+				}
+
+				if (statusBody.status === "ready" && statusBody.sha && statusBody.worktree) {
+					const duration = Date.now() - t0;
+					this.logger.debug(
+						"sandbox:client",
+						`clone ready (${duration}ms) slug=${slug} sha=${statusBody.sha.slice(0, 12)}`,
+					);
+					cloneSpan?.addEvent("sandbox.clone.ready", { elapsed_ms: duration, slug });
+					return completeClone(
+						cloneSpan,
+						onProgress,
+						{ slug: statusBody.slug, sha: statusBody.sha, worktree: statusBody.worktree },
+						slug,
+					);
+				}
+
+				if (statusBody.status === "failed") {
+					const duration = Date.now() - t0;
+					cloneSpan?.addEvent("sandbox.clone.failed", { elapsed_ms: duration, slug });
+					this.logger.error("sandbox:client", new Error(`clone failed after ${duration}ms: ${statusBody.error}`));
+					throw sandboxCloneError(statusBody, `Sandbox clone failed after ${duration}ms`);
+				}
+
+				// Still cloning — log progress
+				const elapsed = statusBody.elapsedMs ?? Date.now() - t0;
+				const elapsedSec = Math.round(elapsed / 1000);
+				this.logger.debug("sandbox:client", `clone in progress for ${url} (${elapsedSec}s elapsed)`);
+				onProgress?.(`Cloning repository… ${elapsedSec}s`);
+			}
+
+			cloneSpan?.addEvent("sandbox.clone.timed_out", { timeout_ms: CLONE_POLL_TIMEOUT_MS, slug });
+			throw new Error(`Sandbox clone timed out after ${CLONE_POLL_TIMEOUT_MS / 1000}s for ${url}`);
+		} catch (error) {
+			let errorType: ErrorType;
+			if (error instanceof MegasthenesError) {
+				errorType = error.errorType;
+			} else {
+				const classified = classifyThrownError(error);
+				errorType = classified.errorType === "network_error" ? "network_error" : "clone_failed";
+			}
+			endChildSpanWithError(cloneSpan, errorType, error);
+			throw error;
 		}
-
-		throw new Error(`Sandbox clone timed out after ${CLONE_POLL_TIMEOUT_MS / 1000}s for ${url}`);
 	}
 
 	/** Execute a tool inside the sandbox against a previously-cloned repo. */

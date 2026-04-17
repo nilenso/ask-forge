@@ -1,5 +1,6 @@
 import { getModel, type KnownProvider, type Message, stream, streamSimple } from "@mariozechner/pi-ai";
 import type { CompactionSettings, ThinkingConfig } from "./config";
+import { classifyThrownError } from "./error-classification";
 import { MegasthenesError } from "./errors";
 import { type ConnectOptions, connectRepo, type Forge, type ForgeName, type Repo } from "./forge";
 import { consoleLogger, type Logger, nullLogger } from "./logger";
@@ -7,6 +8,14 @@ import { buildDefaultSystemPrompt } from "./prompt";
 import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
 import { type PublicSessionConfig, Session } from "./session";
 import { executeTool, tools } from "./tools";
+import {
+	annotateRootAskSpan,
+	endChildSpan,
+	endChildSpanWithError,
+	endRootAskSpanWithError,
+	startChildSpan,
+	startRootAskSpan,
+} from "./tracing";
 import type {
 	AskOptions,
 	AskStream,
@@ -101,8 +110,25 @@ export interface SessionConfig {
  *   model: { provider: "anthropic", id: "claude-sonnet-4-6" },
  *   maxIterations: 20,
  * });
+ * try {
+ *   for await (const ev of session.ask("...")) { ... }
+ * } finally {
+ *   await session.close();
+ * }
  * ```
+ *
+ * **Always close the returned session.** `connect()` starts a root OTel span
+ * that only ends in `Session.close()`; skipping close causes the entire trace
+ * tree for that session to be dropped. See `Session.close()` for details.
  */
+function classifyConnectError(error: unknown): ErrorType {
+	if (error instanceof MegasthenesError) {
+		return error.errorType;
+	}
+	const classified = classifyThrownError(error);
+	return classified.errorType === "network_error" ? "network_error" : "internal_error";
+}
+
 export class Client {
 	readonly #logger: Logger;
 	readonly #sandboxClient?: SandboxClient;
@@ -118,76 +144,125 @@ export class Client {
 	/**
 	 * Connect to a repository and create a session.
 	 *
+	 * Starts a root OTel "ask" span that lives until `Session.close()` is called.
+	 * The caller MUST invoke `session.close()` (typically in a `finally` block)
+	 * or the root span never ends and the OTel SDK drops the whole trace on
+	 * shutdown. See `Session.close()` for details.
+	 *
 	 * @param config - Session configuration (repo, model, iterations, etc.)
 	 * @param onProgress - Optional callback for clone progress messages
 	 * @returns A Session for asking questions about the repository
 	 */
 	async connect(config: SessionConfig, onProgress?: (message: string) => void): Promise<Session> {
 		const { repo: repoConfig, model: modelConfig } = config;
-
-		// getModel has strict generics tying provider to model IDs - cast for flexibility
-		const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
-			modelConfig.provider,
-			modelConfig.id,
-		);
-
-		if (this.#sandboxClient) {
-			const cloneResult = await this.#sandboxClient.clone(repoConfig.url, repoConfig.commitish, onProgress);
-
-			const repo: Repo = {
-				url: repoConfig.url,
-				localPath: cloneResult.worktree,
-				forge: { name: "github", buildCloneUrl: (url) => url },
-				commitish: cloneResult.sha,
-				cachePath: "",
-			};
-
-			const sandboxClient = this.#sandboxClient;
-			const sandboxExecuteTool = async (name: string, args: Record<string, unknown>, _cwd: string) => {
-				return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
-			};
-
-			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
-
-			return new Session(repo, {
-				model,
-				systemPrompt,
-				tools,
-				maxIterations: config.maxIterations,
-				executeTool: sandboxExecuteTool,
-				logger: this.#logger,
-				stream,
-				streamSimple,
-				compaction: config.compaction,
-				thinking: config.thinking,
-				initialTurns: config.initialTurns,
-				lastCompactionSummary: config.lastCompactionSummary,
-			});
-		}
-
-		// Local mode
-		const connectOptions: ConnectOptions = {
-			token: repoConfig.token,
-			commitish: repoConfig.commitish,
-			forge: repoConfig.forge,
-		};
-		const repo = await connectRepo(repoConfig.url, connectOptions);
-		const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
-
-		return new Session(repo, {
-			model,
-			systemPrompt,
-			tools,
-			maxIterations: config.maxIterations,
-			executeTool,
-			logger: this.#logger,
-			stream,
-			streamSimple,
-			compaction: config.compaction,
-			thinking: config.thinking,
-			initialTurns: config.initialTurns,
-			lastCompactionSummary: config.lastCompactionSummary,
+		const requestedCommitish = repoConfig.commitish ?? "HEAD";
+		const connectMode = this.#sandboxClient ? "sandbox" : "local";
+		const traceRoot = startRootAskSpan({
+			repoUrl: repoConfig.url,
+			requestedCommitish,
+			mode: connectMode,
 		});
+		const connectSpan = startChildSpan(traceRoot, "connect", {
+			"megasthenes.repo.url": repoConfig.url,
+			"megasthenes.repo.requested_commitish": requestedCommitish,
+			"megasthenes.connect.mode": connectMode,
+		});
+
+		try {
+			// getModel has strict generics tying provider to model IDs - cast for flexibility
+			const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
+				modelConfig.provider,
+				modelConfig.id,
+			);
+
+			if (this.#sandboxClient) {
+				const cloneResult = await this.#sandboxClient.clone(
+					repoConfig.url,
+					repoConfig.commitish,
+					onProgress,
+					connectSpan,
+				);
+
+				const repo: Repo = {
+					url: repoConfig.url,
+					localPath: cloneResult.worktree,
+					forge: { name: "github", buildCloneUrl: (url) => url },
+					commitish: cloneResult.sha,
+					cachePath: "",
+				};
+
+				const sandboxClient = this.#sandboxClient;
+				const sandboxExecuteTool = async (name: string, args: Record<string, unknown>, _cwd: string) => {
+					return sandboxClient.executeTool(cloneResult.slug, cloneResult.sha, name, args);
+				};
+
+				const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
+				const session = new Session(
+					repo,
+					{
+						model,
+						systemPrompt,
+						tools,
+						maxIterations: config.maxIterations,
+						executeTool: sandboxExecuteTool,
+						logger: this.#logger,
+						stream,
+						streamSimple,
+						compaction: config.compaction,
+						thinking: config.thinking,
+						initialTurns: config.initialTurns,
+						lastCompactionSummary: config.lastCompactionSummary,
+					},
+					traceRoot,
+				);
+				annotateRootAskSpan(traceRoot.rootSpan, {
+					sessionId: session.id,
+					commitish: repo.commitish,
+					localPath: repo.localPath,
+				});
+				endChildSpan(connectSpan);
+				return session;
+			}
+
+			// Local mode
+			const connectOptions: ConnectOptions = {
+				token: repoConfig.token,
+				commitish: repoConfig.commitish,
+				forge: repoConfig.forge,
+			};
+			const repo = await connectRepo(repoConfig.url, connectOptions, connectSpan);
+			const systemPrompt = config.systemPrompt ?? buildDefaultSystemPrompt(repoConfig.url, repo.commitish);
+			const session = new Session(
+				repo,
+				{
+					model,
+					systemPrompt,
+					tools,
+					maxIterations: config.maxIterations,
+					executeTool,
+					logger: this.#logger,
+					stream,
+					streamSimple,
+					compaction: config.compaction,
+					thinking: config.thinking,
+					initialTurns: config.initialTurns,
+					lastCompactionSummary: config.lastCompactionSummary,
+				},
+				traceRoot,
+			);
+			annotateRootAskSpan(traceRoot.rootSpan, {
+				sessionId: session.id,
+				commitish: repo.commitish,
+				localPath: repo.localPath,
+			});
+			endChildSpan(connectSpan);
+			return session;
+		} catch (error) {
+			const errorType = classifyConnectError(error);
+			endChildSpanWithError(connectSpan, errorType, error);
+			endRootAskSpanWithError(traceRoot.rootSpan, errorType, error);
+			throw error;
+		}
 	}
 
 	/**

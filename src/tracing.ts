@@ -21,9 +21,25 @@
  *
  * @see https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
  */
-import { context, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
+import {
+	type Attributes,
+	context,
+	type Context as OtelContext,
+	type Span,
+	SpanStatusCode,
+	trace,
+} from "@opentelemetry/api";
+import { MegasthenesError } from "./errors";
+import type { ErrorType } from "./types";
 
 const tracer = trace.getTracer("megasthenes");
+
+type TraceErrorStage = "ask" | "generation" | "compaction" | "tool_execution" | "connect";
+
+export interface AskTraceRoot {
+	readonly rootSpan: Span;
+	readonly rootContext: OtelContext;
+}
 
 // =============================================================================
 // Attribute keys (GenAI semantic conventions + megasthenes extensions)
@@ -47,6 +63,10 @@ const ATTR = {
 	SESSION_ID: "megasthenes.session.id",
 	REPO_URL: "megasthenes.repo.url",
 	REPO_COMMITISH: "megasthenes.repo.commitish",
+	REQUESTED_COMMITISH: "megasthenes.repo.requested_commitish",
+	CONNECT_MODE: "megasthenes.connect.mode",
+	LOCAL_PATH: "megasthenes.repo.local_path",
+	CACHE_HIT: "megasthenes.connect.cache_hit",
 	ITERATION: "megasthenes.iteration",
 	TOTAL_ITERATIONS: "megasthenes.total_iterations",
 	TOTAL_TOOL_CALLS: "megasthenes.total_tool_calls",
@@ -56,6 +76,7 @@ const ATTR = {
 	ERROR_TYPE: "error.type",
 	ERROR_NAME: "megasthenes.error.name",
 	ERROR_MESSAGE: "megasthenes.error.message",
+	ERROR_STAGE: "megasthenes.error.stage",
 } as const;
 
 // OTel event names (GenAI semantic conventions)
@@ -132,10 +153,19 @@ function normalizeErrorDetails(
 	return { name, message, exception };
 }
 
-function annotateErrorSpan(span: Span, error: unknown, fallbackMessage: string, errorType?: string) {
-	const details = normalizeErrorDetails(error, fallbackMessage);
+function annotateErrorSpan(
+	span: Span,
+	params: {
+		error: unknown;
+		fallbackMessage: string;
+		errorType?: ErrorType;
+		stage?: TraceErrorStage;
+	},
+) {
+	const details = normalizeErrorDetails(params.error, params.fallbackMessage);
 	span.setAttributes({
-		...(errorType ? { [ATTR.ERROR_TYPE]: errorType } : {}),
+		...(params.errorType ? { [ATTR.ERROR_TYPE]: params.errorType } : {}),
+		...(params.stage ? { [ATTR.ERROR_STAGE]: params.stage } : {}),
 		[ATTR.ERROR_NAME]: details.name,
 		[ATTR.ERROR_MESSAGE]: details.message,
 	});
@@ -150,7 +180,56 @@ function annotateErrorSpan(span: Span, error: unknown, fallbackMessage: string, 
 // Span helpers — thin wrappers that return OTel Span objects
 // =============================================================================
 
-/** Start the root span for an ask() call. */
+/** Start the long-lived root span for a connected session. */
+export function startRootAskSpan(params: {
+	repoUrl: string;
+	requestedCommitish: string;
+	mode: "local" | "sandbox";
+}): AskTraceRoot {
+	const rootSpan = tracer.startSpan("ask", {
+		attributes: {
+			[ATTR.REPO_URL]: params.repoUrl,
+			[ATTR.REQUESTED_COMMITISH]: params.requestedCommitish,
+			[ATTR.CONNECT_MODE]: params.mode,
+		},
+	});
+	return {
+		rootSpan,
+		rootContext: trace.setSpan(context.active(), rootSpan),
+	};
+}
+
+/** Add session metadata to the long-lived root ask span once the Session exists. */
+export function annotateRootAskSpan(
+	span: Span,
+	params: { sessionId: string; commitish: string; localPath?: string; cacheHit?: boolean },
+): void {
+	span.setAttributes({
+		[ATTR.SESSION_ID]: params.sessionId,
+		[ATTR.REPO_COMMITISH]: params.commitish,
+		...(params.localPath ? { [ATTR.LOCAL_PATH]: params.localPath } : {}),
+		...(params.cacheHit !== undefined ? { [ATTR.CACHE_HIT]: params.cacheHit } : {}),
+	});
+}
+
+/** End the long-lived root ask span. */
+export function endRootAskSpan(span: Span): void {
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End the long-lived root ask span with a terminal error. */
+export function endRootAskSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/** Start the root span for an ask() call when no session root exists. */
 export function startAskSpan(params: {
 	question: string;
 	sessionId: string;
@@ -179,7 +258,43 @@ export function startAskSpan(params: {
 	return span;
 }
 
-/** End the root ask span with final result metadata. */
+/** Start an ask-turn span under the long-lived root ask span. */
+export function startAskTurnSpan(
+	parent: AskTraceRoot,
+	params: {
+		question: string;
+		sessionId: string;
+		repoUrl: string;
+		commitish: string;
+		model: string;
+		systemPrompt?: string;
+	},
+): Span {
+	const span = tracer.startSpan(
+		"ask.turn",
+		{
+			attributes: {
+				[ATTR.OPERATION_NAME]: "chat",
+				[ATTR.REQUEST_MODEL]: params.model,
+				[ATTR.SESSION_ID]: params.sessionId,
+				[ATTR.REPO_URL]: params.repoUrl,
+				[ATTR.REPO_COMMITISH]: params.commitish,
+			},
+		},
+		parent.rootContext,
+	);
+	if (params.systemPrompt) {
+		span.addEvent(EVENT.SYSTEM_INSTRUCTIONS, {
+			content: params.systemPrompt,
+		});
+	}
+	span.addEvent(EVENT.INPUT_MESSAGES, {
+		content: params.question,
+	});
+	return span;
+}
+
+/** End an ask/ask.turn span with final result metadata. */
 export function endAskSpan(
 	span: Span,
 	result: {
@@ -198,10 +313,73 @@ export function endAskSpan(
 	span.end();
 }
 
-/** End the root ask span with an error. */
-export function endAskSpanWithError(span: Span, errorType: string, error?: unknown): void {
-	annotateErrorSpan(span, error, errorType, errorType);
+/** End an ask/ask.turn span with an error. */
+export function endAskSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "ask",
+	});
 	span.end();
+}
+
+/**
+ * Start a child span under the connect/clone hierarchy.
+ *
+ * Accepts either a Span (for sub-operation children) or an AskTraceRoot
+ * (for the top-level connect span). Optional start-time attributes are
+ * set on creation.
+ */
+export function startChildSpan(parent: Span | AskTraceRoot, name: string, attributes?: Attributes): Span {
+	const ctx = "rootContext" in parent ? parent.rootContext : trace.setSpan(context.active(), parent);
+	return tracer.startSpan(name, attributes ? { attributes } : {}, ctx);
+}
+
+/** End a connect-hierarchy child span with success, optionally setting final attributes. */
+export function endChildSpan(span: Span | undefined, attrs?: Attributes): void {
+	if (!span) return;
+	if (attrs) span.setAttributes(attrs);
+	span.setStatus({ code: SpanStatusCode.OK });
+	span.end();
+}
+
+/** End a connect-hierarchy child span with a terminal error. No-op if already ended. */
+export function endChildSpanWithError(span: Span | undefined, errorType: ErrorType, error?: unknown): void {
+	if (!span?.isRecording()) return;
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "connect",
+	});
+	span.end();
+}
+
+/**
+ * Run `fn` under a connect-hierarchy child span.
+ *
+ * Starts the span (only if `parentSpan` is set), invokes `fn` with the span,
+ * and on thrown error ends the span before rethrowing. If the thrown error is
+ * a `MegasthenesError`, its `errorType` is recorded on the span; otherwise the
+ * caller-supplied `fallbackErrorType` is used. The caller is responsible for
+ * ending the span on success paths via `endChildSpan` — success-path attributes
+ * typically depend on inner control flow.
+ */
+export async function withChildSpan<T>(
+	parentSpan: Span | undefined,
+	name: string,
+	fallbackErrorType: ErrorType,
+	fn: (span: Span | undefined) => Promise<T>,
+): Promise<T> {
+	const span = parentSpan ? startChildSpan(parentSpan, name) : undefined;
+	try {
+		return await fn(span);
+	} catch (error) {
+		const errorType = error instanceof MegasthenesError ? error.errorType : fallbackErrorType;
+		endChildSpanWithError(span, errorType, error);
+		throw error;
+	}
 }
 
 /** Start a compaction child span. */
@@ -226,7 +404,12 @@ export function endCompactionSpan(
 
 /** End the compaction span with an error. */
 export function endCompactionSpanWithError(span: Span, error: unknown): void {
-	annotateErrorSpan(span, error, "compaction failed", "compaction_failed");
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: "compaction failed",
+		errorType: "internal_error",
+		stage: "compaction",
+	});
 	span.end();
 }
 
@@ -281,8 +464,13 @@ export function endGenerationSpan(
 }
 
 /** End a generation span with an error. */
-export function endGenerationSpanWithError(span: Span, error: unknown): void {
-	annotateErrorSpan(span, error, "generation failed", "generation_failed");
+export function endGenerationSpanWithError(span: Span, errorType: ErrorType, error?: unknown): void {
+	annotateErrorSpan(span, {
+		error,
+		fallbackMessage: errorType,
+		errorType,
+		stage: "generation",
+	});
 	span.end();
 }
 
@@ -320,7 +508,12 @@ export function endToolSpan(span: Span, result: string): void {
 
 /** End a tool span with an error. */
 export function endToolSpanWithError(span: Span, error: unknown, result?: string): void {
-	const details = annotateErrorSpan(span, error, "tool execution failed", "tool_execution_failed");
+	const details = annotateErrorSpan(span, {
+		error,
+		fallbackMessage: "tool execution failed",
+		errorType: "internal_error",
+		stage: "tool_execution",
+	});
 	span.addEvent(EVENT.TOOL_CALL_RESULT, {
 		content: result ?? details.message,
 	});
