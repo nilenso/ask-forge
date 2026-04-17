@@ -57,6 +57,7 @@ export function errorSource(errorType: ErrorType): "provider" | "library" {
 		case "max_iterations":
 		case "internal_error":
 		case "clone_failed":
+		case "fetch_failed":
 		case "invalid_commitish":
 		case "invalid_config":
 			return "library";

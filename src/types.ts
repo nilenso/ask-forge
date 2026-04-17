@@ -24,6 +24,7 @@ export type ErrorType =
 	| "network_error"
 	| "internal_error"
 	| "clone_failed"
+	| "fetch_failed"
 	| "invalid_commitish"
 	| "invalid_config";
 

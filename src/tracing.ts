@@ -29,6 +29,7 @@ import {
 	SpanStatusCode,
 	trace,
 } from "@opentelemetry/api";
+import { MegasthenesError } from "./errors";
 import type { ErrorType } from "./types";
 
 const tracer = trace.getTracer("megasthenes");
@@ -359,20 +360,23 @@ export function endChildSpanWithError(span: Span | undefined, errorType: ErrorTy
  * Run `fn` under a connect-hierarchy child span.
  *
  * Starts the span (only if `parentSpan` is set), invokes `fn` with the span,
- * and on thrown error ends the span with `errorType` before rethrowing. The
- * caller is responsible for ending the span on success paths via `endChildSpan`
- * — success-path attributes typically depend on inner control flow.
+ * and on thrown error ends the span before rethrowing. If the thrown error is
+ * a `MegasthenesError`, its `errorType` is recorded on the span; otherwise the
+ * caller-supplied `fallbackErrorType` is used. The caller is responsible for
+ * ending the span on success paths via `endChildSpan` — success-path attributes
+ * typically depend on inner control flow.
  */
 export async function withChildSpan<T>(
 	parentSpan: Span | undefined,
 	name: string,
-	errorType: ErrorType,
+	fallbackErrorType: ErrorType,
 	fn: (span: Span | undefined) => Promise<T>,
 ): Promise<T> {
 	const span = parentSpan ? startChildSpan(parentSpan, name) : undefined;
 	try {
 		return await fn(span);
 	} catch (error) {
+		const errorType = error instanceof MegasthenesError ? error.errorType : fallbackErrorType;
 		endChildSpanWithError(span, errorType, error);
 		throw error;
 	}

@@ -201,7 +201,12 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 						stdout: "inherit",
 						stderr: "inherit",
 					});
-					await proc.exited;
+					const fetchExit = await proc.exited;
+					if (fetchExit !== 0) {
+						throw new MegasthenesError("fetch_failed", `git fetch failed with exit code ${fetchExit}`, {
+							isRetryable: true,
+						});
+					}
 					span?.addEvent("repo.fetch.finished");
 					endChildSpan(span, {
 						"megasthenes.repo.cache_path": cachePath,
