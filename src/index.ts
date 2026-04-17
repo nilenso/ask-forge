@@ -7,6 +7,7 @@ import { consoleLogger, type Logger, nullLogger } from "./logger";
 import { buildDefaultSystemPrompt } from "./prompt";
 import { SandboxClient, type SandboxClientConfig } from "./sandbox/client";
 import { type PublicSessionConfig, Session } from "./session";
+import { executeTool, tools } from "./tools";
 import {
 	annotateRootAskSpan,
 	endConnectSpan,
@@ -15,7 +16,6 @@ import {
 	startConnectSpan,
 	startRootAskSpan,
 } from "./tracing";
-import { executeTool, tools } from "./tools";
 import type {
 	AskOptions,
 	AskStream,

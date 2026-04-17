@@ -285,8 +285,12 @@ function createProviderErrorStreamResult(errorMessage = "Rate limit exceeded") {
 
 function createThrownErrorStreamResult(error: Error) {
 	return {
-		[Symbol.asyncIterator]: async function* () {
-			throw error;
+		[Symbol.asyncIterator]() {
+			return {
+				next: async () => {
+					throw error;
+				},
+			};
 		},
 		result: async () => {
 			throw error;

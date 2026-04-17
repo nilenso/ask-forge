@@ -2571,7 +2571,7 @@ async function submitKey(key) {
 
 async function runAnalysis(key) {
   const cr = state.comparison.find(c => c.key === key);
-  if (!cr || !cr.runA || !cr.runB) return;
+  if (!cr?.runA || !cr.runB) return;
 
   const cacheKey = `${cr.key}|${cr.runA.sessionId}:${cr.runB.sessionId}`;
   const btn = $('analyseBtn');
