@@ -54,6 +54,7 @@ export const COMPACTION_SETTINGS = {
 	contextWindow: 200000,
 };
 
+/** Settings that control when and how context compaction triggers. */
 export type CompactionSettings = typeof COMPACTION_SETTINGS;
 
 // =============================================================================

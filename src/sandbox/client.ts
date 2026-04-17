@@ -7,8 +7,9 @@
 
 import { type Logger, nullLogger } from "../logger";
 
+/** Configuration for connecting to a sandbox worker. */
 export interface SandboxClientConfig {
-	/** Base URL of the sandbox worker. */
+	/** Base URL of the sandbox worker (e.g. `"http://localhost:8080"`). */
 	baseUrl: string;
 	/** Request timeout in ms (used for tool execution and polling interval upper bound). */
 	timeoutMs: number;

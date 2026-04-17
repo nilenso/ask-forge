@@ -5,8 +5,11 @@
 import type { ErrorType } from "./types";
 
 export class MegasthenesError extends Error {
+	/** Programmatic error type for switch/match handling. */
 	readonly errorType: ErrorType;
+	/** Whether retrying the same operation might succeed. `null` means unknown. */
 	readonly isRetryable: boolean | null;
+	/** Raw error details from the provider or internal context (for logging/debugging). */
 	readonly details?: unknown;
 
 	constructor(
