@@ -19,7 +19,7 @@ Megasthenes allows you to programmatically ask questions to a GitHub/GitLab repo
 - 📌 **Query any point in history**: Pin your question to a specific branch, tag, or commit
 - 🤖 **Configurable**: Choose any model and provider supported by [`pi-ai`](https://github.com/badlogic/pi-mono/blob/main/packages/pi-ai/src/models.generated.ts) (OpenRouter, Anthropic, Google, and more). Customize the system prompt, tool iteration limits, and context compaction settings.
 - 🔒 **Sandboxed execution**: Run tool execution (file reads, code search) in an isolated container for exploring untrusted repositories safely
-- 📊 **Rich answer metadata**: Every response comes with token usage, inference time, and a list of all the sources the model consulted to form its answer.
+- 📊 **Rich answer metadata**: Every response includes token usage, timing, and a complete record of all tool calls the model made.
 - 📡 **OpenTelemetry observability**: Built-in tracing with GenAI semantic conventions — send spans to Langfuse, Jaeger, or any OTel-compatible backend. Zero overhead when no SDK is installed.
 - 🧪 **Built-in evaluation system**: Measure and track answer quality over time using an LLM judge that scores responses on completeness, evidence, sourcing, and reasoning.
 
@@ -43,7 +43,7 @@ npx jsr add @nilenso/megasthenes
 
 For Docker or manual setup, add to `package.json`:
 ```json
-"@nilenso/megasthenes": "npm:@jsr/nilenso__megasthenes@0.0.7"
+"@nilenso/megasthenes": "npm:@jsr/nilenso__megasthenes@0.0.19"
 ```
 
 And create `.npmrc`:
@@ -56,18 +56,25 @@ And create `.npmrc`:
 ```typescript
 import { Client } from "@nilenso/megasthenes";
 
-// Create a client (defaults to openrouter with claude-sonnet-4.6)
 const client = new Client();
+const session = await client.connect({
+  repo: { url: "https://github.com/owner/repo" },
+  model: { provider: "anthropic", id: "claude-sonnet-4-6" },
+  maxIterations: 20,
+});
 
-// Connect to a repository
-const session = await client.connect("https://github.com/owner/repo");
+// Stream events as they arrive
+const stream = session.ask("What frameworks does this project use?");
+for await (const event of stream) {
+  if (event.type === "text_delta") process.stdout.write(event.delta);
+}
 
-// Ask a question
-const result = await session.ask("What frameworks does this project use?");
-console.log(result.response);
+// Or wait for the complete result
+const result = await session.ask("How are the tests structured?").result();
+console.log(result.steps);   // All steps: text, tool calls, thinking, etc.
+console.log(result.usage);   // Token usage across all iterations
 
-// Clean up when done
-session.close();
+await session.close();
 ```
 
 For configuration, sandboxing, observability, and the full API reference, see the [documentation](https://nilenso.github.io/megasthenes/).

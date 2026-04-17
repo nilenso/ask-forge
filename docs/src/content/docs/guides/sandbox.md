@@ -2,7 +2,7 @@
 title: Sandboxed Execution
 description: Run megasthenes in an isolated sandbox for secure code analysis.
 sidebar:
-  order: 3
+  order: 5
 ---
 
 megasthenes can execute all repository operations inside an isolated sandbox, providing multiple layers of security.
@@ -13,21 +13,39 @@ megasthenes can execute all repository operations inside an isolated sandbox, pr
 
 ### Enabling Sandbox Mode
 
+Pass sandbox configuration to the `Client` constructor:
+
 ```ts
+import { Client } from "@nilenso/megasthenes";
+
 const client = new Client({
-  provider: "openrouter",
-  model: "anthropic/claude-sonnet-4-20250514",
   sandbox: {
     baseUrl: "http://localhost:8080",
+    timeoutMs: 120_000,
+    secret: "optional-auth-secret",
   },
 });
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `baseUrl` | `string` | HTTP endpoint of the sandbox worker. Required. |
+| `timeoutMs` | `number` | Request timeout in ms. Required. |
+| `secret` | `string` | Bearer token for API authentication. Optional. |
 
 When sandbox mode is enabled:
 
 - Repository cloning happens inside the sandbox container
 - All tool execution (file reads, searches, git operations) runs in isolation
 - The host filesystem is never accessed directly
+
+You can monitor clone progress via the optional `onProgress` callback on `connect()`:
+
+```ts
+const session = await client.connect(sessionConfig, (message) => {
+  console.log(`Clone progress: ${message}`);
+});
+```
 
 ### Security Layers
 
