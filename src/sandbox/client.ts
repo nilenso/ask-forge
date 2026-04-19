@@ -63,17 +63,24 @@ type PollOutcome =
 
 type OnEvent = (name: string, attrs?: Attributes) => void;
 
-async function triggerClone(
-	baseUrl: string,
-	url: string,
-	commitish: string | undefined,
-	authHeaders: Record<string, string>,
-	fallbackPrefix: string,
-): Promise<TriggerOutcome> {
-	const res = await fetch(`${baseUrl}/clone`, {
+/** Connection info for a sandbox worker — shared across clone/tool/reset calls. */
+interface SandboxContext {
+	baseUrl: string;
+	authHeaders: Record<string, string>;
+	logger: Logger;
+}
+
+/** Identifies a repository + ref. */
+interface RepoRef {
+	url: string;
+	commitish?: string;
+}
+
+async function triggerClone(sandbox: SandboxContext, repo: RepoRef, fallbackPrefix: string): Promise<TriggerOutcome> {
+	const res = await fetch(`${sandbox.baseUrl}/clone`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json", ...authHeaders },
-		body: JSON.stringify({ url, commitish }),
+		headers: { "Content-Type": "application/json", ...sandbox.authHeaders },
+		body: JSON.stringify({ url: repo.url, commitish: repo.commitish }),
 		signal: AbortSignal.timeout(30_000),
 	});
 	const body = (await res.json()) as CloneResponseBody;
@@ -89,46 +96,36 @@ async function triggerClone(
 	return { kind: "pending", slug: body.slug };
 }
 
-interface WaitForCloneOptions {
-	baseUrl: string;
+interface WaitArgs {
 	slug: string;
-	url: string;
-	commitish: string;
-	authHeaders: Record<string, string>;
 	startTime: number;
-	logger: Logger;
 	onProgress?: (message: string) => void;
 	onEvent: OnEvent;
 }
 
-async function waitForClone(opts: WaitForCloneOptions): Promise<PollOutcome> {
+async function waitForClone(sandbox: SandboxContext, repo: RepoRef, args: WaitArgs): Promise<PollOutcome> {
 	const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
 	let pollInterval = CLONE_POLL_INITIAL_INTERVAL_MS;
 	let lastStatus: string | undefined;
+	const commitishForStatus = repo.commitish ?? "HEAD";
 
 	while (Date.now() < deadline) {
 		await Bun.sleep(pollInterval);
 		pollInterval = Math.min(pollInterval * 1.5, CLONE_POLL_MAX_INTERVAL_MS);
 
 		const statusRes = await fetch(
-			`${opts.baseUrl}/clone/status/${opts.slug}?commitish=${encodeURIComponent(opts.commitish)}`,
-			{ headers: { ...opts.authHeaders }, signal: AbortSignal.timeout(10_000) },
+			`${sandbox.baseUrl}/clone/status/${args.slug}?commitish=${encodeURIComponent(commitishForStatus)}`,
+			{ headers: { ...sandbox.authHeaders }, signal: AbortSignal.timeout(10_000) },
 		);
 
 		if (statusRes.status === 404) {
-			opts.logger.warn(
+			sandbox.logger.warn(
 				"sandbox:client",
-				`clone job not found for ${opts.slug}, re-triggering clone for ${opts.url}`,
+				`clone job not found for ${args.slug}, re-triggering clone for ${repo.url}`,
 			);
-			opts.onEvent("sandbox.clone.retry_after_404", { slug: opts.slug });
-			opts.onProgress?.("Re-cloning repository…");
-			const retry = await triggerClone(
-				opts.baseUrl,
-				opts.url,
-				opts.commitish,
-				opts.authHeaders,
-				"Sandbox clone failed on retry",
-			);
+			args.onEvent("sandbox.clone.retry_after_404", { slug: args.slug });
+			args.onProgress?.("Re-cloning repository…");
+			const retry = await triggerClone(sandbox, repo, "Sandbox clone failed on retry");
 			if (retry.kind === "ready") {
 				return retry;
 			}
@@ -138,8 +135,8 @@ async function waitForClone(opts: WaitForCloneOptions): Promise<PollOutcome> {
 		const body = (await statusRes.json()) as CloneResponseBody;
 
 		if (body.status !== lastStatus) {
-			opts.onEvent("sandbox.clone.poll", {
-				elapsed_ms: Date.now() - opts.startTime,
+			args.onEvent("sandbox.clone.poll", {
+				elapsed_ms: Date.now() - args.startTime,
 				status: body.status ?? "unknown",
 				previous_status: lastStatus ?? "none",
 			});
@@ -147,17 +144,17 @@ async function waitForClone(opts: WaitForCloneOptions): Promise<PollOutcome> {
 		}
 
 		if (body.status === "ready" && body.sha && body.worktree) {
-			return { kind: "ready", slug: body.slug ?? opts.slug, sha: body.sha, worktree: body.worktree };
+			return { kind: "ready", slug: body.slug ?? args.slug, sha: body.sha, worktree: body.worktree };
 		}
 
 		if (body.status === "failed") {
-			return { kind: "failed", duration: Date.now() - opts.startTime, body };
+			return { kind: "failed", duration: Date.now() - args.startTime, body };
 		}
 
-		const elapsed = body.elapsedMs ?? Date.now() - opts.startTime;
+		const elapsed = body.elapsedMs ?? Date.now() - args.startTime;
 		const elapsedSec = Math.round(elapsed / 1000);
-		opts.logger.debug("sandbox:client", `clone in progress for ${opts.url} (${elapsedSec}s elapsed)`);
-		opts.onProgress?.(`Cloning repository… ${elapsedSec}s`);
+		sandbox.logger.debug("sandbox:client", `clone in progress for ${repo.url} (${elapsedSec}s elapsed)`);
+		args.onProgress?.(`Cloning repository… ${elapsedSec}s`);
 	}
 
 	return { kind: "timed_out" };
@@ -241,11 +238,17 @@ export class SandboxClient {
 		const t0 = Date.now();
 		const cloneSpan = parentSpan ? startChildSpan(parentSpan, "sandbox.clone") : undefined;
 		const onEvent: OnEvent = (name, attrs) => cloneSpan?.addEvent(name, attrs);
+		const sandbox: SandboxContext = {
+			baseUrl: this.config.baseUrl,
+			authHeaders: this.authHeaders(),
+			logger: this.logger,
+		};
+		const repo: RepoRef = { url, commitish };
 
 		try {
 			onEvent("sandbox.clone.started", { url, commitish: commit });
 
-			const trigger = await triggerClone(this.config.baseUrl, url, commitish, this.authHeaders(), "Sandbox clone failed");
+			const trigger = await triggerClone(sandbox, repo, "Sandbox clone failed");
 
 			if (trigger.kind === "ready") {
 				const duration = Date.now() - t0;
@@ -260,14 +263,9 @@ export class SandboxClient {
 			this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
 			onProgress?.("Cloning repository…");
 
-			const outcome = await waitForClone({
-				baseUrl: this.config.baseUrl,
+			const outcome = await waitForClone(sandbox, repo, {
 				slug: trigger.slug,
-				url,
-				commitish: commit,
-				authHeaders: this.authHeaders(),
 				startTime: t0,
-				logger: this.logger,
 				onProgress,
 				onEvent,
 			});
