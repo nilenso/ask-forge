@@ -58,7 +58,7 @@ type TriggerOutcome =
 
 type PollOutcome =
 	| { kind: "ready"; slug: string; sha: string; worktree: string }
-	| { kind: "failed"; duration: number; body: CloneResponseBody }
+	| { kind: "failed"; body: CloneResponseBody }
 	| { kind: "timed_out" };
 
 type OnEvent = (name: string, attrs?: Attributes) => void;
@@ -146,7 +146,7 @@ async function waitForClone(
 		}
 
 		if (body.status === "failed") {
-			return { kind: "failed", duration: Date.now() - args.startTime, body };
+			return { kind: "failed", body };
 		}
 
 		const elapsed = body.elapsedMs ?? Date.now() - args.startTime;
@@ -273,12 +273,10 @@ export class SandboxClient {
 			}
 
 			if (outcome.kind === "failed") {
-				onEvent("sandbox.clone.failed", { elapsed_ms: outcome.duration, slug: trigger.slug });
-				this.logger.error(
-					"sandbox:client",
-					new Error(`clone failed after ${outcome.duration}ms: ${outcome.body.error}`),
-				);
-				throw sandboxCloneError(outcome.body, `Sandbox clone failed after ${outcome.duration}ms`);
+				const duration = Date.now() - t0;
+				onEvent("sandbox.clone.failed", { elapsed_ms: duration, slug: trigger.slug });
+				this.logger.error("sandbox:client", new Error(`clone failed after ${duration}ms: ${outcome.body.error}`));
+				throw sandboxCloneError(outcome.body, `Sandbox clone failed after ${duration}ms`);
 			}
 
 			onEvent("sandbox.clone.timed_out", { timeout_ms: CLONE_POLL_TIMEOUT_MS, slug: trigger.slug });

@@ -1,6 +1,6 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Span } from "@opentelemetry/api";
 import { MegasthenesError } from "./errors";
 import { endChildSpan, withChildSpan } from "./tracing";
@@ -163,7 +163,6 @@ type CacheOperation = "fetch" | "reuse_cache" | "clone";
 interface CachePhaseResult {
 	operation: CacheOperation;
 	cacheExisted: boolean;
-	hadCommitishLocally?: boolean;
 }
 
 async function ensureCachedRepo(
@@ -179,7 +178,7 @@ async function ensureCachedRepo(
 	if (cacheExists) {
 		const hasCommitish = await commitishExistsLocally(cachePath, commitish);
 		if (hasCommitish) {
-			return { operation: "reuse_cache", cacheExisted: true, hadCommitishLocally: true };
+			return { operation: "reuse_cache", cacheExisted: true };
 		}
 		const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
 			cwd: cachePath,
@@ -192,7 +191,7 @@ async function ensureCachedRepo(
 				isRetryable: true,
 			});
 		}
-		return { operation: "fetch", cacheExisted: true, hadCommitishLocally: false };
+		return { operation: "fetch", cacheExisted: true };
 	}
 
 	// Clean up incomplete clone if directory exists but HEAD doesn't
@@ -230,16 +229,11 @@ async function resolveCommitish(cachePath: string, commitish: string): Promise<s
 	return resolved;
 }
 
-async function ensureWorktree(
-	cachePath: string,
-	sha: string,
-	worktreePath: string,
-	treesDir: string,
-): Promise<{ reused: boolean }> {
+async function ensureWorktree(cachePath: string, sha: string, worktreePath: string): Promise<{ reused: boolean }> {
 	if (await exists(worktreePath)) {
 		return { reused: true };
 	}
-	await mkdir(treesDir, { recursive: true });
+	await mkdir(dirname(worktreePath), { recursive: true });
 	const proc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
 		cwd: cachePath,
 		stdout: "pipe",
@@ -312,7 +306,6 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 	const { username, reponame } = parseRepoPath(repoUrl);
 	const basePath = join(homedir(), ".megasthenes", "repos", username, reponame);
 	const cachePath = join(basePath, "repo");
-	const treesDir = resolve(basePath, "trees");
 	const commitish = options.commitish ?? "HEAD";
 
 	await withChildSpan(parentSpan, "repo.clone_or_fetch", "clone_failed", async (span) => {
@@ -331,9 +324,9 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 		return resolved;
 	});
 
-	const worktreePath = resolve(treesDir, sha.slice(0, 12));
+	const worktreePath = resolve(basePath, "trees", sha.slice(0, 12));
 	await withChildSpan(parentSpan, "repo.create_worktree", "clone_failed", async (span) => {
-		const { reused } = await ensureWorktree(cachePath, sha, worktreePath, treesDir);
+		const { reused } = await ensureWorktree(cachePath, sha, worktreePath);
 		endChildSpan(span, {
 			"megasthenes.repo.worktree_path": worktreePath,
 			"megasthenes.connect.worktree_reused": reused,
