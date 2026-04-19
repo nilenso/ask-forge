@@ -158,6 +158,135 @@ export async function cleanupWorktree(repo: Repo): Promise<boolean> {
 	}
 }
 
+type CacheOperation = "fetch" | "reuse_cache" | "clone";
+
+interface CachePhaseResult {
+	operation: CacheOperation;
+	cacheExisted: boolean;
+	hadCommitishLocally?: boolean;
+}
+
+async function ensureCachedRepo(
+	cachePath: string,
+	commitish: string,
+	forge: Forge,
+	repoUrl: string,
+	token: string | undefined,
+): Promise<CachePhaseResult> {
+	const headFile = join(cachePath, "HEAD");
+	const cacheExists = await exists(headFile);
+
+	if (cacheExists) {
+		const hasCommitish = await commitishExistsLocally(cachePath, commitish);
+		if (hasCommitish) {
+			return { operation: "reuse_cache", cacheExisted: true, hadCommitishLocally: true };
+		}
+		const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
+			cwd: cachePath,
+			stdout: "inherit",
+			stderr: "inherit",
+		});
+		const fetchExit = await proc.exited;
+		if (fetchExit !== 0) {
+			throw new MegasthenesError("fetch_failed", `git fetch failed with exit code ${fetchExit}`, {
+				isRetryable: true,
+			});
+		}
+		return { operation: "fetch", cacheExisted: true, hadCommitishLocally: false };
+	}
+
+	// Clean up incomplete clone if directory exists but HEAD doesn't
+	if (await exists(cachePath)) {
+		await rm(cachePath, { recursive: true, force: true });
+	}
+	await mkdir(cachePath, { recursive: true });
+	const cloneUrl = forge.buildCloneUrl(repoUrl, token);
+	const proc = Bun.spawn(["git", "clone", "--bare", "--filter=blob:none", cloneUrl, cachePath], {
+		stdout: "inherit",
+		stderr: "inherit",
+	});
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) {
+		throw new MegasthenesError("clone_failed", `git clone failed with exit code ${exitCode}`, {
+			isRetryable: true,
+		});
+	}
+	return { operation: "clone", cacheExisted: false };
+}
+
+async function resolveCommitish(cachePath: string, commitish: string): Promise<string> {
+	const proc = Bun.spawn(["git", "rev-parse", commitish], {
+		cwd: cachePath,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const resolved = (await new Response(proc.stdout).text()).trim();
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) {
+		throw new MegasthenesError("invalid_commitish", `Failed to resolve commitish: ${commitish}`, {
+			isRetryable: false,
+		});
+	}
+	return resolved;
+}
+
+async function ensureWorktree(
+	cachePath: string,
+	sha: string,
+	worktreePath: string,
+	treesDir: string,
+): Promise<{ reused: boolean }> {
+	if (await exists(worktreePath)) {
+		return { reused: true };
+	}
+	await mkdir(treesDir, { recursive: true });
+	const proc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
+		cwd: cachePath,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const exitCode = await proc.exited;
+	// If `git worktree add` failed, it may be because a concurrent call won the race.
+	// Re-check the path: if still missing, it's a real failure.
+	if (exitCode !== 0 && !(await exists(worktreePath))) {
+		throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${exitCode}`, {
+			isRetryable: true,
+		});
+	}
+	return { reused: exitCode !== 0 };
+}
+
+function recordCachePhaseOutcome(span: Span | undefined, cachePath: string, result: CachePhaseResult): void {
+	const base = {
+		"megasthenes.repo.cache_path": cachePath,
+		"megasthenes.repo.cache_exists": result.cacheExisted,
+	};
+	if (result.operation === "fetch") {
+		span?.addEvent("repo.fetch.finished");
+		endChildSpan(span, {
+			...base,
+			"megasthenes.repo.commitish_present_locally": false,
+			"megasthenes.git.operation": "fetch",
+		});
+		return;
+	}
+	if (result.operation === "reuse_cache") {
+		span?.addEvent("repo.cache.hit");
+		endChildSpan(span, {
+			...base,
+			"megasthenes.repo.commitish_present_locally": true,
+			"megasthenes.git.operation": "reuse_cache",
+		});
+		return;
+	}
+	span?.addEvent("repo.clone.finished");
+	endChildSpan(span, {
+		...base,
+		"megasthenes.git.operation": "clone",
+		"megasthenes.git.clone.filter": "blob:none",
+	});
+}
+
 /**
  * Connect to a git repository, cloning if necessary and creating a worktree.
  *
@@ -175,9 +304,7 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 		throw new MegasthenesError(
 			"invalid_config",
 			`Cannot infer forge from URL: ${repoUrl}. Please specify 'forge' option.`,
-			{
-				isRetryable: false,
-			},
+			{ isRetryable: false },
 		);
 	}
 
@@ -185,85 +312,18 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 	const { username, reponame } = parseRepoPath(repoUrl);
 	const basePath = join(homedir(), ".megasthenes", "repos", username, reponame);
 	const cachePath = join(basePath, "repo");
+	const treesDir = resolve(basePath, "trees");
 	const commitish = options.commitish ?? "HEAD";
 
 	await withChildSpan(parentSpan, "repo.clone_or_fetch", "clone_failed", async (span) => {
-		await withCloneLock(cachePath, async () => {
-			// Check if bare repo exists (bare repos have HEAD directly in the directory)
-			const headFile = join(cachePath, "HEAD");
-			const cacheExists = await exists(headFile);
-			if (cacheExists) {
-				// Valid bare repo exists - fetch if needed
-				const hasCommitish = await commitishExistsLocally(cachePath, commitish);
-				if (!hasCommitish) {
-					const proc = Bun.spawn(["git", "fetch", "origin", "--tags"], {
-						cwd: cachePath,
-						stdout: "inherit",
-						stderr: "inherit",
-					});
-					const fetchExit = await proc.exited;
-					if (fetchExit !== 0) {
-						throw new MegasthenesError("fetch_failed", `git fetch failed with exit code ${fetchExit}`, {
-							isRetryable: true,
-						});
-					}
-					span?.addEvent("repo.fetch.finished");
-					endChildSpan(span, {
-						"megasthenes.repo.cache_path": cachePath,
-						"megasthenes.repo.cache_exists": true,
-						"megasthenes.repo.commitish_present_locally": false,
-						"megasthenes.git.operation": "fetch",
-					});
-					return;
-				}
-				span?.addEvent("repo.cache.hit");
-				endChildSpan(span, {
-					"megasthenes.repo.cache_path": cachePath,
-					"megasthenes.repo.cache_exists": true,
-					"megasthenes.repo.commitish_present_locally": true,
-					"megasthenes.git.operation": "reuse_cache",
-				});
-				return;
-			}
-			// Clean up incomplete clone if directory exists but HEAD doesn't
-			if (await exists(cachePath)) {
-				await rm(cachePath, { recursive: true, force: true });
-			}
-			await mkdir(cachePath, { recursive: true });
-			const cloneUrl = forge.buildCloneUrl(repoUrl, options.token);
-			span?.addEvent("repo.clone.started");
-			const proc = Bun.spawn(["git", "clone", "--bare", "--filter=blob:none", cloneUrl, cachePath], {
-				stdout: "inherit",
-				stderr: "inherit",
-			});
-			const exitCode = await proc.exited;
-			if (exitCode !== 0) {
-				throw new MegasthenesError("clone_failed", `git clone failed with exit code ${exitCode}`, {
-					isRetryable: true,
-				});
-			}
-			endChildSpan(span, {
-				"megasthenes.repo.cache_path": cachePath,
-				"megasthenes.repo.cache_exists": false,
-				"megasthenes.git.operation": "clone",
-				"megasthenes.git.clone.filter": "blob:none",
-			});
-		});
+		const result = await withCloneLock(cachePath, () =>
+			ensureCachedRepo(cachePath, commitish, forge, repoUrl, options.token),
+		);
+		recordCachePhaseOutcome(span, cachePath, result);
 	});
 
 	const sha = await withChildSpan(parentSpan, "repo.resolve_commitish", "invalid_commitish", async (span) => {
-		const revParseProc = Bun.spawn(["git", "rev-parse", commitish], {
-			cwd: cachePath,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const resolved = (await new Response(revParseProc.stdout).text()).trim();
-		const revParseExit = await revParseProc.exited;
-		if (revParseExit !== 0) {
-			throw new MegasthenesError("invalid_commitish", `Failed to resolve commitish: ${commitish}`, {
-				isRetryable: false,
-			});
-		}
+		const resolved = await resolveCommitish(cachePath, commitish);
 		endChildSpan(span, {
 			"megasthenes.repo.requested_commitish": commitish,
 			"megasthenes.repo.commitish": resolved,
@@ -271,38 +331,20 @@ export async function connectRepo(repoUrl: string, options: ConnectOptions = {},
 		return resolved;
 	});
 
-	const shortSha = sha.slice(0, 12);
-	const worktreePath = resolve(basePath, "trees", shortSha);
-	return withChildSpan(parentSpan, "repo.create_worktree", "clone_failed", async (span) => {
-		let reused = await exists(worktreePath);
-		if (!reused) {
-			await mkdir(resolve(basePath, "trees"), { recursive: true });
-			const worktreeProc = Bun.spawn(["git", "worktree", "add", worktreePath, sha], {
-				cwd: cachePath,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const worktreeExit = await worktreeProc.exited;
-			// If `git worktree add` failed, it may be because a concurrent call won the race.
-			// Re-check the path: if still missing, it's a real failure.
-			if (worktreeExit !== 0 && !(await exists(worktreePath))) {
-				throw new MegasthenesError("clone_failed", `git worktree add failed with exit code ${worktreeExit}`, {
-					isRetryable: true,
-				});
-			}
-			reused = worktreeExit !== 0;
-		}
-
+	const worktreePath = resolve(treesDir, sha.slice(0, 12));
+	await withChildSpan(parentSpan, "repo.create_worktree", "clone_failed", async (span) => {
+		const { reused } = await ensureWorktree(cachePath, sha, worktreePath, treesDir);
 		endChildSpan(span, {
 			"megasthenes.repo.worktree_path": worktreePath,
 			"megasthenes.connect.worktree_reused": reused,
 		});
-		return {
-			url: repoUrl,
-			localPath: worktreePath,
-			forge,
-			commitish: sha,
-			cachePath: resolve(cachePath),
-		};
 	});
+
+	return {
+		url: repoUrl,
+		localPath: worktreePath,
+		forge,
+		commitish: sha,
+		cachePath: resolve(cachePath),
+	};
 }
