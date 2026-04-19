@@ -10,7 +10,7 @@ import { classifyThrownError } from "../error-classification";
 import { MegasthenesError } from "../errors";
 import { type Logger, nullLogger } from "../logger";
 import { endChildSpan, endChildSpanWithError, startChildSpan } from "../tracing";
-import type { ErrorType } from "../types";
+import type { ErrorType, RepoConfig } from "../types";
 
 /** Configuration for connecting to a sandbox worker. */
 export interface SandboxClientConfig {
@@ -63,23 +63,19 @@ type PollOutcome =
 
 type OnEvent = (name: string, attrs?: Attributes) => void;
 
-/** Connection info for a sandbox worker — shared across clone/tool/reset calls. */
-interface SandboxContext {
-	baseUrl: string;
-	authHeaders: Record<string, string>;
-	logger: Logger;
+function buildAuthHeaders(config: SandboxClientConfig): Record<string, string> {
+	if (!config.secret) return {};
+	return { Authorization: `Bearer ${config.secret}` };
 }
 
-/** Identifies a repository + ref. */
-interface RepoRef {
-	url: string;
-	commitish?: string;
-}
-
-async function triggerClone(sandbox: SandboxContext, repo: RepoRef, fallbackPrefix: string): Promise<TriggerOutcome> {
-	const res = await fetch(`${sandbox.baseUrl}/clone`, {
+async function triggerClone(
+	config: SandboxClientConfig,
+	repo: RepoConfig,
+	fallbackPrefix: string,
+): Promise<TriggerOutcome> {
+	const res = await fetch(`${config.baseUrl}/clone`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json", ...sandbox.authHeaders },
+		headers: { "Content-Type": "application/json", ...buildAuthHeaders(config) },
 		body: JSON.stringify({ url: repo.url, commitish: repo.commitish }),
 		signal: AbortSignal.timeout(30_000),
 	});
@@ -103,7 +99,12 @@ interface WaitArgs {
 	onEvent: OnEvent;
 }
 
-async function waitForClone(sandbox: SandboxContext, repo: RepoRef, args: WaitArgs): Promise<PollOutcome> {
+async function waitForClone(
+	config: SandboxClientConfig,
+	logger: Logger,
+	repo: RepoConfig,
+	args: WaitArgs,
+): Promise<PollOutcome> {
 	const deadline = Date.now() + CLONE_POLL_TIMEOUT_MS;
 	let pollInterval = CLONE_POLL_INITIAL_INTERVAL_MS;
 	let lastStatus: string | undefined;
@@ -114,18 +115,15 @@ async function waitForClone(sandbox: SandboxContext, repo: RepoRef, args: WaitAr
 		pollInterval = Math.min(pollInterval * 1.5, CLONE_POLL_MAX_INTERVAL_MS);
 
 		const statusRes = await fetch(
-			`${sandbox.baseUrl}/clone/status/${args.slug}?commitish=${encodeURIComponent(commitishForStatus)}`,
-			{ headers: { ...sandbox.authHeaders }, signal: AbortSignal.timeout(10_000) },
+			`${config.baseUrl}/clone/status/${args.slug}?commitish=${encodeURIComponent(commitishForStatus)}`,
+			{ headers: buildAuthHeaders(config), signal: AbortSignal.timeout(10_000) },
 		);
 
 		if (statusRes.status === 404) {
-			sandbox.logger.warn(
-				"sandbox:client",
-				`clone job not found for ${args.slug}, re-triggering clone for ${repo.url}`,
-			);
+			logger.warn("sandbox:client", `clone job not found for ${args.slug}, re-triggering clone for ${repo.url}`);
 			args.onEvent("sandbox.clone.retry_after_404", { slug: args.slug });
 			args.onProgress?.("Re-cloning repository…");
-			const retry = await triggerClone(sandbox, repo, "Sandbox clone failed on retry");
+			const retry = await triggerClone(config, repo, "Sandbox clone failed on retry");
 			if (retry.kind === "ready") {
 				return retry;
 			}
@@ -153,7 +151,7 @@ async function waitForClone(sandbox: SandboxContext, repo: RepoRef, args: WaitAr
 
 		const elapsed = body.elapsedMs ?? Date.now() - args.startTime;
 		const elapsedSec = Math.round(elapsed / 1000);
-		sandbox.logger.debug("sandbox:client", `clone in progress for ${repo.url} (${elapsedSec}s elapsed)`);
+		logger.debug("sandbox:client", `clone in progress for ${repo.url} (${elapsedSec}s elapsed)`);
 		args.onProgress?.(`Cloning repository… ${elapsedSec}s`);
 	}
 
@@ -184,8 +182,7 @@ export class SandboxClient {
 	}
 
 	private authHeaders(): Record<string, string> {
-		if (!this.config.secret) return {};
-		return { Authorization: `Bearer ${this.config.secret}` };
+		return buildAuthHeaders(this.config);
 	}
 
 	/** Check if the sandbox worker is reachable. */
@@ -238,17 +235,12 @@ export class SandboxClient {
 		const t0 = Date.now();
 		const cloneSpan = parentSpan ? startChildSpan(parentSpan, "sandbox.clone") : undefined;
 		const onEvent: OnEvent = (name, attrs) => cloneSpan?.addEvent(name, attrs);
-		const sandbox: SandboxContext = {
-			baseUrl: this.config.baseUrl,
-			authHeaders: this.authHeaders(),
-			logger: this.logger,
-		};
-		const repo: RepoRef = { url, commitish };
+		const repo: RepoConfig = { url, commitish };
 
 		try {
 			onEvent("sandbox.clone.started", { url, commitish: commit });
 
-			const trigger = await triggerClone(sandbox, repo, "Sandbox clone failed");
+			const trigger = await triggerClone(this.config, repo, "Sandbox clone failed");
 
 			if (trigger.kind === "ready") {
 				const duration = Date.now() - t0;
@@ -263,7 +255,7 @@ export class SandboxClient {
 			this.logger.debug("sandbox:client", `clone started for ${url}, polling status...`);
 			onProgress?.("Cloning repository…");
 
-			const outcome = await waitForClone(sandbox, repo, {
+			const outcome = await waitForClone(this.config, this.logger, repo, {
 				slug: trigger.slug,
 				startTime: t0,
 				onProgress,
