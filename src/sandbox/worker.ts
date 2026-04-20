@@ -15,6 +15,7 @@ import { closeSync, openSync } from "node:fs";
 import { buildToolCommand } from "../tool-commands";
 import type { ErrorType } from "../types";
 import { isolatedGitCommand, isolatedGitToolCommand, isolatedToolCommand } from "./isolation";
+import { type CloneRequest, type ToolRequest, validateCloneRequest, validateToolRequest } from "./request-schemas";
 
 /** Path to seccomp BPF filter that blocks network sockets (arch-specific) */
 const SECCOMP_ARCH = process.arch === "arm64" ? "arm64" : "x64";
@@ -210,11 +211,6 @@ setInterval(() => {
 // Clone (async)
 // =============================================================================
 
-interface CloneRequest {
-	url: string;
-	commitish?: string;
-}
-
 /** Translate raw git clone stderr into a user-friendly error message. */
 function friendlyCloneError(stderr: string, url: string): string {
 	const s = stderr.toLowerCase();
@@ -323,10 +319,9 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
  * If a clone is already in progress, returns "cloning" (dedup).
  */
 function handleClone(body: CloneRequest): Response {
+	// `body` is already schema-validated at the HTTP boundary — `url` is
+	// guaranteed to be a non-empty string, so no per-field nil checks here.
 	const { url, commitish = "HEAD" } = body;
-	if (!url) {
-		return Response.json({ ok: false, error: "url is required" }, { status: 400 });
-	}
 
 	const slug = slugify(url);
 	const jobKey = `${slug}:${commitish}`;
@@ -409,18 +404,11 @@ function handleCloneStatus(slug: string, commitish: string): Response {
 // Tool execution
 // =============================================================================
 
-interface ToolRequest {
-	slug: string;
-	sha: string;
-	name: string;
-	args: Record<string, unknown>;
-}
-
 async function handleTool(body: ToolRequest): Promise<Response> {
+	// `body` is already schema-validated at the HTTP boundary — required string
+	// fields are guaranteed present and non-empty. Per-tool arg validation still
+	// happens downstream in `buildToolCommand`.
 	const { slug, sha, name, args } = body;
-	if (!slug || !sha || !name) {
-		return Response.json({ ok: false, error: "slug, sha, and name are required" }, { status: 400 });
-	}
 
 	const shortSha = sha.slice(0, 12);
 	const worktree = `${repoDir(slug)}/trees/${shortSha}`;
@@ -485,6 +473,22 @@ function checkAuth(req: Request): Response | null {
 	return null;
 }
 
+/**
+ * Parse a request body as JSON, returning a discriminated result.
+ *
+ * `req.json()` throws `SyntaxError` on malformed JSON; letting that bubble up
+ * would produce an opaque 500. Catching it here keeps the failure mode at
+ * the boundary: bad JSON → 400 Bad Request with a clear message.
+ */
+async function parseJsonBody(req: Request): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+	try {
+		return { ok: true, value: await req.json() };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: `Malformed JSON body: ${msg}` };
+	}
+}
+
 /** Extract key params from request body for logging. */
 function requestSummary(pathname: string, body: unknown): string {
 	if (pathname === "/clone") {
@@ -518,17 +522,40 @@ const server = Bun.serve({
 		let response: Response;
 
 		if (pathname === "/clone" && req.method === "POST") {
-			body = await req.json();
-			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
-			response = handleClone(body as CloneRequest);
+			const parsed = await parseJsonBody(req);
+			if (!parsed.ok) {
+				response = Response.json({ ok: false, error: parsed.error }, { status: 400 });
+			} else {
+				body = parsed.value;
+				console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+				// Validate untrusted input at the boundary. A cast is not validation —
+				// malformed payloads must be rejected here so downstream helpers only
+				// ever see well-formed `CloneRequest` values.
+				const validated = validateCloneRequest(body);
+				if (!validated.ok) {
+					response = Response.json({ ok: false, error: `Invalid clone request: ${validated.error}` }, { status: 400 });
+				} else {
+					response = handleClone(validated.value);
+				}
+			}
 		} else if (pathname.startsWith("/clone/status/") && req.method === "GET") {
 			const slug = pathname.slice("/clone/status/".length);
 			const commitish = url.searchParams.get("commitish") || "HEAD";
 			response = handleCloneStatus(slug, commitish);
 		} else if (pathname === "/tool" && req.method === "POST") {
-			body = await req.json();
-			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
-			response = await handleTool(body as ToolRequest);
+			const parsed = await parseJsonBody(req);
+			if (!parsed.ok) {
+				response = Response.json({ ok: false, error: parsed.error }, { status: 400 });
+			} else {
+				body = parsed.value;
+				console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+				const validated = validateToolRequest(body);
+				if (!validated.ok) {
+					response = Response.json({ ok: false, error: `Invalid tool request: ${validated.error}` }, { status: 400 });
+				} else {
+					response = await handleTool(validated.value);
+				}
+			}
 		} else if (pathname === "/reset" && req.method === "POST") {
 			console.info(`[sandbox] ${req.method} ${pathname}`);
 			response = await handleReset();
