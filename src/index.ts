@@ -181,7 +181,7 @@ export class Client {
 				// Verify sandbox is reachable before attempting clone
 				const healthy = await this.#sandboxClient.health();
 				if (!healthy) {
-					throw new Error(`Sandbox is not reachable at ${this.config.sandbox?.baseUrl}`);
+					throw new Error("Sandbox is not reachable");
 				}
 
 				const cloneResult = await this.#sandboxClient.clone(
