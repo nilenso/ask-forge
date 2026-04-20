@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+* Sandbox worker now validates `POST /clone` and `POST /tool` request bodies with TypeBox at the HTTP boundary. Malformed payloads (missing fields, wrong types, non-JSON) return `400 Bad Request` with an actionable error instead of bubbling up as opaque `500`s from `slugify` / `buildToolCommand`. (#123)
+
 ## [0.0.19] - 2026-04-13
 
 ### Added

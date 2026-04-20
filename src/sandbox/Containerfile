@@ -41,10 +41,12 @@ RUN ARCH=$(uname -m) \
     && mv /tmp/net-block.bpf /etc/seccomp/$ARCH/net-block.bpf
 
 # Copy application files — layout must match import paths:
-#   worker.ts imports "../tool-commands" → /app/tool-commands.ts
-#   worker.ts imports "./isolation"      → /app/sandbox/isolation/index.ts
-#   tool-commands.ts imports "./tools"   → /app/tools.ts (for TypeBox-backed arg validation)
+#   worker.ts imports "../tool-commands"     → /app/tool-commands.ts
+#   worker.ts imports "./isolation"          → /app/sandbox/isolation/index.ts
+#   worker.ts imports "./request-schemas"    → /app/sandbox/request-schemas.ts (HTTP body validation)
+#   tool-commands.ts imports "./tools"       → /app/tools.ts (for TypeBox-backed arg validation)
 COPY sandbox/worker.ts /app/sandbox/worker.ts
+COPY sandbox/request-schemas.ts /app/sandbox/request-schemas.ts
 COPY sandbox/isolation/index.ts /app/sandbox/isolation/index.ts
 COPY tool-commands.ts /app/tool-commands.ts
 COPY tools.ts /app/tools.ts
