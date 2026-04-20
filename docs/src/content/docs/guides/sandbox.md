@@ -31,7 +31,7 @@ const client = new Client({
 |-------|------|-------------|
 | `baseUrl` | `string` | HTTP endpoint of the sandbox worker. Required. |
 | `timeoutMs` | `number` | Request timeout in ms. Required. |
-| `secret` | `string` | Bearer token for API authentication. Optional. |
+| `secret` | `string` | Bearer token for [API authentication](#authentication). Optional. |
 
 When sandbox mode is enabled:
 
@@ -56,36 +56,69 @@ const session = await client.connect(sessionConfig, (message) => {
 | Syscall | seccomp | Restricts allowed system calls |
 | Process | Namespace isolation | Separate PID/network/mount namespaces |
 
+### Prerequisites
+
+The sandbox runs on **Linux** and requires Docker and gVisor.
+
+#### Install Docker
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+#### Install gVisor
+
+```bash
+# Download runsc and the containerd shim
+ARCH=$(uname -m)
+sudo curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}/runsc" -o /usr/local/bin/runsc
+sudo curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}/containerd-shim-runsc-v1" -o /usr/local/bin/containerd-shim-runsc-v1
+sudo chmod +x /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+
+# Register runsc as a Docker runtime and restart
+sudo runsc install
+sudo systemctl restart docker
+```
+
+Verify both are working:
+
+```bash
+docker info --format '{{json .Runtimes}}' | grep runsc
+```
+
 ### Running the Sandbox Server
 
-Generate a docker-compose file and start the sandbox:
+Download the [compose file](https://raw.githubusercontent.com/nilenso/megasthenes/main/docker-compose.sandbox.yml) and start the sandbox:
 
 ```bash
-# Generate docker-compose.sandbox.yml
-bunx megasthenes setup-sandbox
-
-# Start the sandbox
-docker-compose -f docker-compose.sandbox.yml up -d
+curl -O https://raw.githubusercontent.com/nilenso/megasthenes/main/docker-compose.sandbox.yml
+docker compose -f docker-compose.sandbox.yml up -d
 ```
 
-Prerequisites: Docker with [gVisor runtime](https://gvisor.dev/docs/user_guide/install/).
-
-The `setup-sandbox` command accepts configuration flags:
+Verify the sandbox is running:
 
 ```bash
-bunx megasthenes setup-sandbox \
-  --port 9090 \
-  --generate-secret \
-  --output ./docker-compose.sandbox.yml
+curl http://localhost:8080/health
+# Expected: {"ok":true}
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--port` | 8080 | Host port to expose |
-| `--secret` | (none) | Bearer token for API authentication |
-| `--generate-secret` | — | Generate a random 32-char hex secret |
-| `--output` | `./docker-compose.sandbox.yml` | Output file path |
-| `--image-tag` | Library version | Container image tag |
+### Authentication
+
+The sandbox API supports optional bearer token authentication. Without it, anyone who can reach the sandbox port can clone repos, execute tools, and delete data.
+
+To enable it, set the `SANDBOX_SECRET` environment variable in the compose file:
+
+```yaml
+environment:
+  - PORT=8080
+  - SANDBOX_SECRET=your-secret-here
+```
+
+Every request to the sandbox must then include an `Authorization: Bearer <secret>` header. The client handles this automatically when you pass `secret` in the [sandbox config](#enabling-sandbox-mode).
+
+Authentication is optional when the sandbox only listens on localhost. It is recommended when the sandbox is reachable over a network.
 
 ### Resetting the Sandbox
 

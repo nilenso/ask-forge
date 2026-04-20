@@ -3,8 +3,7 @@
 	"version": "0.0.19",
 	"license": "MIT",
 	"exports": {
-		".": "./src/index.ts",
-		"./cli": "./src/cli/index.ts"
+		".": "./src/index.ts"
 	},
 	"exclude": [
 		"docs/",
