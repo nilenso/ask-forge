@@ -222,4 +222,66 @@ describe("AskStream", () => {
 
 		expect(started).toBe(false);
 	});
+
+	describe("producer throws", () => {
+		test("producer throws before any yield — .result() rejects with the producer's error", async () => {
+			const producer = async function* (): AsyncGenerator<StreamEvent> {
+				// Touch `yield` after the throw so TypeScript still treats this as
+				// a generator, but Biome doesn't flag an unreachable statement.
+				if ((0 as number) === 1) yield { type: "text", text: "unreachable" };
+				throw new Error("producer exploded");
+			};
+			const stream = new AskStreamImpl(producer);
+
+			await expect(stream.result()).rejects.toThrow("producer exploded");
+		});
+
+		test("producer throws mid-stream while iterating — iterator rethrows and iteration terminates", async () => {
+			const producer = async function* (): AsyncGenerator<StreamEvent> {
+				yield { type: "turn_start", turnId: "t-1", prompt: "Q", timestamp: 1000 };
+				yield { type: "text_delta", delta: "partial" };
+				throw new Error("mid-stream failure");
+			};
+			const stream = new AskStreamImpl(producer);
+
+			const collected: StreamEvent[] = [];
+			let caught: unknown;
+			try {
+				for await (const event of stream) {
+					collected.push(event);
+				}
+			} catch (error) {
+				caught = error;
+			}
+
+			expect(caught).toBeInstanceOf(Error);
+			expect((caught as Error).message).toBe("mid-stream failure");
+			// Events observed before the throw are still delivered in order.
+			expect(collected.map((e) => e.type)).toEqual(["turn_start", "text_delta"]);
+		});
+
+		test("after iteration throws, .result() resolves with the partial TurnResult built so far", async () => {
+			const producer = async function* (): AsyncGenerator<StreamEvent> {
+				yield { type: "turn_start", turnId: "t-1", prompt: "Q", timestamp: 1000 };
+				yield { type: "text", text: "partial answer" };
+				throw new Error("mid-stream failure");
+			};
+			const stream = new AskStreamImpl(producer);
+
+			// Consume until the producer throws; the iterator's finally clause
+			// marks the stream done and snapshots the builder state.
+			try {
+				for await (const _event of stream) {
+					// no-op
+				}
+			} catch {
+				// expected
+			}
+
+			const result = await stream.result();
+			expect(result.id).toBe("t-1");
+			expect(result.prompt).toBe("Q");
+			expect(result.steps).toEqual([{ type: "text", text: "partial answer", role: "assistant" }]);
+		});
+	});
 });

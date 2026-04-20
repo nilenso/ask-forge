@@ -180,6 +180,49 @@ describe("Session", () => {
 			expect(events[events.length - 1]?.type).toBe("turn_end");
 		});
 
+		test("tool execution failure surfaces as tool_call step with isError=true in final TurnResult", async () => {
+			// End-to-end: a failing executeTool must round-trip through the session
+			// and land on the public contract as tool_call.isError === true. This
+			// is intentionally asserted at the session boundary (not just at the
+			// stream/builder layer) because the session is the public surface
+			// callers consume.
+			let streamCalls = 0;
+			const customStream = (() => {
+				streamCalls++;
+				if (streamCalls === 1) {
+					return createToolCallStreamResult([{ name: "rg", arguments: { pattern: "boom" } }]);
+				}
+				return createMockStreamResult();
+			}) as unknown as SessionConfig["stream"];
+
+			const session = new Session(
+				createMockRepo(),
+				createMockConfig({
+					stream: customStream,
+					executeTool: async () => {
+						throw new Error("tool blew up");
+					},
+				}),
+			);
+
+			const result = await session.ask("Search").result();
+
+			const toolSteps = result.steps.filter((s) => s.type === "tool_call");
+			expect(toolSteps).toHaveLength(1);
+			const toolStep = toolSteps[0];
+			expect(toolStep).toBeDefined();
+			if (toolStep?.type === "tool_call") {
+				expect(toolStep.isError).toBe(true);
+				expect(toolStep.name).toBe("rg");
+				// Session formats the thrown error into the tool output so the
+				// model (and downstream consumers) can see what went wrong.
+				expect(toolStep.output).toContain("tool blew up");
+			}
+			// A tool failure is NOT a turn failure — the session continues to
+			// the next iteration and completes normally.
+			expect(result.error).toBeNull();
+		});
+
 		test("tool calls produce tool_result events and steps", async () => {
 			let streamCalls = 0;
 			const customStream = (() => {
