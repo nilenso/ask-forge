@@ -75,7 +75,7 @@ function hasSeccompFilter(): boolean {
 
 describe("bwrap filesystem isolation", () => {
 	// Use a path outside /tmp since bwrap uses --tmpfs /tmp
-	const TEST_BASE = "/var/tmp";
+	const testBase = "/var/tmp";
 	let testDir: string;
 	let repoDir: string;
 
@@ -84,7 +84,7 @@ describe("bwrap filesystem isolation", () => {
 			console.log("Skipping bwrap tests: bwrap not installed");
 			return;
 		}
-		testDir = await mkdtemp(join(TEST_BASE, "isolation-test-"));
+		testDir = await mkdtemp(join(testBase, "isolation-test-"));
 		repoDir = join(testDir, "repo");
 		await mkdir(repoDir, { recursive: true });
 		await writeFile(join(repoDir, "test.txt"), "test content");
@@ -300,7 +300,7 @@ describe("seccomp network blocking", () => {
 // =============================================================================
 
 describe("combined bwrap + seccomp isolation", () => {
-	const TEST_BASE = "/var/tmp";
+	const testBase = "/var/tmp";
 
 	function hasFullIsolation(): boolean {
 		return hasBwrap() && hasSeccompFilter();
@@ -312,7 +312,7 @@ describe("combined bwrap + seccomp isolation", () => {
 			return;
 		}
 
-		const testDir = await mkdtemp(join(TEST_BASE, "combined-test-"));
+		const testDir = await mkdtemp(join(testBase, "combined-test-"));
 		await writeFile(join(testDir, "data.txt"), "isolated content");
 
 		const args = bwrapArgsForTool(testDir, testDir);
@@ -330,7 +330,7 @@ describe("combined bwrap + seccomp isolation", () => {
 			return;
 		}
 
-		const testDir = await mkdtemp(join(TEST_BASE, "combined-test-"));
+		const testDir = await mkdtemp(join(testBase, "combined-test-"));
 		const args = bwrapArgsForTool(testDir, testDir);
 
 		// Use bash /dev/tcp which requires socket creation
@@ -347,7 +347,7 @@ describe("combined bwrap + seccomp isolation", () => {
 			return;
 		}
 
-		const testDir = await mkdtemp(join(TEST_BASE, "combined-test-"));
+		const testDir = await mkdtemp(join(testBase, "combined-test-"));
 		await writeFile(join(testDir, "existing.txt"), "original");
 
 		const args = bwrapArgsForTool(testDir, testDir);
