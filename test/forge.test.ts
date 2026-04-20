@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MegasthenesError } from "../src/errors";
-import { cleanupRepo, connectRepo, type Forge, type Repo } from "../src/forge";
+import { cleanupRepo, connectRepo, type Forge, inferForge, type Repo } from "../src/forge";
 import type { ErrorType } from "../src/types";
 
 // =============================================================================
@@ -139,7 +139,6 @@ describe("forge", () => {
 		cacheCleanupPaths.push(join(home, ".megasthenes", "repos", "tmp"));
 		cacheCleanupPaths.push(join(home, ".megasthenes", "repos", "var"));
 		cacheCleanupPaths.push(join(home, ".megasthenes", "repos", "testuser"));
-		cacheCleanupPaths.push(join(home, ".megasthenes", "repos", "gitlab-examples"));
 	});
 
 	afterAll(async () => {
@@ -403,21 +402,20 @@ describe("forge", () => {
 		});
 	});
 
-	describe("inferForge (indirect)", () => {
-		test("github.com URL infers github forge (error is not about forge inference)", async () => {
-			// connectRepo will fail (repo doesn't exist), but the error must NOT be
-			// about forge inference — proving inferForge("github.com") returned "github".
-			// With a well-formed URL, invalid_config is only produced by the forge-inference branch.
-			const err = await connectRepo("https://github.com/testuser/testrepo").catch((e: unknown) => e);
-			expect(err).toBeInstanceOf(MegasthenesError);
-			expect((err as MegasthenesError).errorType).not.toBe("invalid_config");
+	describe("inferForge", () => {
+		test("github.com URL infers github forge", () => {
+			expect(inferForge("https://github.com/owner/repo")).toBe("github");
+			expect(inferForge("https://github.com/owner/repo.git")).toBe("github");
 		});
 
-		test("gitlab.com URL infers gitlab forge (public repo connects without explicit forge option)", async () => {
-			const repo = await connectRepo("https://gitlab.com/gitlab-examples/ci-debug-trace.git");
-			expect(repo.forge.name).toBe("gitlab");
-			expect(repo.url).toContain("gitlab.com");
-		}, 30_000);
+		test("gitlab.com URL infers gitlab forge", () => {
+			expect(inferForge("https://gitlab.com/owner/repo")).toBe("gitlab");
+			expect(inferForge("https://gitlab.com/owner/repo.git")).toBe("gitlab");
+		});
+
+		test("unknown domain returns null", () => {
+			expect(inferForge("https://git.example.com/user/repo")).toBeNull();
+		});
 
 		test("custom domain without forge option throws invalid_config", async () => {
 			await expectConnectError(connectRepo("https://git.example.com/user/repo"), "invalid_config");
