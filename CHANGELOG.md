@@ -6,9 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 * `setup-sandbox` CLI command — generates a docker-compose file for the sandbox server
-* `install-deps` CLI command — checks for and installs system prerequisites (git, ripgrep, fd)
 * Docker image publishing workflow to GHCR (multi-platform amd64/arm64)
-* `./cli` export in jsr.json and `bin` entry in package.json
 * Streaming ask API with `askStream()` and turn-based conversation support
 * Tool record enrichment and error handling in ask API
 * Stream event types and turn result builder
