@@ -319,7 +319,7 @@ export class Session {
 
 			// Check for abort before starting
 			if (options?.signal?.aborted) {
-				yield { type: "error", errorType: "aborted", message: "Aborted", isRetryable: false };
+				yield { type: "error", errorType: "aborted", message: "Aborted", retryability: "no" };
 				return;
 			}
 
@@ -397,7 +397,7 @@ export class Session {
 			for (let iteration = 0; iteration < turnMaxIterations; iteration++) {
 				// Check for abort before each iteration
 				if (options?.signal?.aborted) {
-					yield { type: "error", errorType: "aborted", message: "Aborted", isRetryable: false };
+					yield { type: "error", errorType: "aborted", message: "Aborted", retryability: "no" };
 					endAskSpanWithError(askSpan, "aborted", "Aborted");
 					askSpanEnded = true;
 					yield {
@@ -480,7 +480,7 @@ export class Session {
 							type: "error",
 							errorType: "empty_response",
 							message: emptyResponseMessage,
-							isRetryable: true,
+							retryability: "yes",
 						};
 						endAskSpanWithError(askSpan, "empty_response", emptyResponseMessage);
 						askSpanEnded = true;
@@ -498,7 +498,7 @@ export class Session {
 						outputTokens: response.usage?.output ?? 0,
 						cacheReadTokens: response.usage?.cacheRead ?? 0,
 						cacheCreationTokens: response.usage?.cacheWrite ?? 0,
-						stopReason: (response as unknown as { stopReason?: string }).stopReason,
+						stopReason: response.stopReason,
 					});
 					endAskSpan(askSpan, { toolCallCount: totalToolCalls, totalIterations: iterations, usage: totalUsage });
 					askSpanEnded = true;
@@ -519,7 +519,7 @@ export class Session {
 					outputTokens: response.usage?.output ?? 0,
 					cacheReadTokens: response.usage?.cacheRead ?? 0,
 					cacheCreationTokens: response.usage?.cacheWrite ?? 0,
-					stopReason: (response as unknown as { stopReason?: string }).stopReason,
+					stopReason: response.stopReason,
 				});
 				yield* this.#executeToolCalls(responseToolCalls, genSpan);
 			}
@@ -529,7 +529,7 @@ export class Session {
 				type: "error",
 				errorType: "max_iterations",
 				message: "Max iterations reached without a final answer.",
-				isRetryable: false,
+				retryability: "no",
 			};
 			endAskSpanWithError(askSpan, "max_iterations", "Max iterations reached without a final answer.");
 			askSpanEnded = true;
@@ -546,7 +546,7 @@ export class Session {
 			}
 			if (error instanceof MegasthenesError) throw error;
 			throw new MegasthenesError("internal_error", "Unexpected error during turn", {
-				isRetryable: false,
+				retryability: "no",
 				details: error,
 				cause: error,
 			});
