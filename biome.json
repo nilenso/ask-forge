@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.12/schema.json",
 	"files": {
 		"includes": [
 			"**",
@@ -15,9 +15,43 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noConsole": {
+					"level": "error",
+					"options": { "allow": ["warn", "error", "info"] }
+				}
+			},
+			"correctness": {
+				"noUnusedImports": "error"
+			},
+			"style": {
+				"useNamingConvention": {
+					"level": "error",
+					"options": {
+						"strictCase": false,
+						"conventions": [
+							{ "selector": { "kind": "objectLiteralProperty" }, "match": ".*" },
+							{ "selector": { "kind": "typeProperty" }, "match": ".*" }
+						]
+					}
+				}
+			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["scripts/**", "test/**", "**/*.test.ts", "src/cli/**", "src/sandbox/worker.ts", "src/logger.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					}
+				}
+			}
+		}
+	],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
