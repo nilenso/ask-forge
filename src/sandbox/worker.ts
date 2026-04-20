@@ -15,6 +15,7 @@ import { closeSync, openSync } from "node:fs";
 import { buildToolCommand } from "../tool-commands";
 import type { ErrorType } from "../types";
 import { isolatedGitCommand, isolatedGitToolCommand, isolatedToolCommand } from "./isolation";
+import { type CloneRequest, type ToolRequest, validateCloneRequest, validateToolRequest } from "./request-schemas";
 
 /** Path to seccomp BPF filter that blocks network sockets (arch-specific) */
 const SECCOMP_ARCH = process.arch === "arm64" ? "arm64" : "x64";
@@ -170,22 +171,16 @@ async function runToolIsolated(
 // Async Clone State
 // =============================================================================
 
-type CloneStatus = "cloning" | "ready" | "failed";
-
-interface CloneJob {
-	status: CloneStatus;
+interface CloneJobBase {
 	url: string;
 	slug: string;
-	/** Set when status = "ready" */
-	sha?: string;
-	worktree?: string;
-	/** Set when status = "failed" */
-	error?: string;
-	/** Set when status = "failed" — programmatic error classification. */
-	errorType?: ErrorType;
 	startedAt: number;
-	finishedAt?: number;
 }
+
+type CloneJob =
+	| (CloneJobBase & { status: "cloning" })
+	| (CloneJobBase & { status: "ready"; sha: string; worktree: string; finishedAt: number })
+	| (CloneJobBase & { status: "failed"; error: string; errorType: ErrorType; finishedAt: number });
 
 /**
  * In-memory clone job tracker.
@@ -200,7 +195,7 @@ const JOB_TTL_MS = 10 * 60 * 1000;
 setInterval(() => {
 	const now = Date.now();
 	for (const [key, job] of cloneJobs) {
-		if (job.finishedAt && now - job.finishedAt > JOB_TTL_MS) {
+		if (job.status !== "cloning" && now - job.finishedAt > JOB_TTL_MS) {
 			cloneJobs.delete(key);
 		}
 	}
@@ -209,11 +204,6 @@ setInterval(() => {
 // =============================================================================
 // Clone (async)
 // =============================================================================
-
-interface CloneRequest {
-	url: string;
-	commitish?: string;
-}
 
 /** Translate raw git clone stderr into a user-friendly error message. */
 function friendlyCloneError(stderr: string, url: string): string {
@@ -236,14 +226,18 @@ function friendlyCloneError(stderr: string, url: string): string {
 
 /**
  * Execute the clone/fetch + worktree setup in the background.
- * Updates the job entry in cloneJobs as it progresses.
+ * Replaces the job entry in cloneJobs as it transitions between states.
  */
 async function executeClone(jobKey: string, url: string, commitish: string): Promise<void> {
-	const job = cloneJobs.get(jobKey);
-	if (!job) return;
+	const started = cloneJobs.get(jobKey);
+	if (!started) return;
+	const base: CloneJobBase = { url: started.url, slug: started.slug, startedAt: started.startedAt };
 
-	const slug = job.slug;
-	const baseDir = repoDir(slug);
+	const markFailed = (error: string, errorType: ErrorType): void => {
+		cloneJobs.set(jobKey, { ...base, status: "failed", error, errorType, finishedAt: Date.now() });
+	};
+
+	const baseDir = repoDir(base.slug);
 	const bareDir = `${baseDir}/bare`;
 	const treesDir = `${baseDir}/trees`;
 
@@ -266,11 +260,8 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
 				CLONE_TIMEOUT_MS,
 			);
 			if (exitCode !== 0) {
-				job.status = "failed";
-				job.error = friendlyCloneError(stderr, url);
-				job.errorType = "clone_failed";
-				job.finishedAt = Date.now();
 				console.error(`[sandbox:clone] clone failed for ${url}: ${stderr.slice(0, 200)}`);
+				markFailed(friendlyCloneError(stderr, url), "clone_failed");
 				return;
 			}
 		}
@@ -278,10 +269,7 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
 		// Resolve commitish → SHA
 		const revParse = await runGitIsolated(["rev-parse", commitish], bareDir, baseDir);
 		if (revParse.exitCode !== 0) {
-			job.status = "failed";
-			job.error = `Cannot resolve commitish "${commitish}": ${revParse.stderr.slice(0, 300)}`;
-			job.errorType = "invalid_commitish";
-			job.finishedAt = Date.now();
+			markFailed(`Cannot resolve commitish "${commitish}": ${revParse.stderr.slice(0, 300)}`, "invalid_commitish");
 			return;
 		}
 		const sha = revParse.stdout.trim();
@@ -293,25 +281,16 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
 		if (!worktreeExists) {
 			const wt = await runGitIsolated(["worktree", "add", worktree, sha], bareDir, baseDir);
 			if (wt.exitCode !== 0) {
-				job.status = "failed";
-				job.error = `git worktree add failed: ${wt.stderr.slice(0, 300)}`;
-				job.errorType = "clone_failed";
-				job.finishedAt = Date.now();
+				markFailed(`git worktree add failed: ${wt.stderr.slice(0, 300)}`, "clone_failed");
 				return;
 			}
 		}
 
-		job.status = "ready";
-		job.sha = sha;
-		job.worktree = worktree;
-		job.finishedAt = Date.now();
-		console.info(`[sandbox:clone] ready: ${url} → ${slug} @ ${shortSha} (${Date.now() - job.startedAt}ms)`);
+		cloneJobs.set(jobKey, { ...base, status: "ready", sha, worktree, finishedAt: Date.now() });
+		console.info(`[sandbox:clone] ready: ${url} → ${base.slug} @ ${shortSha} (${Date.now() - base.startedAt}ms)`);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
-		job.status = "failed";
-		job.error = msg;
-		job.errorType = "clone_failed";
-		job.finishedAt = Date.now();
+		markFailed(msg, "clone_failed");
 		console.error(`[sandbox:clone] exception for ${url}: ${msg}`);
 	}
 }
@@ -323,10 +302,9 @@ async function executeClone(jobKey: string, url: string, commitish: string): Pro
  * If a clone is already in progress, returns "cloning" (dedup).
  */
 function handleClone(body: CloneRequest): Response {
+	// `body` is already schema-validated at the HTTP boundary — `url` is
+	// guaranteed to be a non-empty string, so no per-field nil checks here.
 	const { url, commitish = "HEAD" } = body;
-	if (!url) {
-		return Response.json({ ok: false, error: "url is required" }, { status: 400 });
-	}
 
 	const slug = slugify(url);
 	const jobKey = `${slug}:${commitish}`;
@@ -334,19 +312,21 @@ function handleClone(body: CloneRequest): Response {
 	// Check for existing job
 	const existing = cloneJobs.get(jobKey);
 	if (existing) {
-		if (existing.status === "ready") {
-			return Response.json({
-				ok: true,
-				status: "ready",
-				slug,
-				sha: existing.sha,
-				worktree: existing.worktree,
-			});
+		switch (existing.status) {
+			case "ready":
+				return Response.json({
+					ok: true,
+					status: "ready",
+					slug,
+					sha: existing.sha,
+					worktree: existing.worktree,
+				});
+			case "cloning":
+				return Response.json({ ok: true, status: "cloning", slug });
+			case "failed":
+				// allow retry by falling through to create a new job
+				break;
 		}
-		if (existing.status === "cloning") {
-			return Response.json({ ok: true, status: "cloning", slug });
-		}
-		// "failed" — allow retry by falling through to create a new job
 	}
 
 	// Create new job
@@ -376,51 +356,41 @@ function handleCloneStatus(slug: string, commitish: string): Response {
 		return Response.json({ ok: false, error: "No clone job found for this repo" }, { status: 404 });
 	}
 
-	if (job.status === "ready") {
-		return Response.json({
-			ok: true,
-			status: "ready",
-			slug: job.slug,
-			sha: job.sha,
-			worktree: job.worktree,
-		});
+	switch (job.status) {
+		case "ready":
+			return Response.json({
+				ok: true,
+				status: "ready",
+				slug: job.slug,
+				sha: job.sha,
+				worktree: job.worktree,
+			});
+		case "failed":
+			return Response.json({
+				ok: false,
+				status: "failed",
+				error: job.error,
+				errorType: job.errorType,
+			});
+		case "cloning":
+			return Response.json({
+				ok: true,
+				status: "cloning",
+				slug: job.slug,
+				elapsedMs: Date.now() - job.startedAt,
+			});
 	}
-
-	if (job.status === "failed") {
-		return Response.json({
-			ok: false,
-			status: "failed",
-			error: job.error,
-			errorType: job.errorType,
-		});
-	}
-
-	// Still cloning
-	const elapsed = Date.now() - job.startedAt;
-	return Response.json({
-		ok: true,
-		status: "cloning",
-		slug: job.slug,
-		elapsedMs: elapsed,
-	});
 }
 
 // =============================================================================
 // Tool execution
 // =============================================================================
 
-interface ToolRequest {
-	slug: string;
-	sha: string;
-	name: string;
-	args: Record<string, unknown>;
-}
-
 async function handleTool(body: ToolRequest): Promise<Response> {
+	// `body` is already schema-validated at the HTTP boundary — required string
+	// fields are guaranteed present and non-empty. Per-tool arg validation still
+	// happens downstream in `buildToolCommand`.
 	const { slug, sha, name, args } = body;
-	if (!slug || !sha || !name) {
-		return Response.json({ ok: false, error: "slug, sha, and name are required" }, { status: 400 });
-	}
 
 	const shortSha = sha.slice(0, 12);
 	const worktree = `${repoDir(slug)}/trees/${shortSha}`;
@@ -485,6 +455,22 @@ function checkAuth(req: Request): Response | null {
 	return null;
 }
 
+/**
+ * Parse a request body as JSON, returning a discriminated result.
+ *
+ * `req.json()` throws `SyntaxError` on malformed JSON; letting that bubble up
+ * would produce an opaque 500. Catching it here keeps the failure mode at
+ * the boundary: bad JSON → 400 Bad Request with a clear message.
+ */
+async function parseJsonBody(req: Request): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+	try {
+		return { ok: true, value: await req.json() };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: `Malformed JSON body: ${msg}` };
+	}
+}
+
 /** Extract key params from request body for logging. */
 function requestSummary(pathname: string, body: unknown): string {
 	if (pathname === "/clone") {
@@ -518,17 +504,40 @@ const server = Bun.serve({
 		let response: Response;
 
 		if (pathname === "/clone" && req.method === "POST") {
-			body = await req.json();
-			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
-			response = handleClone(body as CloneRequest);
+			const parsed = await parseJsonBody(req);
+			if (!parsed.ok) {
+				response = Response.json({ ok: false, error: parsed.error }, { status: 400 });
+			} else {
+				body = parsed.value;
+				console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+				// Validate untrusted input at the boundary. A cast is not validation —
+				// malformed payloads must be rejected here so downstream helpers only
+				// ever see well-formed `CloneRequest` values.
+				const validated = validateCloneRequest(body);
+				if (!validated.ok) {
+					response = Response.json({ ok: false, error: `Invalid clone request: ${validated.error}` }, { status: 400 });
+				} else {
+					response = handleClone(validated.value);
+				}
+			}
 		} else if (pathname.startsWith("/clone/status/") && req.method === "GET") {
 			const slug = pathname.slice("/clone/status/".length);
 			const commitish = url.searchParams.get("commitish") || "HEAD";
 			response = handleCloneStatus(slug, commitish);
 		} else if (pathname === "/tool" && req.method === "POST") {
-			body = await req.json();
-			console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
-			response = await handleTool(body as ToolRequest);
+			const parsed = await parseJsonBody(req);
+			if (!parsed.ok) {
+				response = Response.json({ ok: false, error: parsed.error }, { status: 400 });
+			} else {
+				body = parsed.value;
+				console.info(`[sandbox] ${req.method} ${pathname} ${requestSummary(pathname, body)}`);
+				const validated = validateToolRequest(body);
+				if (!validated.ok) {
+					response = Response.json({ ok: false, error: `Invalid tool request: ${validated.error}` }, { status: 400 });
+				} else {
+					response = await handleTool(validated.value);
+				}
+			}
 		} else if (pathname === "/reset" && req.method === "POST") {
 			console.info(`[sandbox] ${req.method} ${pathname}`);
 			response = await handleReset();

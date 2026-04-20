@@ -246,6 +246,91 @@ describe("sandbox network isolation", () => {
 });
 
 // =============================================================================
+// HTTP-Boundary Validation (malformed request bodies → 400, not 500)
+// =============================================================================
+
+// These tests bypass SandboxClient and hit the worker directly with raw fetch
+// so they can send payloads the client would never construct. The goal is to
+// pin down the HTTP contract: malformed bodies must produce 400 Bad Request
+// with an actionable error, not an opaque 500 from a deep helper.
+
+describe("sandbox HTTP-boundary validation", () => {
+	async function postJson(
+		path: string,
+		body: unknown,
+		rawBody?: string,
+	): Promise<{ status: number; body: { ok: boolean; error?: string } }> {
+		const res = await fetch(`${SANDBOX_URL}${path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: rawBody ?? JSON.stringify(body),
+		});
+		const parsed = (await res.json()) as { ok: boolean; error?: string };
+		return { status: res.status, body: parsed };
+	}
+
+	test("POST /clone with malformed JSON returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/clone", null, "{not json");
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		expect(body.error).toMatch(/JSON/i);
+	});
+
+	test("POST /clone with missing url returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/clone", {});
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		expect(body.error).toContain("url");
+	});
+
+	test("POST /clone with wrong-typed url returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/clone", { url: 123 });
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		expect(body.error).toContain("url");
+	});
+
+	test("POST /tool with missing required fields returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/tool", { slug: "x" });
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		// Error should point at one of the missing fields (sha / name / args).
+		expect(body.error).toMatch(/sha|name|args/);
+	});
+
+	test("POST /tool with non-object args returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/tool", {
+			slug: "github.com/octocat/Hello-World",
+			sha: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+			name: "ls",
+			args: "not-an-object",
+		});
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		expect(body.error).toContain("args");
+	});
+
+	test("POST /tool with malformed JSON returns 400", async () => {
+		if (!(await isSandboxRunning())) return;
+
+		const { status, body } = await postJson("/tool", null, "{not json");
+		expect(status).toBe(400);
+		expect(body.ok).toBe(false);
+		expect(body.error).toMatch(/JSON/i);
+	});
+});
+
+// =============================================================================
 // Input Validation
 // =============================================================================
 
