@@ -32,10 +32,20 @@ npx jsr add @nilenso/megasthenes
 bunx jsr add @nilenso/megasthenes
 ```
 
-Install system dependencies (git, ripgrep, fd) automatically:
+Install system dependencies:
 
 ```bash
-bunx megasthenes install-deps
+# macOS
+brew install git ripgrep fd
+
+# Debian / Ubuntu
+sudo apt install -y git ripgrep fd-find
+
+# Fedora
+sudo dnf install -y git ripgrep fd-find
+
+# Arch
+sudo pacman -S --noconfirm git ripgrep fd
 ```
 
 ## Quick Start
