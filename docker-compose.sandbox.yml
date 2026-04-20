@@ -27,4 +27,5 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    network_mode: bridge
     restart: unless-stopped
