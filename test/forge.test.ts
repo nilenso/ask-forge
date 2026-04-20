@@ -3,11 +3,19 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { MegasthenesError } from "../src/errors";
 import { cleanupRepo, connectRepo, type Forge, inferForge, type Repo } from "../src/forge";
+import type { ErrorType } from "../src/types";
 
 // =============================================================================
 // Test Helpers
 // =============================================================================
+
+async function expectConnectError(promise: Promise<unknown>, errorType: ErrorType): Promise<void> {
+	const err = await promise.catch((e: unknown) => e);
+	expect(err).toBeInstanceOf(MegasthenesError);
+	expect((err as MegasthenesError).errorType).toBe(errorType);
+}
 
 interface TestRepo {
 	/** file:// URL to the bare repo */
@@ -231,29 +239,27 @@ describe("forge", () => {
 			expect(results[0].localPath).not.toBe(results[1].localPath);
 		});
 
-		test("throws for non-existent commitish", async () => {
-			expect(
-				connectRepo(repoUrl, {
-					forge: "github",
-					commitish: "nonexistent-branch",
-				}),
-			).rejects.toThrow("Failed to resolve commitish");
+		test("throws invalid_commitish for non-existent commitish", async () => {
+			await expectConnectError(
+				connectRepo(repoUrl, { forge: "github", commitish: "nonexistent-branch" }),
+				"invalid_commitish",
+			);
 		});
 
 		test("throws for invalid URL", async () => {
 			expect(connectRepo("not-a-url")).rejects.toThrow();
 		});
 
-		test("throws for unknown forge without explicit option", async () => {
-			expect(connectRepo("https://bitbucket.org/user/repo")).rejects.toThrow("Cannot infer forge from URL");
+		test("throws invalid_config for unknown forge without explicit option", async () => {
+			await expectConnectError(connectRepo("https://bitbucket.org/user/repo"), "invalid_config");
 		});
 
-		test("throws for URL with no path segments", async () => {
-			expect(connectRepo("https://github.com/", { forge: "github" })).rejects.toThrow("Invalid repo URL");
+		test("throws invalid_config for URL with no path segments", async () => {
+			await expectConnectError(connectRepo("https://github.com/", { forge: "github" }), "invalid_config");
 		});
 
-		test("throws for URL with only one path segment", async () => {
-			expect(connectRepo("https://github.com/user", { forge: "github" })).rejects.toThrow("Invalid repo URL");
+		test("throws invalid_config for URL with only one path segment", async () => {
+			await expectConnectError(connectRepo("https://github.com/user", { forge: "github" }), "invalid_config");
 		});
 
 		test("succeeds with explicit forge option for non-standard host", async () => {
@@ -411,8 +417,8 @@ describe("forge", () => {
 			expect(inferForge("https://git.example.com/user/repo")).toBeNull();
 		});
 
-		test("custom domain without forge option throws 'Cannot infer forge'", async () => {
-			await expect(connectRepo("https://git.example.com/user/repo")).rejects.toThrow("Cannot infer forge");
+		test("custom domain without forge option throws invalid_config", async () => {
+			await expectConnectError(connectRepo("https://git.example.com/user/repo"), "invalid_config");
 		});
 	});
 
