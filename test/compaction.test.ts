@@ -47,6 +47,10 @@ import {
 	serializeConversation,
 	shouldCompact,
 } from "../src/compaction";
+import type { Repo } from "../src/forge";
+import { nullLogger } from "../src/logger";
+import { Session, type SessionConfig } from "../src/session";
+import type { StreamEvent } from "../src/types";
 
 function makeUserMessage(content: string): Message {
 	return {
@@ -536,5 +540,63 @@ describe("summarizer failure during compaction", () => {
 		const recoveredResult = await compact(mockModel, messages);
 		expect(recoveredResult.summary).toContain(mockSummaryText);
 		expect(recoveredResult.keptMessages.length).toBeLessThan(messages.length);
+	});
+});
+
+describe("Session compaction integration (issue #120)", () => {
+	// Regression for the wiring gap that the direct maybeCompact tests can't
+	// reach: SessionConfig.compaction -> Session.#runCompaction -> maybeCompact.
+	// Defaults use contextWindow=200000, so a small prompt skips compaction.
+	// Setting contextWindow=0 forces compaction for any non-empty conversation;
+	// if Session silently drops config.compaction, no `compaction` event fires.
+	function createMockRepo(): Repo {
+		return {
+			url: "https://github.com/test/repo",
+			localPath: "/tmp/test-repo",
+			cachePath: "/tmp/cache",
+			commitish: "abc123",
+			forge: {
+				name: "github",
+				buildCloneUrl: (url: string) => url,
+			},
+		};
+	}
+
+	function createSessionMockStream(): SessionConfig["stream"] {
+		return (() => ({
+			[Symbol.asyncIterator]: async function* () {
+				yield { type: "text_delta", delta: "Hello" };
+			},
+			result: async () => ({
+				role: "assistant" as const,
+				content: [{ type: "text" as const, text: "Hello" }],
+				usage: { input: 10, output: 5, totalTokens: 15 },
+				timestamp: Date.now(),
+				api: "test",
+				provider: "test",
+				model: "test",
+				stopReason: "end_turn",
+			}),
+		})) as unknown as SessionConfig["stream"];
+	}
+
+	test("config.compaction.contextWindow flows through to trigger compaction", async () => {
+		const session = new Session(createMockRepo(), {
+			model: {} as Model<Api>,
+			systemPrompt: "You are a test assistant",
+			tools: [],
+			maxIterations: 5,
+			executeTool: async () => "mock",
+			logger: nullLogger,
+			stream: createSessionMockStream(),
+			compaction: { contextWindow: 0, reserveTokens: 0, keepRecentTokens: 1 },
+		});
+
+		const events: StreamEvent[] = [];
+		for await (const ev of session.ask("anything")) {
+			events.push(ev);
+		}
+
+		expect(events.find((e) => e.type === "compaction")).toBeDefined();
 	});
 });
