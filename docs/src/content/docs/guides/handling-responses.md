@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-`session.ask()` returns an `AskStream` — an `AsyncIterable<StreamEvent>` with a `.result()` method that reduces the stream into a `TurnResult`.
+`session.ask()` returns an `AskStream` — an `AsyncIterable<StreamEvent>` with a `.result()` method that reduces the stream into a `TurnResult`. There are two ways to consume it: **iterate events as they arrive** for live output, or **await `.result()`** for the reduced `TurnResult`. You can also mix the two — iterate first, then call `.result()` to get the cached summary.
 
 ### Consuming Events
 
