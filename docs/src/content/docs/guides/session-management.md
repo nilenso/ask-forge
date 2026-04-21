@@ -129,8 +129,21 @@ This restores the conversation context to the state it was in right after the sp
 
 ### Cleanup
 
-`session.close()` removes the git worktree created for this session. It is safe to call multiple times and returns a `Promise<void>`.
+`session.close()` releases the resources the session holds. Always pair `connect()` with `close()`, preferably in a `try` / `finally`:
 
 ```ts
-await session.close();
+const session = await client.connect(config);
+try {
+  for await (const event of session.ask("...")) { /* ... */ }
+} finally {
+  await session.close();
+}
 ```
+
+What `close()` does:
+
+- **Marks the session as closed.** Subsequent `ask()` calls throw synchronously; further `close()` calls are no-ops. Safe to call multiple times.
+- **Removes the git worktree** created for this session (`git worktree remove --force`). The shared bare-clone cache on disk is left intact so future sessions against the same repo can reuse it. If cleanup fails, the failure is reported via the configured [`Logger`](/megasthenes/guides/configuration/#logging) and not thrown — `close()` always resolves.
+- **Ends the root OpenTelemetry `ask` span.** `Client.connect()` starts this span, and it only ends in `close()`. If `close()` is never called, the OTel SDK drops the entire trace tree for the session on shutdown — every turn, generation, tool, and compaction span is lost from your observability backend. This is the single most important reason to always call `close()`. See the [Observability guide](/megasthenes/guides/observability/) for the span hierarchy.
+
+`close()` returns `Promise<void>`.
