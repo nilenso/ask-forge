@@ -2,7 +2,7 @@
 title: Configuration
 description: Configure sessions — connect options, system prompt, logging, sandbox, thinking, compaction, and tracing.
 sidebar:
-  order: 3
+  order: 1
 ---
 
 Megasthenes has two layers of configuration:

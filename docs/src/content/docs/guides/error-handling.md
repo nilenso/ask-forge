@@ -2,7 +2,7 @@
 title: Error Handling
 description: Handle structured errors from stream events and thrown exceptions.
 sidebar:
-  order: 7
+  order: 5
 ---
 
 megasthenes surfaces errors in two ways:

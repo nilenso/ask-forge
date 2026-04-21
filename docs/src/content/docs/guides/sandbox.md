@@ -2,7 +2,7 @@
 title: Sandboxed Execution
 description: Run megasthenes in an isolated sandbox for secure code analysis.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 megasthenes can execute all repository operations inside an isolated sandbox, providing multiple layers of security.
