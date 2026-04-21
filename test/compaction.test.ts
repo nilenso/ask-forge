@@ -451,8 +451,6 @@ describe("maybeCompact", () => {
 		expect(result.summary).toBe(previousSummary);
 	});
 
-	// Regression for issue #120: caller-provided settings were being silently
-	// dropped because maybeCompact re-read module-level defaults.
 	test("honors caller-provided settings.enabled=false on an otherwise-compactable conversation", async () => {
 		const messages = makeLargeConversation(200, 4000);
 
