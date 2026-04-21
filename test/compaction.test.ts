@@ -47,6 +47,10 @@ import {
 	serializeConversation,
 	shouldCompact,
 } from "../src/compaction";
+import type { Repo } from "../src/forge";
+import { nullLogger } from "../src/logger";
+import { Session, type SessionConfig } from "../src/session";
+import type { StreamEvent } from "../src/types";
 
 function makeUserMessage(content: string): Message {
 	return {
@@ -446,6 +450,35 @@ describe("maybeCompact", () => {
 
 		expect(result.summary).toBe(previousSummary);
 	});
+
+	test("honors caller-provided settings.enabled=false on an otherwise-compactable conversation", async () => {
+		const messages = makeLargeConversation(200, 4000);
+
+		const result = await maybeCompact(mockModel, messages, undefined, undefined, { enabled: false });
+
+		expect(result.wasCompacted).toBe(false);
+		expect(result.messages).toBe(messages);
+	});
+
+	test("honors caller-provided contextWindow override to trigger compaction below the default threshold", async () => {
+		// Small conversation — nowhere near the 200k default window, so default behavior would skip.
+		const messages = makeLargeConversation(30, 200);
+		const tokens = estimateContextTokens(messages);
+
+		// Sanity: with defaults, this would not compact.
+		const baseline = await maybeCompact(mockModel, messages);
+		expect(baseline.wasCompacted).toBe(false);
+
+		// Shrink the window so the same conversation must compact.
+		// shouldCompact triggers when contextTokens > contextWindow - reserveTokens.
+		const tiny = await maybeCompact(mockModel, messages, undefined, undefined, {
+			contextWindow: Math.floor(tokens / 2),
+			reserveTokens: 0,
+			keepRecentTokens: 100,
+		});
+
+		expect(tiny.wasCompacted).toBe(true);
+	});
 });
 
 describe("summarizer failure during compaction", () => {
@@ -505,5 +538,58 @@ describe("summarizer failure during compaction", () => {
 		const recoveredResult = await compact(mockModel, messages);
 		expect(recoveredResult.summary).toContain(mockSummaryText);
 		expect(recoveredResult.keptMessages.length).toBeLessThan(messages.length);
+	});
+});
+
+describe("Session compaction integration", () => {
+	function createMockRepo(): Repo {
+		return {
+			url: "https://github.com/test/repo",
+			localPath: "/tmp/test-repo",
+			cachePath: "/tmp/cache",
+			commitish: "abc123",
+			forge: {
+				name: "github",
+				buildCloneUrl: (url: string) => url,
+			},
+		};
+	}
+
+	function createSessionMockStream(): SessionConfig["stream"] {
+		return (() => ({
+			[Symbol.asyncIterator]: async function* () {
+				yield { type: "text_delta", delta: "Hello" };
+			},
+			result: async () => ({
+				role: "assistant" as const,
+				content: [{ type: "text" as const, text: "Hello" }],
+				usage: { input: 10, output: 5, totalTokens: 15 },
+				timestamp: Date.now(),
+				api: "test",
+				provider: "test",
+				model: "test",
+				stopReason: "end_turn",
+			}),
+		})) as unknown as SessionConfig["stream"];
+	}
+
+	test("config.compaction.contextWindow flows through to trigger compaction", async () => {
+		const session = new Session(createMockRepo(), {
+			model: {} as Model<Api>,
+			systemPrompt: "You are a test assistant",
+			tools: [],
+			maxIterations: 5,
+			executeTool: async () => "mock",
+			logger: nullLogger,
+			stream: createSessionMockStream(),
+			compaction: { contextWindow: 0, reserveTokens: 0, keepRecentTokens: 1 },
+		});
+
+		const events: StreamEvent[] = [];
+		for await (const ev of session.ask("anything")) {
+			events.push(ev);
+		}
+
+		expect(events.find((e) => e.type === "compaction")).toBeDefined();
 	});
 });
