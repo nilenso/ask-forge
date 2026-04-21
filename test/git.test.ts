@@ -25,12 +25,12 @@ function countGitSpawnsDuring<T>(fn: () => Promise<T>): Promise<{ result: T; spa
 		});
 }
 
-describe("forge internals", () => {
+describe("forge/git", () => {
 	let workRoot: string;
 	let testRepo: TestRepo;
 
 	beforeAll(async () => {
-		workRoot = await mkdtemp(join(tmpdir(), "forge-internals-"));
+		workRoot = await mkdtemp(join(tmpdir(), "forge-git-"));
 		testRepo = await createTestRepo(join(workRoot, "remote"));
 	});
 
@@ -223,7 +223,7 @@ describe("forge internals", () => {
 
 		test("real failure → { ok: false, exitCode, stderr }", async () => {
 			// cachePath points at a non-git directory → git errors with "not a git repository".
-			const nonGitDir = await mkdtemp(join(tmpdir(), "forge-internals-nongit-"));
+			const nonGitDir = await mkdtemp(join(tmpdir(), "forge-git-nongit-"));
 			try {
 				const result = await removeWorktree(nonGitDir, join(nonGitDir, "nope"));
 				expect(result.ok).toBe(false);
