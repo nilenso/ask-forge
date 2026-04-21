@@ -543,12 +543,7 @@ describe("summarizer failure during compaction", () => {
 	});
 });
 
-describe("Session compaction integration (issue #120)", () => {
-	// Regression for the wiring gap that the direct maybeCompact tests can't
-	// reach: SessionConfig.compaction -> Session.#runCompaction -> maybeCompact.
-	// Defaults use contextWindow=200000, so a small prompt skips compaction.
-	// Setting contextWindow=0 forces compaction for any non-empty conversation;
-	// if Session silently drops config.compaction, no `compaction` event fires.
+describe("Session compaction integration", () => {
 	function createMockRepo(): Repo {
 		return {
 			url: "https://github.com/test/repo",
