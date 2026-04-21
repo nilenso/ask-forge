@@ -2,7 +2,7 @@
 title: Observability
 description: Monitor megasthenes sessions with OpenTelemetry tracing.
 sidebar:
-  order: 4
+  order: 7
 ---
 
 megasthenes instruments session setup and turns with [OpenTelemetry](https://opentelemetry.io/) spans using the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/), plus a small set of `megasthenes.*` attributes for repository- and agent-specific details.

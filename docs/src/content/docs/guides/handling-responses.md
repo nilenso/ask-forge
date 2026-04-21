@@ -1,11 +1,11 @@
 ---
-title: Streaming
+title: Handling Responses
 description: Consume real-time stream events and turn results from session.ask().
 sidebar:
   order: 3
 ---
 
-`session.ask()` returns an `AskStream` — an `AsyncIterable<StreamEvent>` with a `.result()` method that reduces the stream into a `TurnResult`.
+`session.ask()` returns an `AskStream` — an `AsyncIterable<StreamEvent>` with a `.result()` method that reduces the stream into a `TurnResult`. There are two ways to consume it: **iterate events as they arrive** for live output, or **await `.result()`** for the reduced `TurnResult`. You can also mix the two — iterate first, then call `.result()` to get the cached summary.
 
 ### Consuming Events
 
@@ -120,7 +120,7 @@ const stream = session.ask("Analyze the security of this code", {
 | `model` | `ModelConfig` | Override the model for this turn. |
 | `maxIterations` | `number` | Override max iterations for this turn. |
 | `thinking` | `ThinkingConfig` | Override thinking config for this turn. |
-| `afterTurn` | `string` | Branch from after a specific turn ID. See [Session Management](/megasthenes/guides/session-management/). |
+| `afterTurn` | `string` | Branch from after a specific turn ID. See [Multi-turn Conversations](/megasthenes/guides/multi-turn-conversations/). |
 | `signal` | `AbortSignal` | Cancel the turn mid-stream. |
 
 ### Cancellation
