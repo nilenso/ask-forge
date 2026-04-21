@@ -188,6 +188,78 @@ describe("TurnResultBuilder", () => {
 				expect(step.name).toBe("rg");
 			}
 		});
+
+		test("orphan tool_use_end (no matching tool_use_start) is silently ignored", () => {
+			const result = buildFromEvents([
+				{ type: "turn_start", turnId: "t-1", prompt: "Q", timestamp: 1000 },
+				{ type: "tool_use_end", toolCallId: "tc-orphan", name: "rg", params: { pattern: "test" } },
+				{ type: "text", text: "ok" },
+			]);
+
+			// No tool_call step is materialized until a tool_result arrives,
+			// and a bare tool_use_end with no pending entry must not throw or
+			// leak state into later steps.
+			expect(result.steps.filter((s) => s.type === "tool_call")).toHaveLength(0);
+			expect(result.steps.map((s) => s.type)).toEqual(["text"]);
+		});
+
+		test("tool_use_end arriving before tool_use_start drops the params", () => {
+			// Out-of-order sequence: end, then start, then result. Because
+			// tool_use_end is dropped (no pending entry yet), the tool_call step
+			// ends up with empty params even though tool_use_end carried real ones.
+			const result = buildFromEvents([
+				{ type: "tool_use_end", toolCallId: "tc-1", name: "rg", params: { pattern: "missed" } },
+				{ type: "tool_use_start", toolCallId: "tc-1", name: "rg" },
+				{ type: "tool_result", toolCallId: "tc-1", name: "rg", output: "r", isError: false, durationMs: 1 },
+			]);
+
+			expect(result.steps).toHaveLength(1);
+			const step = result.steps[0];
+			expect(step?.type).toBe("tool_call");
+			if (step?.type === "tool_call") {
+				expect(step.params).toEqual({});
+				expect(step.output).toBe("r");
+			}
+		});
+
+		test("duplicate tool_use_end events are idempotent (no duplicate steps)", () => {
+			const result = buildFromEvents([
+				{ type: "tool_use_start", toolCallId: "tc-1", name: "rg" },
+				{ type: "tool_use_end", toolCallId: "tc-1", name: "rg", params: { pattern: "a" } },
+				{ type: "tool_use_end", toolCallId: "tc-1", name: "rg", params: { pattern: "b" } },
+				{ type: "tool_result", toolCallId: "tc-1", name: "rg", output: "done", isError: false, durationMs: 1 },
+			]);
+
+			const toolSteps = result.steps.filter((s) => s.type === "tool_call");
+			expect(toolSteps).toHaveLength(1);
+			// The second tool_use_end overwrites the first — last-writer-wins on params.
+			if (toolSteps[0]?.type === "tool_call") {
+				expect(toolSteps[0].params).toEqual({ pattern: "b" });
+			}
+		});
+
+		test("interleaved tool lifecycles for different ids stay independent", () => {
+			// tc-1 starts, tc-2 starts, tc-2 completes before tc-1 emits its end.
+			// Verifies pending-map keying by toolCallId survives out-of-order completion.
+			const result = buildFromEvents([
+				{ type: "tool_use_start", toolCallId: "tc-1", name: "rg" },
+				{ type: "tool_use_start", toolCallId: "tc-2", name: "fd" },
+				{ type: "tool_use_end", toolCallId: "tc-2", name: "fd", params: { pattern: "b" } },
+				{ type: "tool_result", toolCallId: "tc-2", name: "fd", output: "r2", isError: false, durationMs: 5 },
+				{ type: "tool_use_end", toolCallId: "tc-1", name: "rg", params: { pattern: "a" } },
+				{ type: "tool_result", toolCallId: "tc-1", name: "rg", output: "r1", isError: false, durationMs: 10 },
+			]);
+
+			const toolSteps = result.steps.filter((s) => s.type === "tool_call");
+			expect(toolSteps).toHaveLength(2);
+			// Steps appear in tool_result order, not start order.
+			if (toolSteps[0]?.type === "tool_call" && toolSteps[1]?.type === "tool_call") {
+				expect(toolSteps[0].name).toBe("fd");
+				expect(toolSteps[0].params).toEqual({ pattern: "b" });
+				expect(toolSteps[1].name).toBe("rg");
+				expect(toolSteps[1].params).toEqual({ pattern: "a" });
+			}
+		});
 	});
 
 	describe("step ordering", () => {
