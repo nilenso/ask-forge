@@ -15,6 +15,12 @@ import { MegasthenesError } from "../errors";
  */
 const cloneLocks = new Map<string, Promise<void>>();
 
+// Stderr substrings that indicate there was nothing to remove: git already
+// doesn't track the worktree, or the path is gone. Matching any of these
+// means the desired end-state is already achieved, so removal is treated as
+// successful (idempotent remove) rather than failed.
+const CLEANUP_ALREADY_DONE_MARKERS = ["is not a working tree", "No such file or directory"] as const;
+
 export async function withCloneLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 	while (cloneLocks.has(key)) {
 		await cloneLocks.get(key);
@@ -146,12 +152,6 @@ export async function ensureWorktree(
 	}
 	return { reused: exitCode !== 0 };
 }
-
-// Stderr substrings that indicate there was nothing to remove: git already
-// doesn't track the worktree, or the path is gone. Matching any of these
-// means the desired end-state is already achieved, so removal is treated as
-// successful (idempotent remove) rather than failed.
-const CLEANUP_ALREADY_DONE_MARKERS = ["is not a working tree", "No such file or directory"] as const;
 
 export type RemoveWorktreeResult = { ok: true } | { ok: false; exitCode: number; stderr: string };
 
