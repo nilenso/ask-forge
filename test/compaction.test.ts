@@ -3,24 +3,37 @@ import type { Api, Message, Model } from "@mariozechner/pi-ai";
 
 const mockSummaryText = "Mock summary of conversation";
 
+// Knob that lets a single test flip the summarizer's behavior without
+// tearing down / re-registering the module mock. Reset via resetSummarizer().
+type SummarizerBehavior = "ok" | { throws: Error };
+let summarizerBehavior: SummarizerBehavior = "ok";
+function resetSummarizer() {
+	summarizerBehavior = "ok";
+}
+
 mock.module("@mariozechner/pi-ai", () => ({
-	completeSimple: async () => ({
-		role: "assistant",
-		content: [{ type: "text", text: mockSummaryText }],
-		stopReason: "end_turn",
-		api: "messages",
-		provider: "anthropic",
-		model: "test",
-		usage: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
-		timestamp: Date.now(),
-	}),
+	completeSimple: async () => {
+		if (typeof summarizerBehavior === "object" && "throws" in summarizerBehavior) {
+			throw summarizerBehavior.throws;
+		}
+		return {
+			role: "assistant",
+			content: [{ type: "text", text: mockSummaryText }],
+			stopReason: "end_turn",
+			api: "messages",
+			provider: "anthropic",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			timestamp: Date.now(),
+		};
+	},
 }));
 
 import {
@@ -432,5 +445,65 @@ describe("maybeCompact", () => {
 		const result = await maybeCompact(mockModel, messages, previousSummary);
 
 		expect(result.summary).toBe(previousSummary);
+	});
+});
+
+describe("summarizer failure during compaction", () => {
+	// Each test flips summarizerBehavior and must reset it to avoid poisoning
+	// other suites that share this module-level mock.
+	test("compact() rejects with the summarizer's error when the LLM throws", async () => {
+		const sentinel = new Error("sentinel: summarizer");
+		summarizerBehavior = { throws: sentinel };
+		try {
+			const messages = makeLargeConversation(200, 4000);
+			// Identity check: the same error object thrown by the summarizer
+			// round-trips out through compact().
+			await expect(compact(mockModel, messages)).rejects.toBe(sentinel);
+		} finally {
+			resetSummarizer();
+		}
+	});
+
+	test("maybeCompact() rejects and does NOT fall back to a silent no-op result", async () => {
+		const sentinel = new Error("sentinel: summarizer");
+		summarizerBehavior = { throws: sentinel };
+		try {
+			const messages = makeLargeConversation(200, 4000);
+			// Must reject rather than silently returning { wasCompacted: false, messages } —
+			// callers need to distinguish "nothing to compact" (normal) from "compaction
+			// attempted and failed". The session layer treats these very differently.
+			await expect(maybeCompact(mockModel, messages)).rejects.toBe(sentinel);
+		} finally {
+			resetSummarizer();
+		}
+	});
+
+	test("failed compaction leaves inputs untouched (no partial state leaks out)", async () => {
+		summarizerBehavior = { throws: new Error("sentinel: summarizer") };
+		try {
+			const messages = makeLargeConversation(200, 4000);
+			const snapshot = [...messages];
+
+			await expect(compact(mockModel, messages)).rejects.toBeInstanceOf(Error);
+
+			// Compaction must not mutate the caller's message array on failure —
+			// the session layer keeps a reference and reuses it after swallowing
+			// a compaction error.
+			expect(messages).toEqual(snapshot);
+			expect(messages.length).toBe(snapshot.length);
+		} finally {
+			resetSummarizer();
+		}
+	});
+
+	test("subsequent compact() calls succeed after the summarizer recovers", async () => {
+		summarizerBehavior = { throws: new Error("sentinel: summarizer") };
+		const messages = makeLargeConversation(200, 4000);
+		await expect(compact(mockModel, messages)).rejects.toBeInstanceOf(Error);
+
+		resetSummarizer();
+		const recoveredResult = await compact(mockModel, messages);
+		expect(recoveredResult.summary).toContain(mockSummaryText);
+		expect(recoveredResult.keptMessages.length).toBeLessThan(messages.length);
 	});
 });
