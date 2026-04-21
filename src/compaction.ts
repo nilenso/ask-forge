@@ -695,7 +695,7 @@ export async function compact(
 	signal?: AbortSignal,
 	settings?: Partial<CompactionSettings>,
 ): Promise<CompactionResult> {
-	const resolved = { ...COMPACTION_SETTINGS, ...settings };
+	const resolved: CompactionSettings = { ...COMPACTION_SETTINGS, ...settings };
 	return compactWithTokenIndex(model, messages, previousSummary, signal, buildTokenEstimateIndex(messages), resolved);
 }
 
